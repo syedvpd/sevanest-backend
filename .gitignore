@@ -1,0 +1,38 @@
+# Dependencies / build
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+src/generated/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Logs / runtime
+*.log
+npm-debug.log*
+pids/
+*.pid
+
+# Archives / scratch / local-only
+*.zip
+*.tar
+*.tar.gz
+tmp/
+temp/
+scratch/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local data
+pgdata/

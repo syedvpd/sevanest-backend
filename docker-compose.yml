@@ -1,0 +1,93 @@
+# Local development infrastructure only (PostgreSQL + Redis). The API runs on the host via `npm run start:dev`.
+# Credentials come from .env (see .env.example). Ports bind to localhost only.
+# CAUTION: `docker compose down -v` deletes the named data volumes. Do not use -v unless you intend to erase local data.
+name: sevanest
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Non-authoritative store: queues/throttle/cache only. AOF keeps queued jobs across local restarts.
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---- Application containers (profile "app"): `docker compose --profile app up -d --build` ----
+  # `npm run infra:up` (no profile) still starts only PostgreSQL + Redis for host-based development.
+
+  # One-shot: applies pending Prisma migrations (`migrate deploy`: never resets, never drops).
+  migrate:
+    profiles: ['app']
+    build: { context: ., target: migrate }
+    image: sevanest-backend-migrate:local
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    profiles: ['app']
+    build: { context: ., target: runtime }
+    image: sevanest-backend:local
+    init: true
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '127.0.0.1:${API_PORT:-3000}:3000'
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+  worker:
+    profiles: ['app']
+    image: sevanest-backend:local
+    command: ['node', 'dist/worker']
+    init: true
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://redis:6379
+    healthcheck:
+      disable: true # no HTTP server in the worker; the image HEALTHCHECK targets the API
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      api: { condition: service_started }
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

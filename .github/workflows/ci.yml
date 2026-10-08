@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: sevanest_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ci -d sevanest_ci" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    # CI-only throwaway values for disposable service containers. No real secrets.
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://ci:ci-only-password@localhost:5432/sevanest_ci?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-only-jwt-secret-ci-only-jwt-secret-0123456789
+      JWT_ACCESS_TTL_SECONDS: '900'
+      REFRESH_TOKEN_TTL_SECONDS: '86400'
+      THROTTLE_TTL_SECONDS: '60'
+      THROTTLE_LIMIT: '1000'
+      PORT: '3000'
+      LOG_LEVEL: silent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+      - name: Apply migrations (non-destructive deploy, empty CI database)
+        run: npx prisma migrate deploy
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - run: npm run test:e2e
+      - run: npm run test:integration
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build runtime image
+        run: docker build --target runtime -t sevanest-backend:ci .
+      - name: Build migrate image
+        run: docker build --target migrate -t sevanest-backend-migrate:ci .
