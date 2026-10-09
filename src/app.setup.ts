@@ -42,5 +42,10 @@ export function configureApp(app: NestExpressApplication, config: AppConfigServi
         .build(),
     );
     SwaggerModule.setup('docs', app, document, { jsonDocumentUrl: 'docs/openapi.json' });
+    // The bare service URL has no route of its own; send visitors to the interactive docs.
+    const http = app.getHttpAdapter();
+    http.get('/', (_req, res) => {
+      http.redirect(res, 302, '/docs');
+    });
   }
 }
