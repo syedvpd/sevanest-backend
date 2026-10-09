@@ -5,6 +5,30 @@ NestJS modular monolith · PostgreSQL (source of truth) · Redis + BullMQ (non-a
 
 Requirements live in `docs/project-specifications/`.
 
+## Modules
+| Module | Covers | Docs |
+|---|---|---|
+| Auth | mobile OTP login (customer, worker), admin credential login, token sessions, refresh rotation, logout | `src/modules/auth/README.md` |
+| Users | accounts, status, admin roles and permissions, admin provisioning | `src/modules/users/README.md` |
+| Customers | customer profile, saved addresses, admin customer management | `src/modules/customers/README.md` |
+| Workers | worker profile, roles, onboarding steps, submission, assisted onboarding | `src/modules/workers/README.md` |
+| Service Categories | admin-managed category master | `src/modules/service-categories/README.md` |
+| Availability | engagement preference, preferred areas, daily time windows, service-area master | `src/modules/availability/README.md` |
+| Verification | worker KYC checks, document metadata (private storage, signed links), review workflow, history, the definition of "verified" | `src/modules/verification/README.md` |
+| Search | read-only worker discovery for customers (category, area, availability), worker cards | `src/modules/search/README.md` |
+| Matching | staff-side candidate selection for a requirement (no scoring, no assignment) | `src/modules/matching/README.md` |
+| Booking | booking lifecycle, interview/trial, confirmation, cancellation, timeline | `src/modules/booking/README.md` |
+| Payment | booking fee payment behind a provider abstraction, webhook, refunds | `src/modules/payment/README.md` |
+| Notifications | outbox, templates, queue, push/SMS/WhatsApp delivery | `src/modules/notifications/README.md` |
+| Attendance | status-based attendance per booking and date | `src/modules/attendance/README.md` |
+| Replacement | replacement request, review, selection, linked booking | `src/modules/replacement/README.md` |
+| Ratings | customer ratings of completed bookings, worker totals, admin moderation | `src/modules/ratings/README.md` |
+| Support | tickets and complaints for customers and workers, staff handling | `src/modules/support/README.md` |
+| Reports | 12 read-only reports and the operations dashboard | `src/modules/reports/README.md` |
+| Admin / Audit | admin accounts, roles and permissions (`src/modules/users`), audit viewer and security events (`src/common/audit`) | `src/modules/users/README.md` |
+
+Testing documentation: `docs/testing/<module>/README.md`.
+
 ## Toolchain (locked, exact versions in `package-lock.json`)
 | | |
 |---|---|
@@ -28,7 +52,15 @@ cp .env.example .env         # then set local values (never commit .env)
 npm ci
 npm run infra:up             # PostgreSQL + Redis on localhost
 npm run prisma:migrate:deploy
+npm run build && npm run seed   # roles + permissions (idempotent reference data)
 ```
+`.env.example` lists every required setting. The OTP, lockout and password-length values are **development placeholders, not
+approved business values** (the specifications leave them open); production must set explicit, reviewed values.
+`SMS_PROVIDER=disabled` answers OTP requests with `503 SMS_NOT_CONFIGURED` until an SMS vendor is integrated;
+`SMS_PROVIDER=memory` (tests/local only, refused in production) keeps OTPs in process memory.
+
+Optional, development only: set `BOOTSTRAP_SUPER_ADMIN_EMAIL` and `BOOTSTRAP_SUPER_ADMIN_PASSWORD` in the environment
+(never in a committed file) before `npm run seed` to create the first Super Admin. It is refused in production.
 
 ## Run
 ```bash
@@ -42,7 +74,15 @@ Probes: `GET /health/live`, `GET /health/ready`. API under `/api/v1`. OpenAPI JS
 ```bash
 npm run typecheck && npm run lint && npm test          # fast, no services needed
 npm run test:e2e                                       # boots the real app, PostgreSQL/Redis stubbed
-npm run test:integration                               # needs `npm run infra:up` + migrations; rolls back all writes
+npm run test:integration                               # real PostgreSQL + Redis, see below
+```
+The foundation integration test rolls back all its writes. The module integration tests **commit** rows, so they run only
+against a dedicated database whose name ends in `_test` or `_ci` (`TEST_DATABASE_URL`, else `DATABASE_URL`), never the
+development database. One-time setup:
+```bash
+docker compose exec postgres createdb -U <POSTGRES_USER> sevanest_test
+DATABASE_URL=postgresql://<user>:<password>@localhost:5432/sevanest_test?schema=public npx prisma migrate deploy
+# then add TEST_DATABASE_URL=<that URL> to your local .env
 ```
 
 ## Database safety

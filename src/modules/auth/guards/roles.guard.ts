@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthenticatedUser, ROLES_KEY } from '../../../common/decorators/auth.decorators';
+import { SecurityEventService } from '../../../common/audit/security-events.service';
 import { DomainException } from '../../../common/errors/domain.exception';
 import { ErrorCode } from '../../../common/errors/error-codes';
 import { AuthorizationService } from '../authorization.service';
@@ -11,6 +12,7 @@ export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly authorization: AuthorizationService,
+    private readonly events: SecurityEventService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -27,6 +29,7 @@ export class RolesGuard implements CanActivate {
     }
     const { roles } = await this.authorization.forRequest(request, request.user);
     if (!required.some((code) => roles.includes(code))) {
+      await this.events.accessDenied(request, 'ROLE');
       throw this.forbidden();
     }
     return true;

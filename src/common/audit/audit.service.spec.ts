@@ -33,6 +33,35 @@ describe('redactSensitive', () => {
     });
   });
 
+  it('also redacts contact and payment-card keys and secret-looking values under innocent keys', () => {
+    const jwt = 'aaaaaaaaaa.bbbbbbbbbb.cccccccccc';
+    expect(
+      redactSensitive({
+        mobile: '+919876543210',
+        phoneNumber: '1',
+        email: 'a@b.test',
+        card_number: '4111111111111111',
+        cvv: '123',
+        ifsc: 'HDFC0000001',
+        note: jwt,
+        header: 'Bearer abcdef123456',
+        pincode: '500001',
+        reason: 'ordinary sentence. with dots. here.',
+      }),
+    ).toEqual({
+      mobile: '[REDACTED]',
+      phoneNumber: '[REDACTED]',
+      email: '[REDACTED]',
+      card_number: '[REDACTED]',
+      cvv: '[REDACTED]',
+      ifsc: '[REDACTED]',
+      note: '[REDACTED]',
+      header: '[REDACTED]',
+      pincode: '500001',
+      reason: 'ordinary sentence. with dots. here.',
+    });
+  });
+
   it('truncates absurd depth and serialises dates', () => {
     let deep: Record<string, unknown> = { leaf: 1 };
     for (let i = 0; i < 20; i++) deep = { next: deep };

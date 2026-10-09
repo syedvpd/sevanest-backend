@@ -41,6 +41,31 @@ jobs:
       REFRESH_TOKEN_TTL_SECONDS: '86400'
       THROTTLE_TTL_SECONDS: '60'
       THROTTLE_LIMIT: '1000'
+      # CI-only values for the open OTP/lockout decisions (Q-12); not approved business values.
+      OTP_HMAC_SECRET: ci-only-otp-hmac-key-0123456789-abcdefghij
+      SMS_PROVIDER: memory
+      # CI-only KYC document settings (Q-12 is open); not approved business values.
+      STORAGE_PROVIDER: memory
+      PAYMENT_PROVIDER: fake
+      PAYMENT_FAKE_WEBHOOK_SECRET: ci-only-webhook-secret-0123456789
+      PUSH_PROVIDER: memory
+      WHATSAPP_PROVIDER: memory
+      RATING_SCALE_MAX: '5'
+      VERIFICATION_DOCUMENT_MAX_BYTES: '1048576'
+      VERIFICATION_DOCUMENT_CONTENT_TYPES: application/pdf,image/jpeg,image/png
+      SIGNED_URL_TTL_SECONDS: '120'
+      OTP_LENGTH: '6'
+      OTP_TTL_SECONDS: '300'
+      OTP_MAX_VERIFY_ATTEMPTS: '3'
+      OTP_RESEND_COOLDOWN_SECONDS: '30'
+      OTP_SEND_WINDOW_SECONDS: '3600'
+      OTP_MAX_SENDS_PER_MOBILE_PER_WINDOW: '5'
+      OTP_MAX_REQUESTS_PER_IP_PER_WINDOW: '20'
+      OTP_LOCKOUT_SECONDS: '900'
+      ADMIN_LOGIN_MAX_FAILURES: '3'
+      ADMIN_LOGIN_FAILURE_WINDOW_SECONDS: '900'
+      ADMIN_LOGIN_LOCKOUT_SECONDS: '900'
+      ADMIN_PASSWORD_MIN_LENGTH: '12'
       PORT: '3000'
       LOG_LEVEL: silent
     steps:

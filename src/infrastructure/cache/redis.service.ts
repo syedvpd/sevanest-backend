@@ -22,6 +22,26 @@ export class RedisService implements OnModuleDestroy {
     this.client.on('error', (error: Error) => this.logger.warn(`Redis error: ${error.message}`));
   }
 
+  private connecting?: Promise<void>;
+
+  /**
+   * The client is lazy and has no offline queue, so a command sent before the first connection fails. Callers that
+   * issue commands (OTP, rate limits) await this first. Concurrent callers share one connection attempt.
+   */
+  ensureConnected(): Promise<void> {
+    if (this.client.status === 'ready') {
+      return Promise.resolve();
+    }
+    this.connecting ??= (async () => {
+      if (this.client.status === 'wait' || this.client.status === 'end') {
+        await this.client.connect();
+      }
+    })().finally(() => {
+      this.connecting = undefined;
+    });
+    return this.connecting;
+  }
+
   async ping(): Promise<void> {
     if (this.client.status === 'wait' || this.client.status === 'end') {
       await this.client.connect();

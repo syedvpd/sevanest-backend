@@ -35,6 +35,16 @@ export interface ProviderRefund {
   outcome: ProviderPaymentOutcome;
 }
 
+/** A provider notification reduced to what the Payment module needs. Produced only AFTER the signature was verified. */
+export interface ProviderWebhookEvent {
+  /** Unique per notification at the provider; the basis of duplicate protection. */
+  eventId: string;
+  providerOrderId: string;
+  providerPaymentId: string;
+  outcome: ProviderPaymentOutcome;
+  amountMinor: number;
+}
+
 export interface PaymentProvider {
   createOrder(input: CreateProviderOrderInput): Promise<ProviderOrder>;
   /** Server-side verification of a client-reported payment. The client's "success" is only a hint (BEA p7). */
@@ -45,6 +55,8 @@ export interface PaymentProvider {
   }): Promise<ProviderPayment>;
   /** Must use the RAW request body and a constant-time comparison. */
   verifyWebhookSignature(rawBody: Buffer, headers: Record<string, string | undefined>): boolean;
+  /** Adapter-specific parsing of a verified webhook body; null if it is not a payment notification. */
+  parseWebhookEvent(rawBody: Buffer): ProviderWebhookEvent | null;
   /** Source of truth for reconciliation jobs. */
   getPayment(providerPaymentId: string): Promise<ProviderPayment>;
   refund(input: {

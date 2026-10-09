@@ -1,12 +1,13 @@
-// SevaNest foundation schema.
-// Scope: identity, RBAC mechanism, sessions, audit only. Business tables (bookings, payments, verification, ...)
-// are added module-by-module once their requirements are frozen.
+// SevaNest schema.
+// Scope so far: identity, RBAC mechanism, sessions and device tokens, audit, customer profile and addresses,
+// worker profile, service categories and areas, worker availability.
+// Other business tables (bookings, payments, verification, ...) are added module-by-module once their requirements are frozen.
 // Role/permission rows are DATA; the permission matrix is NOT seeded here (open item Q-11).
 
 generator client {
-  provider     = "prisma-client"
-  output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
   // Bare relative imports: Jest (CommonJS) cannot map the \.js\ suffix Prisma otherwise infers from module=nodenext.
   importFileExtension = ""
 }
@@ -42,6 +43,29 @@ model User {
   roles     UserRole[]
   sessions  Session[]
   auditLogs AuditLog[]
+
+  deviceTokens          DeviceToken[]
+  customerProfile       CustomerProfile?
+  workerProfile         WorkerProfile?
+  verificationReviews   WorkerVerificationCheck[] @relation("VerificationReviewer")
+  verificationEvents    WorkerVerificationEvent[] @relation("VerificationEventActor")
+  bookings              Booking[]                 @relation("BookingCustomer")
+  bookingsCancelled     Booking[]                 @relation("BookingCancelledBy")
+  bookingEvents         BookingEvent[]            @relation("BookingEventActor")
+  payments              Payment[]                 @relation("PaymentCustomer")
+  paymentsRefunded      Payment[]                 @relation("PaymentRefundedBy")
+  notifications         Notification[]            @relation("NotificationRecipient")
+  attendanceRecorded    AttendanceRecord[]        @relation("AttendanceRecorder")
+  attendanceEvents      AttendanceEvent[]         @relation("AttendanceEventActor")
+  replacementsRequested ReplacementRequest[]      @relation("ReplacementRequester")
+  replacementsDecided   ReplacementRequest[]      @relation("ReplacementDecider")
+  customerNotesAuthored CustomerNote[]
+  ratingsGiven          Rating[]                  @relation("RatingCustomer")
+  ratingsModerated      Rating[]                  @relation("RatingModerator")
+  ticketsCreated        SupportTicket[]           @relation("TicketCreator")
+  ticketsAssigned       SupportTicket[]           @relation("TicketAssignee")
+  ticketsClosed         SupportTicket[]           @relation("TicketCloser")
+  ticketEvents          SupportTicketEvent[]      @relation("TicketEventActor")
 
   @@index([type, status])
   @@map("users")
@@ -100,19 +124,50 @@ model UserRole {
 
 /// One row per device session. The refresh token is opaque, stored only as a hash, and rotated on use (BEA p5).
 model Session {
-  id               String    @id @default(uuid(7)) @db.Uuid
-  userId           String    @map("user_id") @db.Uuid
-  refreshTokenHash String    @unique @map("refresh_token_hash")
-  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
-  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
-  lastUsedAt       DateTime? @map("last_used_at") @db.Timestamptz(6)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                       String    @id @default(uuid(7)) @db.Uuid
+  userId                   String    @map("user_id") @db.Uuid
+  refreshTokenHash         String    @unique @map("refresh_token_hash")
+  expiresAt                DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt                DateTime? @map("revoked_at") @db.Timestamptz(6)
+  lastUsedAt               DateTime? @map("last_used_at") @db.Timestamptz(6)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Hash of the refresh token that was current before the last rotation. Presenting it again means the token was
+  /// replayed or leaked, so the session is revoked. Replaced on every rotation.
+  previousRefreshTokenHash String?   @map("previous_refresh_token_hash")
+  /// Client-generated install identifier. At most one ACTIVE session exists per (user, device) (partial unique index).
+  deviceId                 String?   @map("device_id")
+  deviceName               String?   @map("device_name")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceToken DeviceToken?
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([previousRefreshTokenHash])
   @@map("sessions")
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+}
+
+/// Push (FCM) token bound to exactly one session so pushes stop after logout (BEA p5). The row is removed when the
+/// session is revoked. The push channel itself belongs to the Notification module.
+model DeviceToken {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  sessionId String         @unique @map("session_id") @db.Uuid
+  token     String         @unique
+  platform  DevicePlatform
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }
 
 /// Append-only (enforced by DB triggers in the foundation migration): actor, role, action, entity, record, timestamp, metadata.
@@ -133,5 +188,780 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorId, createdAt])
   @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([requestId])
   @@map("audit_logs")
+}
+
+/// FRD FM-02: a profile is PENDING until verified. The rule that promotes PENDING to VERIFIED is an open decision, so
+/// only an authorised admin changes it today; every change is audited with before/after state.
+enum CustomerVerificationStatus {
+  PENDING
+  VERIFIED
+}
+
+/// Customer domain (SRS 3.2). One profile per customer user. The mobile number is NOT copied here: it stays on `users`
+/// (verified by OTP, read-only). Suspension is `users.status`; the profile only carries the verification state.
+model CustomerProfile {
+  id                 String                     @id @default(uuid(7)) @db.Uuid
+  userId             String                     @unique @map("user_id") @db.Uuid
+  name               String
+  email              String
+  preferredLanguage  String                     @map("preferred_language")
+  verificationStatus CustomerVerificationStatus @default(PENDING) @map("verification_status")
+  createdAt          DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  addresses CustomerAddress[]
+  notes     CustomerNote[]
+
+  @@index([verificationStatus, createdAt])
+  @@map("customer_profiles")
+}
+
+/// Saved addresses (FR-CUS-004/005). Never hard-deleted: later bookings will reference them, so removal = isActive=false.
+/// Database-enforced invariants (see migration): at most one default per customer, a default must be active, and
+/// latitude/longitude are both set or both null and within range.
+model CustomerAddress {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  line       String
+  area       String
+  city       String
+  pincode    String
+  latitude   Decimal? @db.Decimal(9, 6)
+  longitude  Decimal? @db.Decimal(9, 6)
+  isDefault  Boolean  @default(false) @map("is_default")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, isActive])
+  @@map("customer_addresses")
+}
+
+/// Admin operational notes on a customer (FRD FM-02 "Admin can add notes"). Append-only.
+model CustomerNote {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  authorId   String   @map("author_id") @db.Uuid
+  note       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  author   User            @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, createdAt])
+  @@map("customer_notes")
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Service categories and areas (admin masters, FRD FM-16) - reference data, never hard-coded in application logic.
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Stable `code` is the machine key; `name` is unique ignoring case (migration index). Never deleted: disabling hides it
+/// from new selections while existing worker associations stay intact.
+model ServiceCategory {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isEnabled   Boolean  @default(true) @map("is_enabled")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workerSkills WorkerSkill[]
+
+  bookings Booking[]
+
+  @@map("service_categories")
+}
+
+/// Service area master (FRD FM-16: unique within the city; enabled/disabled). Ownership of config masters is open (Q-14);
+/// the table is stable if it moves to the Admin module later.
+model ServiceArea {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String
+  city      String
+  isEnabled Boolean  @default(true) @map("is_enabled")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workers WorkerPreferredArea[]
+
+  bookings Booking[]
+
+  @@map("service_areas")
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Workers (FRD FM-04 work profile). KYC/documents belong to the future Verification module.
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Only two states are stated by FM-04: still being built, and submitted for verification. Verification outcomes are the
+/// Verification module's (conflict C-03).
+enum WorkerOnboardingStatus {
+  DRAFT
+  SUBMITTED
+}
+
+/// FR-WP-006 (FRD: a single "Select"). Part of the Availability data.
+enum EngagementPreference {
+  FULL_TIME
+  PART_TIME
+  LIVE_IN
+}
+
+/// One per worker user. Every field except `name` is nullable because onboarding saves progress step by step; grouped
+/// fields (address, emergency contact, previous employer) are all-or-none (migration CHECKs). `profilePhotoRef` is a
+/// storage object key set only by the server (no upload integration exists yet) and is never returned by any API.
+model WorkerProfile {
+  id                     String                 @id @default(uuid(7)) @db.Uuid
+  userId                 String                 @unique @map("user_id") @db.Uuid
+  name                   String
+  onboardingStatus       WorkerOnboardingStatus @default(DRAFT) @map("onboarding_status")
+  submittedAt            DateTime?              @map("submitted_at") @db.Timestamptz(6)
+  /// Total months. FRD says "whole years/months", so the lossless unit is stored.
+  experienceMonths       Int?                   @map("experience_months")
+  /// Rupees. The period (monthly/daily/hourly) is not defined by the specs (open decision).
+  expectedSalary         Decimal?               @map("expected_salary") @db.Decimal(12, 2)
+  addressLine            String?                @map("address_line")
+  addressArea            String?                @map("address_area")
+  addressCity            String?                @map("address_city")
+  addressPincode         String?                @map("address_pincode")
+  emergencyContactName   String?                @map("emergency_contact_name")
+  emergencyContactMobile String?                @map("emergency_contact_mobile")
+  previousEmployerName   String?                @map("previous_employer_name")
+  previousEmployerMobile String?                @map("previous_employer_mobile")
+  profilePhotoRef        String?                @map("profile_photo_ref")
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user               User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  skills             WorkerSkill[]
+  languages          WorkerLanguage[]
+  preferredAreas     WorkerPreferredArea[]
+  timeWindows        WorkerTimeWindow[]
+  workPreference     WorkerWorkPreference?
+  verificationChecks WorkerVerificationCheck[]
+  bookings           Booking[]
+  attendance         AttendanceRecord[]
+  ratings            Rating[]
+  ratingSummary      WorkerRatingSummary?
+
+  @@index([onboardingStatus, createdAt])
+  @@map("worker_profiles")
+}
+
+/// Roles the worker offers (FR-WP-001). The reverse index serves "workers for category X".
+model WorkerSkill {
+  workerId   String   @map("worker_id") @db.Uuid
+  categoryId String   @map("category_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  worker   WorkerProfile   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  category ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([workerId, categoryId])
+  @@index([categoryId])
+  @@map("worker_skills")
+}
+
+/// Language codes (FR-WP-002). The catalogue is not defined by the specs: format-checked, optional allow-list.
+model WorkerLanguage {
+  workerId     String @map("worker_id") @db.Uuid
+  languageCode String @map("language_code")
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@id([workerId, languageCode])
+  @@map("worker_languages")
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Availability (FR-WP-003/005/006): engagement preference, preferred service areas, time-of-day windows.
+// ---------------------------------------------------------------------------------------------------------------
+
+model WorkerWorkPreference {
+  workerId             String               @id @map("worker_id") @db.Uuid
+  engagementPreference EngagementPreference @map("engagement_preference")
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@map("worker_work_preferences")
+}
+
+/// Preferred work locations (FR-WP-003). The reverse index serves "workers who work in area X".
+model WorkerPreferredArea {
+  workerId  String   @map("worker_id") @db.Uuid
+  areaId    String   @map("area_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  area   ServiceArea   @relation(fields: [areaId], references: [id], onDelete: Restrict)
+
+  @@id([workerId, areaId])
+  @@index([areaId])
+  @@map("worker_preferred_areas")
+}
+
+/// Available timings (FR-WP-005): daily time-of-day windows in minutes after local midnight (India, one timezone), as
+/// [start, end). The specs mention no weekdays, so none are modelled (open decision). The migration adds CHECKs
+/// (0 <= start < end <= 1440) and a GiST exclusion constraint that forbids overlapping windows for one worker.
+model WorkerTimeWindow {
+  id          String @id @default(uuid(7)) @db.Uuid
+  workerId    String @map("worker_id") @db.Uuid
+  startMinute Int    @map("start_minute") @db.SmallInt
+  endMinute   Int    @map("end_minute") @db.SmallInt
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@map("worker_time_windows")
+}
+
+/// Check types from FRD FM-05 (PROPOSED list, conflict C-03 / Q-04). Mobile OTP is verified by Auth at login and is not a check here.
+enum VerificationCheckType {
+  IDENTITY
+  ADDRESS
+  EMERGENCY_CONTACT
+  PREVIOUS_EMPLOYMENT
+  POLICE_VERIFICATION
+}
+
+/// FRD section 5 status model (PROPOSED). "Not Submitted" is the draft state of an existing row; "Recheck Due" is not stored:
+/// it is APPROVED with recheck_at reached, derived at read time so no scheduler is needed.
+enum VerificationCheckStatus {
+  NOT_SUBMITTED
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum VerificationDocumentStatus {
+  PENDING_UPLOAD
+  UPLOADED
+}
+
+/// The set of checks that must all be APPROVED before a worker counts as verified (FRD section 5: "configurable by operations").
+/// A row means "required". Empty set = nobody can be verified (fail closed; Q-04 is open, nothing is seeded).
+model VerificationRequirement {
+  checkType VerificationCheckType @id @map("check_type")
+  createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("verification_requirements")
+}
+
+/// One row per worker and check type (current state). Previous attempts stay in worker_verification_events and in the
+/// documents of earlier submissions (FM-05: "previous attempts stay in history").
+model WorkerVerificationCheck {
+  id             String                  @id @default(uuid(7)) @db.Uuid
+  workerId       String                  @map("worker_id") @db.Uuid
+  checkType      VerificationCheckType   @map("check_type")
+  status         VerificationCheckStatus @default(NOT_SUBMITTED)
+  submittedAt    DateTime?               @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt     DateTime?               @map("reviewed_at") @db.Timestamptz(6)
+  reviewerUserId String?                 @map("reviewer_user_id") @db.Uuid
+  remarks        String?
+  /// Date (India) on which an approval stops counting and a re-check is due. Optional (FM-05).
+  recheckAt      DateTime?               @map("recheck_at") @db.Date
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  worker    WorkerProfile             @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  reviewer  User?                     @relation("VerificationReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
+  documents VerificationDocument[]
+  events    WorkerVerificationEvent[]
+
+  @@unique([workerId, checkType])
+  @@index([status, submittedAt])
+  @@map("worker_verification_checks")
+}
+
+/// Append-only history of every status change with actor and time (FR-VER-010).
+model WorkerVerificationEvent {
+  id          String                   @id @default(uuid(7)) @db.Uuid
+  checkId     String                   @map("check_id") @db.Uuid
+  fromStatus  VerificationCheckStatus? @map("from_status")
+  toStatus    VerificationCheckStatus  @map("to_status")
+  actorUserId String                   @map("actor_user_id") @db.Uuid
+  remarks     String?
+  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  check WorkerVerificationCheck @relation(fields: [checkId], references: [id], onDelete: Restrict)
+  actor User                    @relation("VerificationEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([checkId, createdAt])
+  @@map("worker_verification_events")
+}
+
+/// Document METADATA. The bytes live in private object storage; object_key is internal and never leaves the backend.
+model VerificationDocument {
+  id          String                     @id @default(uuid(7)) @db.Uuid
+  checkId     String                     @map("check_id") @db.Uuid
+  objectKey   String                     @unique @map("object_key")
+  contentType String                     @map("content_type")
+  sizeBytes   Int                        @map("size_bytes")
+  status      VerificationDocumentStatus @default(PENDING_UPLOAD)
+  uploadedAt  DateTime?                  @map("uploaded_at") @db.Timestamptz(6)
+  /// Set when the document is included in a submission; null = still part of the worker's open draft.
+  submittedAt DateTime?                  @map("submitted_at") @db.Timestamptz(6)
+  createdAt   DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  check WorkerVerificationCheck @relation(fields: [checkId], references: [id], onDelete: Restrict)
+
+  @@index([checkId, createdAt])
+  @@map("verification_documents")
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Booking, Payment, Notifications, Attendance, Replacement (Modules 10-14)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// FRD section 4 booking state model (PROPOSED; conflict C-02 / Q-05 is open). Booking and engagement are one entity here (Q-15).
+enum BookingStatus {
+  NEW_REQUEST
+  MATCHED
+  INTERVIEW_TRIAL_SCHEDULED
+  INTERVIEW_TRIAL_COMPLETED
+  PENDING_PAYMENT
+  CONFIRMED
+  ACTIVE
+  REPLACEMENT_REQUESTED
+  REPLACED
+  COMPLETED
+  CANCELLED
+}
+
+enum ScheduleType {
+  INTERVIEW
+  TRIAL
+}
+
+/// A customer requirement and, once matched, the worker engaged for it. Timings are minutes after local midnight (India) like Availability.
+model Booking {
+  id                String               @id @default(uuid(7)) @db.Uuid
+  customerUserId    String               @map("customer_user_id") @db.Uuid
+  workerId          String?              @map("worker_id") @db.Uuid
+  categoryId        String               @map("category_id") @db.Uuid
+  areaId            String               @map("area_id") @db.Uuid
+  engagement        EngagementPreference
+  fromMinute        Int                  @map("from_minute") @db.SmallInt
+  toMinute          Int                  @map("to_minute") @db.SmallInt
+  status            BookingStatus        @default(NEW_REQUEST)
+  scheduleType      ScheduleType?        @map("schedule_type")
+  scheduledAt       DateTime?            @map("scheduled_at") @db.Timestamptz(6)
+  outcomeNote       String?              @map("outcome_note")
+  startDate         DateTime?            @map("start_date") @db.Date
+  cancelReason      String?              @map("cancel_reason")
+  cancelledAt       DateTime?            @map("cancelled_at") @db.Timestamptz(6)
+  cancelledByUserId String?              @map("cancelled_by_user_id") @db.Uuid
+  /// Set on a booking created by the Replacement workflow: the booking it replaces.
+  replacesBookingId String?              @unique @map("replaces_booking_id") @db.Uuid
+  idempotencyKey    String?              @map("idempotency_key")
+  requestHash       String?              @map("request_hash")
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer            User                 @relation("BookingCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  cancelledBy         User?                @relation("BookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  worker              WorkerProfile?       @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  category            ServiceCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  area                ServiceArea          @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  replaces            Booking?             @relation("BookingReplacement", fields: [replacesBookingId], references: [id], onDelete: Restrict)
+  replacedBy          Booking?             @relation("BookingReplacement")
+  events              BookingEvent[]
+  payments            Payment[]
+  attendance          AttendanceRecord[]
+  replacementRequests ReplacementRequest[] @relation("ReplacementOriginal")
+  replacementFor      ReplacementRequest?  @relation("ReplacementNew")
+  rating              Rating?
+  tickets             SupportTicket[]
+
+  @@unique([customerUserId, idempotencyKey])
+  @@index([customerUserId, createdAt])
+  @@index([workerId, status])
+  @@index([status, createdAt])
+  @@map("bookings")
+}
+
+/// Append-only timeline: every transition with actor and time (FR-BK-007, FRD section 4).
+model BookingEvent {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  bookingId   String         @map("booking_id") @db.Uuid
+  fromStatus  BookingStatus? @map("from_status")
+  toStatus    BookingStatus  @map("to_status")
+  actorUserId String?        @map("actor_user_id") @db.Uuid
+  /// CUSTOMER | WORKER | ADMIN | SYSTEM
+  actorKind   String         @map("actor_kind")
+  note        String?
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  actor   User?   @relation("BookingEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, createdAt])
+  @@map("booking_events")
+}
+
+/// C-05: vocabulary follows the architecture document (CREATED/PENDING/SUCCESS/FAILED/REFUND_*) with SUCCEEDED spelled out; confirm with the client.
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+  REFUND_FAILED
+}
+
+/// Admin-configured fee (FRD FM-07: from fee configuration, never hard-coded). Empty until an administrator sets it (Q-01).
+model FeeConfig {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  code        String   @unique
+  amountMinor Int      @map("amount_minor")
+  currency    String   @default("INR")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("fee_configs")
+}
+
+model Payment {
+  id                String        @id @default(uuid(7)) @db.Uuid
+  bookingId         String        @map("booking_id") @db.Uuid
+  customerUserId    String        @map("customer_user_id") @db.Uuid
+  feeCode           String        @map("fee_code")
+  amountMinor       Int           @map("amount_minor")
+  currency          String
+  status            PaymentStatus @default(CREATED)
+  providerOrderId   String?       @unique @map("provider_order_id")
+  providerPaymentId String?       @unique @map("provider_payment_id")
+  /// Data the client SDK needs to open the checkout. Public provider data only, never a secret.
+  checkoutPayload   Json?         @map("checkout_payload")
+  receiptNumber     String?       @unique @map("receipt_number")
+  paidAt            DateTime?     @map("paid_at") @db.Timestamptz(6)
+  failureReason     String?       @map("failure_reason")
+  refundReason      String?       @map("refund_reason")
+  refundProviderId  String?       @map("refund_provider_id")
+  refundedAt        DateTime?     @map("refunded_at") @db.Timestamptz(6)
+  refundedByUserId  String?       @map("refunded_by_user_id") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking    Booking        @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  customer   User           @relation("PaymentCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  refundedBy User?          @relation("PaymentRefundedBy", fields: [refundedByUserId], references: [id], onDelete: Restrict)
+  events     PaymentEvent[]
+
+  @@index([customerUserId, createdAt])
+  @@index([bookingId])
+  @@index([status, createdAt])
+  @@map("payments")
+}
+
+/// One row per provider notification received: duplicate webhooks become harmless and there is a reconciliation trail.
+model PaymentEvent {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  providerEventId String   @unique @map("provider_event_id")
+  paymentId       String?  @map("payment_id") @db.Uuid
+  outcome         String
+  applied         Boolean
+  note            String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@map("payment_events")
+}
+
+enum NotificationChannel {
+  PUSH
+  SMS
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+/// Transactional outbox: written in the same transaction as the business change, consumed by Notifications.
+model OutboxEvent {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  topic       String
+  payload     Json
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+
+  notifications Notification[]
+
+  @@map("outbox_events")
+}
+
+/// Admin-configurable wording and enabled channels per event (FR-NOT-004). Nothing is seeded: wording is not specified.
+model NotificationTemplate {
+  id        String              @id @default(uuid(7)) @db.Uuid
+  eventCode String              @map("event_code")
+  channel   NotificationChannel
+  language  String              @default("en")
+  title     String?
+  body      String
+  isActive  Boolean             @default(true) @map("is_active")
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  notifications Notification[]
+
+  @@unique([eventCode, channel, language])
+  @@map("notification_templates")
+}
+
+/// Channel, template and delivery status per recipient (FR-NOT-005). dedupe_key makes retries and replays harmless.
+model Notification {
+  id                String              @id @default(uuid(7)) @db.Uuid
+  outboxEventId     String              @map("outbox_event_id") @db.Uuid
+  recipientUserId   String              @map("recipient_user_id") @db.Uuid
+  eventCode         String              @map("event_code")
+  channel           NotificationChannel
+  templateId        String?             @map("template_id") @db.Uuid
+  params            Json
+  status            NotificationStatus  @default(QUEUED)
+  attempts          Int                 @default(0)
+  lastError         String?             @map("last_error")
+  providerMessageId String?             @map("provider_message_id")
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(6)
+  dedupeKey         String              @unique @map("dedupe_key")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  outboxEvent OutboxEvent           @relation(fields: [outboxEventId], references: [id], onDelete: Restrict)
+  recipient   User                  @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+  template    NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([recipientUserId, createdAt])
+  @@map("notifications")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCEPTION
+}
+
+/// Who made an entry: a worker, a customer (raising an exception) or an administrator (FRD FM-09).
+enum ActorKind {
+  WORKER
+  CUSTOMER
+  ADMIN
+}
+
+/// Status-based attendance per booking and date (FR-ATT-001..003). One row per (booking, date); changes live in attendance_events.
+model AttendanceRecord {
+  id               String           @id @default(uuid(7)) @db.Uuid
+  bookingId        String           @map("booking_id") @db.Uuid
+  workerId         String           @map("worker_id") @db.Uuid
+  date             DateTime         @db.Date
+  status           AttendanceStatus
+  note             String?
+  recordedByUserId String           @map("recorded_by_user_id") @db.Uuid
+  recordedByKind   ActorKind        @map("recorded_by_kind")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking    Booking           @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  worker     WorkerProfile     @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  recordedBy User              @relation("AttendanceRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  events     AttendanceEvent[]
+
+  @@unique([bookingId, date])
+  @@index([workerId, date])
+  @@map("attendance_records")
+}
+
+/// Append-only: the first entry and every later correction, with actor and reason.
+model AttendanceEvent {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  recordId    String            @map("record_id") @db.Uuid
+  fromStatus  AttendanceStatus? @map("from_status")
+  toStatus    AttendanceStatus  @map("to_status")
+  note        String?
+  reason      String?
+  actorUserId String            @map("actor_user_id") @db.Uuid
+  actorKind   ActorKind         @map("actor_kind")
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  record AttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Restrict)
+  actor  User             @relation("AttendanceEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([recordId, createdAt])
+  @@map("attendance_events")
+}
+
+enum ReplacementStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+/// FR-REP-001..008: reason, review, approval and the replacement booking. Eligibility beyond "the booking is ACTIVE" is undefined (Q-09).
+model ReplacementRequest {
+  id                   String            @id @default(uuid(7)) @db.Uuid
+  bookingId            String            @map("booking_id") @db.Uuid
+  requestedByUserId    String            @map("requested_by_user_id") @db.Uuid
+  reason               String
+  notes                String?
+  status               ReplacementStatus @default(REQUESTED)
+  decidedByUserId      String?           @map("decided_by_user_id") @db.Uuid
+  decidedAt            DateTime?         @map("decided_at") @db.Timestamptz(6)
+  decisionRemarks      String?           @map("decision_remarks")
+  replacementBookingId String?           @unique @map("replacement_booking_id") @db.Uuid
+  completedAt          DateTime?         @map("completed_at") @db.Timestamptz(6)
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking            Booking  @relation("ReplacementOriginal", fields: [bookingId], references: [id], onDelete: Restrict)
+  replacementBooking Booking? @relation("ReplacementNew", fields: [replacementBookingId], references: [id], onDelete: Restrict)
+  requestedBy        User     @relation("ReplacementRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decidedBy          User?    @relation("ReplacementDecider", fields: [decidedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId])
+  @@index([requestedByUserId, createdAt])
+  @@index([status, createdAt])
+  @@map("replacement_requests")
+}
+
+enum RatingStatus {
+  VISIBLE
+  HIDDEN
+}
+
+/// FR-RAT-001..004: a customer's rating of the worker of ONE completed booking (at most one per booking). HIDDEN = moderated by an admin (FRD FM-10).
+model Rating {
+  id                String       @id @default(uuid(7)) @db.Uuid
+  bookingId         String       @unique @map("booking_id") @db.Uuid
+  customerUserId    String       @map("customer_user_id") @db.Uuid
+  workerId          String       @map("worker_id") @db.Uuid
+  /// 1..RATING_SCALE_MAX (the upper bound is configuration, Q-58).
+  score             Int          @db.SmallInt
+  reviewText        String?      @map("review_text")
+  status            RatingStatus @default(VISIBLE)
+  moderatedByUserId String?      @map("moderated_by_user_id") @db.Uuid
+  moderatedAt       DateTime?    @map("moderated_at") @db.Timestamptz(6)
+  moderationReason  String?      @map("moderation_reason")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking     Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  customer    User          @relation("RatingCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  worker      WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  moderatedBy User?         @relation("RatingModerator", fields: [moderatedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([workerId, status, createdAt])
+  @@index([customerUserId, createdAt])
+  @@index([status, createdAt])
+  @@map("ratings")
+}
+
+/// Maintained atomically with every VISIBLE rating change so profile/report reads never scan ratings (FR-RAT-003).
+model WorkerRatingSummary {
+  workerId    String   @id @map("worker_id") @db.Uuid
+  ratingCount Int      @default(0) @map("rating_count")
+  ratingSum   Int      @default(0) @map("rating_sum")
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Restrict)
+
+  @@map("worker_rating_summaries")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  ESCALATED
+  CLOSED
+}
+
+/// Values are PROPOSED (Q-59): the specs name a priority but no scale.
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+/// "Category: Select from configured list" (FRD FM-12). Admin data; none seeded.
+model SupportCategory {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  code      String   @unique
+  name      String
+  isEnabled Boolean  @default(true) @map("is_enabled")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tickets SupportTicket[]
+
+  @@map("support_categories")
+}
+
+/// FR-SUP-001..006: a ticket raised by a customer or a worker, optionally about one of their own bookings.
+model SupportTicket {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  creatorUserId    String          @map("creator_user_id") @db.Uuid
+  /// CUSTOMER or WORKER only (CHECK).
+  creatorKind      ActorKind       @map("creator_kind")
+  bookingId        String?         @map("booking_id") @db.Uuid
+  categoryId       String          @map("category_id") @db.Uuid
+  description      String
+  priority         TicketPriority?
+  status           TicketStatus    @default(OPEN)
+  assignedToUserId String?         @map("assigned_to_user_id") @db.Uuid
+  assignedAt       DateTime?       @map("assigned_at") @db.Timestamptz(6)
+  escalatedAt      DateTime?       @map("escalated_at") @db.Timestamptz(6)
+  resolution       String?
+  closedAt         DateTime?       @map("closed_at") @db.Timestamptz(6)
+  closedByUserId   String?         @map("closed_by_user_id") @db.Uuid
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  creator    User                 @relation("TicketCreator", fields: [creatorUserId], references: [id], onDelete: Restrict)
+  assignedTo User?                @relation("TicketAssignee", fields: [assignedToUserId], references: [id], onDelete: Restrict)
+  closedBy   User?                @relation("TicketCloser", fields: [closedByUserId], references: [id], onDelete: Restrict)
+  booking    Booking?             @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  category   SupportCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  events     SupportTicketEvent[]
+
+  @@index([creatorUserId, createdAt])
+  @@index([status, createdAt])
+  @@index([assignedToUserId, status])
+  @@index([bookingId])
+  @@index([categoryId, createdAt])
+  @@map("support_tickets")
+}
+
+/// Append-only ticket history (trigger). `internalNote` is staff-only and never shown to the ticket creator.
+model SupportTicketEvent {
+  id           String        @id @default(uuid(7)) @db.Uuid
+  ticketId     String        @map("ticket_id") @db.Uuid
+  type         String
+  fromStatus   TicketStatus? @map("from_status")
+  toStatus     TicketStatus? @map("to_status")
+  actorUserId  String        @map("actor_user_id") @db.Uuid
+  internalNote String?       @map("internal_note")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  actor  User          @relation("TicketEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_events")
 }

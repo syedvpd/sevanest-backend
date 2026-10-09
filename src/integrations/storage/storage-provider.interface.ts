@@ -19,4 +19,6 @@ export interface StorageProvider {
     ttlSeconds: number;
   }): Promise<SignedUrl>;
   createDownloadUrl(input: { objectKey: string; ttlSeconds: number }): Promise<SignedUrl>;
+  /** Server-side check that an object really arrived (a client may skip the upload). null = no such object. */
+  getObjectInfo(objectKey: string): Promise<{ sizeBytes: number } | null>;
 }

@@ -5,6 +5,7 @@ import {
   PERMISSIONS_KEY,
   ROLES_KEY,
 } from '../../../common/decorators/auth.decorators';
+import { SecurityEventService } from '../../../common/audit/security-events.service';
 import { AuthRepository } from '../auth.repository';
 import { AuthorizationService } from '../authorization.service';
 import { TokenService } from '../token.service';
@@ -114,6 +115,9 @@ describe('JwtAuthGuard', () => {
 });
 
 describe('RolesGuard / PermissionsGuard', () => {
+  const events = {
+    accessDenied: jest.fn(() => Promise.resolve()),
+  } as unknown as SecurityEventService;
   const user = { userId: 'u1', sessionId: 's1', type: 'ADMIN' };
   const authorizationWith = (roles: string[], permissions: string[]) => {
     const getRoleAndPermissionCodes = jest.fn(() => Promise.resolve({ roles, permissions }));
@@ -126,18 +130,22 @@ describe('RolesGuard / PermissionsGuard', () => {
   it('allow routes that declare no requirement', async () => {
     const { service } = authorizationWith([], []);
     await expect(
-      new RolesGuard(reflectorFor({}), service).canActivate(context({ headers: {} })),
+      new RolesGuard(reflectorFor({}), service, events).canActivate(context({ headers: {} })),
     ).resolves.toBe(true);
     await expect(
-      new PermissionsGuard(reflectorFor({}), service).canActivate(context({ headers: {} })),
+      new PermissionsGuard(reflectorFor({}), service, events).canActivate(context({ headers: {} })),
     ).resolves.toBe(true);
   });
 
   it('RolesGuard: requires any listed role', async () => {
     const { service } = authorizationWith(['support'], []);
-    const guard = new RolesGuard(reflectorFor({ [ROLES_KEY]: ['admin', 'support'] }), service);
+    const guard = new RolesGuard(
+      reflectorFor({ [ROLES_KEY]: ['admin', 'support'] }),
+      service,
+      events,
+    );
     await expect(guard.canActivate(context({ headers: {}, user }))).resolves.toBe(true);
-    const denied = new RolesGuard(reflectorFor({ [ROLES_KEY]: ['admin'] }), service);
+    const denied = new RolesGuard(reflectorFor({ [ROLES_KEY]: ['admin'] }), service, events);
     await expect(denied.canActivate(context({ headers: {}, user }))).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
@@ -148,11 +156,13 @@ describe('RolesGuard / PermissionsGuard', () => {
     const ok = new PermissionsGuard(
       reflectorFor({ [PERMISSIONS_KEY]: ['a.read', 'a.write'] }),
       service,
+      events,
     );
     await expect(ok.canActivate(context({ headers: {}, user }))).resolves.toBe(true);
     const partial = new PermissionsGuard(
       reflectorFor({ [PERMISSIONS_KEY]: ['a.read', 'b.write'] }),
       service,
+      events,
     );
     await expect(partial.canActivate(context({ headers: {}, user }))).rejects.toMatchObject({
       code: 'FORBIDDEN',
@@ -161,10 +171,33 @@ describe('RolesGuard / PermissionsGuard', () => {
 
   it('denies (does not crash) when no authenticated user is present', async () => {
     const { service } = authorizationWith([], ['x']);
-    const guard = new PermissionsGuard(reflectorFor({ [PERMISSIONS_KEY]: ['x'] }), service);
+    const guard = new PermissionsGuard(reflectorFor({ [PERMISSIONS_KEY]: ['x'] }), service, events);
     await expect(guard.canActivate(context({ headers: {} }))).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
+  });
+
+  it('records an access-denied event for a refused role or permission, never for an allowed call', async () => {
+    const { service } = authorizationWith(['r'], ['a.read']);
+    (events.accessDenied as jest.Mock).mockClear();
+    const allowed = new PermissionsGuard(
+      reflectorFor({ [PERMISSIONS_KEY]: ['a.read'] }),
+      service,
+      events,
+    );
+    await allowed.canActivate(context({ headers: {}, user }));
+    expect(events.accessDenied).not.toHaveBeenCalled();
+    const denied = new PermissionsGuard(
+      reflectorFor({ [PERMISSIONS_KEY]: ['b.write'] }),
+      service,
+      events,
+    );
+    await denied.canActivate(context({ headers: {}, user })).catch(() => undefined);
+    const deniedRole = new RolesGuard(reflectorFor({ [ROLES_KEY]: ['admin'] }), service, events);
+    await deniedRole.canActivate(context({ headers: {}, user })).catch(() => undefined);
+    expect(
+      (events.accessDenied as jest.Mock).mock.calls.map((c: unknown[]) => c[1] as string),
+    ).toEqual(['PERMISSION', 'ROLE']);
   });
 
   it('does not reveal which permission was missing', async () => {
@@ -172,6 +205,7 @@ describe('RolesGuard / PermissionsGuard', () => {
     const guard = new PermissionsGuard(
       reflectorFor({ [PERMISSIONS_KEY]: ['payment.refund'] }),
       service,
+      events,
     );
     const error = await guard.canActivate(context({ headers: {}, user })).catch((e: Error) => e);
     expect(
