@@ -289,6 +289,39 @@ describe('validateEnvironment', () => {
       });
     });
 
+    describe('staging test OTP', () => {
+      const on = {
+        ...production,
+        ALLOW_TEST_OTP: 'true',
+        TEST_OTP_NUMBERS: '+919999900001, +919999900002',
+        TEST_OTP_CODE: '123456',
+      };
+
+      it('is off by default and needs numbers and a code when switched on (no default code)', () => {
+        expect(validateEnvironment(production).ALLOW_TEST_OTP).toBe(false);
+        expect(() => validateEnvironment({ ...on, TEST_OTP_CODE: undefined })).toThrow(
+          'TEST_OTP_CODE',
+        );
+        expect(() => validateEnvironment({ ...on, TEST_OTP_NUMBERS: undefined })).toThrow(
+          'TEST_OTP_NUMBERS',
+        );
+        expect(() => validateEnvironment({ ...on, TEST_OTP_NUMBERS: '9999900001' })).toThrow(
+          'TEST_OTP_NUMBERS',
+        );
+        expect(() => validateEnvironment({ ...on, TEST_OTP_CODE: '12345' })).toThrow('OTP_LENGTH');
+      });
+
+      it('warns loudly when on', () => {
+        const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+        try {
+          expect(validateEnvironment(on).ALLOW_TEST_OTP).toBe(true);
+          expect(warn.mock.calls.some((c) => String(c[0]).includes('ALLOW_TEST_OTP'))).toBe(true);
+        } finally {
+          warn.mockRestore();
+        }
+      });
+    });
+
     it('rejects an unknown SMS provider and an out-of-range OTP length', () => {
       expect(() => validateEnvironment({ ...production, SMS_PROVIDER: 'carrier-pigeon' })).toThrow(
         'SMS_PROVIDER',

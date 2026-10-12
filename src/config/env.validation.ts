@@ -518,6 +518,30 @@ export class EnvironmentVariables {
   @MinLength(50)
   FCM_SERVICE_ACCOUNT_JSON?: string;
 
+  /**
+   * STAGING/DEMO ONLY. When true, the mobile numbers in TEST_OTP_NUMBERS log in with the fixed TEST_OTP_CODE and no SMS is sent
+   * (so the apps can be tested before an SMS provider exists). Every other number behaves exactly as without it. Everything else
+   * about the OTP (cooldown, attempt limit, lockout, expiry, single use) is unchanged. Never enable it for real users.
+   */
+  @Transform(toBoolean)
+  @IsBoolean()
+  ALLOW_TEST_OTP: boolean = false;
+
+  /** Comma-separated E.164 numbers, e.g. +919999900001,+919999900002. Required when ALLOW_TEST_OTP=true. */
+  @ValidateIf((o: EnvironmentVariables) => o.ALLOW_TEST_OTP)
+  @IsString()
+  @Matches(/^\+[1-9]\d{9,14}(,\s*\+[1-9]\d{9,14})*$/, {
+    message:
+      'TEST_OTP_NUMBERS must be a comma-separated list of E.164 numbers such as +919999900001',
+  })
+  TEST_OTP_NUMBERS?: string;
+
+  /** The fixed code (exactly OTP_LENGTH digits). Required when ALLOW_TEST_OTP=true; there is deliberately no default. */
+  @ValidateIf((o: EnvironmentVariables) => o.ALLOW_TEST_OTP)
+  @IsString()
+  @Matches(/^\d{4,10}$/, { message: 'TEST_OTP_CODE must be 4 to 10 digits' })
+  TEST_OTP_CODE?: string;
+
   /** Number of reverse-proxy hops in front of the API (0 = none). Needed for correct client IPs behind a load balancer. */
   @Type(() => Number)
   @IsInt()
@@ -556,6 +580,17 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
         cause: error,
       });
     }
+  }
+  if (config.ALLOW_TEST_OTP) {
+    if (config.TEST_OTP_CODE!.length !== config.OTP_LENGTH) {
+      throw new Error(
+        'Invalid environment configuration: TEST_OTP_CODE must have exactly OTP_LENGTH digits',
+      );
+    }
+    process.emitWarning(
+      'ALLOW_TEST_OTP=true: the numbers in TEST_OTP_NUMBERS log in with a FIXED code and no SMS. Staging/demo only - turn it off for real users',
+      'ConfigWarning',
+    );
   }
   if (
     config.PENDING_PAYMENT_ALERT_HOURS !== undefined &&

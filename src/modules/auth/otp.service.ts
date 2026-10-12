@@ -106,13 +106,23 @@ export class OtpService {
       );
     }
 
-    const code = this.generateCode();
+    // Staging/demo only: an allow-listed number gets the configured fixed code and nothing is sent (ALLOW_TEST_OTP).
+    const testCode = this.config.testOtpCodeFor(mobile);
+    const code = testCode ?? this.generateCode();
     await redis
       .multi()
       .del(keys.code)
       .hset(keys.code, 'h', this.hashCode(mobile, code), 'a', '0')
       .expire(keys.code, this.settings.ttlSeconds)
       .exec();
+
+    if (testCode) {
+      this.logger.warn('Test OTP issued for an allow-listed number (no SMS sent)');
+      return {
+        expiresInSeconds: this.settings.ttlSeconds,
+        resendAfterSeconds: this.settings.resendCooldownSeconds,
+      };
+    }
 
     try {
       await this.sms.sendSms({

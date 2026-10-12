@@ -95,6 +95,12 @@ export class AppConfigService {
   get paymentFakeWebhookSecret(): string {
     return this.get('PAYMENT_FAKE_WEBHOOK_SECRET') ?? '';
   }
+  /** Staging/demo login for allow-listed numbers (see ALLOW_TEST_OTP). Returns the fixed code for such a number, else null. */
+  testOtpCodeFor(mobile: string): string | null {
+    if (!this.get('ALLOW_TEST_OTP')) return null;
+    const numbers = (this.get('TEST_OTP_NUMBERS') ?? '').split(',').map((n) => n.trim());
+    return numbers.includes(mobile) ? (this.get('TEST_OTP_CODE') ?? null) : null;
+  }
   /** Operational thresholds. Every value is optional: unset means the rule is not enforced (nothing is invented). */
   get ops(): {
     workerResponseHours?: number;
