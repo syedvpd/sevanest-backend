@@ -44,6 +44,21 @@ export class UsersRepository {
     });
   }
 
+  findCredentialsById(id: string): Promise<UserCredentialRecord | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { ...PUBLIC_SELECT, passwordHash: true },
+    });
+  }
+
+  async updatePasswordHash(
+    id: string,
+    passwordHash: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.user.update({ where: { id }, data: { passwordHash } });
+  }
+
   create(
     data: { type: UserType; mobile?: string; email?: string; passwordHash?: string },
     db: Db = this.prisma,
@@ -165,6 +180,11 @@ export class UsersRepository {
   /** Serialises every change to who holds the Super Admin role (role changes, last-Super-Admin protection). */
   async lockSuperAdminAssignments(tx: Prisma.TransactionClient): Promise<void> {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('sevanest.super_admin_assignments'))`;
+  }
+
+  /** Every Super Admin assignment, whatever the account status: a suspended Super Admin still means bootstrap already happened. */
+  async superAdminAssignmentCount(tx: Prisma.TransactionClient): Promise<number> {
+    return tx.userRole.count({ where: { role: { code: 'SUPER_ADMIN' } } });
   }
 
   async activeSuperAdminCount(tx: Prisma.TransactionClient): Promise<number> {

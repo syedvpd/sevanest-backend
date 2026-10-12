@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -29,14 +31,18 @@ import {
   CreatePaymentDto,
   CreatePaymentResponse,
   FeeView,
+  FEE_CODE_PATTERN,
+  PaymentExceptionListQuery,
+  PaymentExportQuery,
   PaymentListQuery,
   PaymentView,
   RefundDto,
+  ResolveExceptionDto,
   SetFeeDto,
   VerifyPaymentDto,
   WebhookAck,
 } from './dto/payment.dto';
-import { PaymentActor, PaymentService } from './payment.service';
+import { ExceptionView, PaymentActor, PaymentService } from './payment.service';
 
 /** A customer's own payments (FRD FM-07). The amount is never taken from the client. */
 @ApiTags('Payments')
@@ -137,6 +143,23 @@ export class AdminPaymentsController {
     return this.payments.adminList(query);
   }
 
+  @Get('payments-export')
+  @Permissions(PermissionCode.PAYMENT_VIEW)
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="payments.csv"')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'Payments created in a date range as a CSV file (invoice/reference export)',
+    description:
+      'from and to are required (India dates, at most 366 days apart). At most 5000 rows (413 beyond: shorten the range). Ids and gateway references only - no customer name, mobile or card data. Audited.',
+  })
+  async exportCsv(
+    @Query() query: PaymentExportQuery,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<string> {
+    return this.payments.exportCsv(query, await this.actor(admin));
+  }
+
   @Get('payments/:paymentId')
   @Permissions(PermissionCode.PAYMENT_VIEW)
   @ApiOperation({ summary: 'A payment with the gateway references kept for reconciliation' })
@@ -171,6 +194,45 @@ export class AdminPaymentsController {
     return this.payments.refund(paymentId, dto, await this.actor(admin));
   }
 
+  @Get('payment-exceptions')
+  @Permissions(PermissionCode.PAYMENT_VIEW)
+  @ApiOperation({
+    summary:
+      'Money problems that need a person (late payment for a cancelled booking, mismatch, duplicate, stuck refund)',
+    description:
+      'Each item states the booking and payment state, the amount, the gateway references and the required action. Nothing is refunded automatically (refund policy open, Q-17/Q-21).',
+  })
+  exceptions(@Query() query: PaymentExceptionListQuery): Promise<Page<ExceptionView>> {
+    return this.payments.listExceptions(query);
+  }
+
+  @Post('payment-exceptions/:exceptionId/resolve')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.PAYMENT_MANAGE)
+  @ApiOperation({
+    summary: 'Close a money problem after a person dealt with it (note required; audited)',
+    description:
+      'Moves no money. Refund through POST /admin/payments/{id}/refund first when a refund is due.',
+  })
+  async resolveException(
+    @Param('exceptionId', ParseUUIDPipe) exceptionId: string,
+    @Body() dto: ResolveExceptionDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<ExceptionView> {
+    return this.payments.resolveException(exceptionId, dto.note, await this.actor(admin));
+  }
+
+  @Get('payment-recovery/summary')
+  @Permissions(PermissionCode.PAYMENT_VIEW)
+  @ApiOperation({
+    summary: 'Recovery queue health: checks due, open money problems, webhooks without an order',
+    description:
+      'A growing "dueForCheck" with an old "oldestDueSeconds" means the worker process is not running.',
+  })
+  recovery(): ReturnType<PaymentService['recoverySummary']> {
+    return this.payments.recoverySummary();
+  }
+
   @Get('fees')
   @Permissions(PermissionCode.PAYMENT_VIEW)
   @ApiOperation({ summary: 'Configured fees (empty until an administrator sets them, Q-01)' })
@@ -188,6 +250,25 @@ export class AdminPaymentsController {
     @CurrentUser() admin: AuthenticatedUser,
   ): Promise<FeeView> {
     return this.payments.setFee(BOOKING_FEE_CODE, dto, await this.actor(admin));
+  }
+
+  @Put('fees/:code')
+  @Permissions(PermissionCode.PAYMENT_MANAGE)
+  @ApiOperation({
+    summary:
+      'Set any configured fee by code (placement, verification, replacement plan ...); audited with before and after',
+    description:
+      'Fee values are configuration (PRD 10). Only BOOKING_FEE is charged by the current flows; other codes are stored for the revenue models the business enables later.',
+  })
+  async setFee(
+    @Param('code') code: string,
+    @Body() dto: SetFeeDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<FeeView> {
+    if (!FEE_CODE_PATTERN.test(code)) {
+      throw new BadRequestException('code must be upper case letters, digits and underscores');
+    }
+    return this.payments.setFee(code, dto, await this.actor(admin));
   }
 
   private async actor(admin: AuthenticatedUser): Promise<PaymentActor> {

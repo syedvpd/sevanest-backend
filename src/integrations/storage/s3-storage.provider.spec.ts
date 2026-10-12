@@ -54,9 +54,9 @@ describe('S3StorageProvider', () => {
     const send = jest.spyOn(client, 'send');
     send.mockRejectedValueOnce(notFound());
     expect(await provider.getObjectInfo('kyc/missing')).toBeNull();
-    send.mockResolvedValueOnce({ ContentLength: 1234 } as never);
+    send.mockResolvedValueOnce({ ContentLength: 1234 });
     expect(await provider.getObjectInfo('kyc/present')).toEqual({ sizeBytes: 1234 });
-    send.mockResolvedValueOnce({} as never);
+    send.mockResolvedValueOnce({});
     expect(await provider.getObjectInfo('kyc/no-length')).toEqual({ sizeBytes: 0 });
     send.mockRestore();
   });

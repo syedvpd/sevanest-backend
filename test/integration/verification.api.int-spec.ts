@@ -1,5 +1,6 @@
 import '../support/env-api-integration';
 import request from 'supertest';
+import { buildSampleFile } from '../../src/integrations/storage/file-signature';
 import {
   ApiApp,
   bearer,
@@ -102,7 +103,7 @@ describe('Verification API (integration)', () => {
       await as(api, admin)
         .patch(`/api/v1/admin/users/${worker.userId}/status`, { status: 'SUSPENDED' })
         .expect(200);
-      expect((await as(api, worker).get(V)).status).toBe(401);
+      expect((await as(api, worker).get(V)).status).toBe(403);
     });
   });
 
@@ -150,29 +151,105 @@ describe('Verification API (integration)', () => {
       ).toBe(400);
     });
 
-    it('confirms only a document that really arrived, repeats safely, and refuses a larger object than declared', async () => {
+    it('confirms only a document that really arrived at exactly the declared size, repeats safely, and discards a wrong-sized object', async () => {
       const worker = await submittedWorker();
-      const res = await as(api, worker).post(`${V}/checks/IDENTITY/documents`, {
-        contentType: 'application/pdf',
-        sizeBytes: 1000,
-      });
+      const request = () =>
+        as(api, worker).post(`${V}/checks/IDENTITY/documents`, {
+          contentType: 'application/pdf',
+          sizeBytes: 1000,
+        });
+      const res = await request();
       const id = res.body.documentId as string;
       const key = api.storage.issuedUploads.at(-1)!.objectKey;
-      const confirm = () => as(api, worker).post(`${V}/documents/${id}/confirm`);
+      const confirm = (docId = id) => as(api, worker).post(`${V}/documents/${docId}/confirm`);
       const early = await confirm();
       expect(early.status).toBe(422);
       expect(early.body.code).toBe('DOCUMENT_NOT_UPLOADED');
+      expect(api.storage.deleted).not.toContain(key); // nothing arrived, nothing to discard
+
+      // Larger than declared (a presigned PUT cannot cap the size): refused AND removed from the bucket.
       api.storage.simulateUpload(key, 5000);
       expect((await confirm()).status).toBe(422);
-      api.storage.simulateUpload(key, 900);
-      const ok = await confirm();
+      expect(api.storage.has(key)).toBe(false);
+      expect(api.storage.deleted).toContain(key);
+      expect(
+        await api.prisma.verificationDocument.findUniqueOrThrow({ where: { id } }),
+      ).toMatchObject({ status: 'PENDING_UPLOAD', rejectionCode: 'SIZE_MISMATCH' });
+      // The rejected slot stays rejected even if something is uploaded to its key again.
+      api.storage.simulateUpload(key, 1000);
+      expect((await confirm()).status).toBe(422);
+
+      // Truncated upload (smaller than declared) is refused too.
+      const second = await request();
+      const key2 = api.storage.issuedUploads.at(-1)!.objectKey;
+      api.storage.simulateUpload(key2, 900);
+      expect((await confirm(second.body.documentId as string)).status).toBe(422);
+      expect(api.storage.has(key2)).toBe(false);
+
+      // An honest upload of exactly the declared size is accepted, once.
+      const third = await request();
+      const thirdId = third.body.documentId as string;
+      const key3 = api.storage.issuedUploads.at(-1)!.objectKey;
+      api.storage.simulateUpload(key3, 1000);
+      const ok = await confirm(thirdId);
       expect(ok.status).toBe(200);
-      expect(ok.body.checks[0].documents[0].status).toBe('UPLOADED');
-      expect((await confirm()).status).toBe(200);
+      expect(
+        ok.body.checks[0].documents.some((d: { status: string }) => d.status === 'UPLOADED'),
+      ).toBe(true);
+      expect((await confirm(thirdId)).status).toBe(200);
+      const stored = await api.prisma.verificationDocument.findUniqueOrThrow({
+        where: { id: thirdId },
+      });
+      expect(stored.contentSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(stored.storageEtag).toBeTruthy();
+      expect(api.storage.has(key3)).toBe(true); // a confirmed document is never discarded
       const audits = await api.prisma.auditLog.count({
-        where: { action: 'verification.document_confirm', entityId: id },
+        where: { action: 'verification.document_confirm', entityId: thirdId },
       });
       expect(audits).toBe(1);
+    });
+
+    it('rejects an uploaded file whose content does not match the declared type (client MIME is not trusted)', async () => {
+      const worker = await submittedWorker();
+      const request = async () => {
+        const res = await as(api, worker).post(`${V}/checks/IDENTITY/documents`, {
+          contentType: 'application/pdf',
+          sizeBytes: 100,
+        });
+        return {
+          id: res.body.documentId as string,
+          key: api.storage.issuedUploads.at(-1)!.objectKey,
+        };
+      };
+      const confirm = (docId: string) => as(api, worker).post(`${V}/documents/${docId}/confirm`);
+      // an HTML/script payload declared as a PDF, and a JPEG declared as a PDF: each is refused and discarded
+      for (const content of [
+        Buffer.concat([Buffer.from('<html><script>x</script>'), Buffer.alloc(76, 0x20)]),
+        Buffer.concat([
+          Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+          Buffer.alloc(94),
+          Buffer.from([0xff, 0xd9]),
+        ]),
+      ]) {
+        const { id, key } = await request();
+        api.storage.simulateUpload(key, 100, content);
+        const bad = await confirm(id);
+        expect(bad.status).toBe(422);
+        expect(bad.body.code).toBe('DOCUMENT_CONTENT_MISMATCH');
+        expect(api.storage.has(key)).toBe(false);
+        const row = await api.prisma.verificationDocument.findUniqueOrThrow({ where: { id } });
+        expect(row).toMatchObject({ status: 'PENDING_UPLOAD', rejectionCode: 'CONTENT_SIGNATURE' });
+        expect(row.purgedAt).not.toBeNull();
+        expect(
+          await api.prisma.auditLog.count({
+            where: { action: 'verification.document_content_rejected', entityId: id },
+          }),
+        ).toBe(1);
+      }
+      // an honest re-upload of a real, complete PDF in a fresh slot is accepted
+      const { id, key } = await request();
+      api.storage.simulateUpload(key, 100, buildSampleFile('application/pdf', 100));
+      expect((await confirm(id)).status).toBe(200);
     });
 
     it("hides another worker's document: confirm answers 404 exactly like an unknown id", async () => {

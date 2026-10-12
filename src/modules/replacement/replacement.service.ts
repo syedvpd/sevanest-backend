@@ -152,6 +152,7 @@ export class ReplacementService implements OnModuleInit {
     const known = await this.repository.findById(id);
     if (!known || known.requestedByUserId !== customerUserId) throw this.notFound();
     await this.repository.transaction(async (tx) => {
+      await this.bookings.lockBooking(known.bookingId, tx);
       const request = (await this.repository.lock(id, tx))!;
       if (request.status === 'CANCELLED') return;
       this.requireOpen(request);
@@ -185,6 +186,7 @@ export class ReplacementService implements OnModuleInit {
     }
     try {
       await this.repository.transaction(async (tx) => {
+        await this.bookings.lockBooking(known.bookingId, tx);
         const request = (await this.repository.lock(id, tx))!;
         if (request.status === 'COMPLETED') {
           const done = await this.bookings.getSummary(request.replacementBookingId!);
@@ -302,7 +304,10 @@ export class ReplacementService implements OnModuleInit {
         limit,
       },
       { userId: admin.userId, roles: admin.roles ?? [] },
-      { excludeWorkerId: requirement.workerId ?? undefined },
+      {
+        excludeWorkerId: requirement.workerId ?? undefined,
+        forCustomerUserId: requirement.customerUserId,
+      },
     );
   }
 
@@ -322,8 +327,10 @@ export class ReplacementService implements OnModuleInit {
         [{ field: 'remarks', messages: ['remarks are required to reject'] }],
       );
     }
-    if (!(await this.repository.findById(id))) throw this.notFound();
+    const known = await this.repository.findById(id);
+    if (!known) throw this.notFound();
     await this.repository.transaction(async (tx) => {
+      await this.bookings.lockBooking(known.bookingId, tx);
       const request = (await this.repository.lock(id, tx))!;
       if (request.status === to) return;
       if (request.status !== 'REQUESTED') throw this.invalidTransition(request);

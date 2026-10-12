@@ -305,13 +305,13 @@ describe('Customers API (integration)', () => {
         ['get', `/api/v1/customers/me/addresses/${addressId}`],
         ['delete', `/api/v1/customers/me/addresses/${addressId}`],
       ] as const) {
-        expect((await as(customer)[method](url)).status).toBe(401);
+        expect((await as(customer)[method](url)).status).toBe(403);
       }
       expect((await as(customer).post('/api/v1/customers/me/addresses', address())).status).toBe(
-        401,
+        403,
       );
       expect((await as(customer).patch('/api/v1/customers/me', { name: 'Hacker' })).status).toBe(
-        401,
+        403,
       );
       // Nothing was changed behind the rejected requests.
       const row = await api.prisma.customerProfile.findUniqueOrThrow({

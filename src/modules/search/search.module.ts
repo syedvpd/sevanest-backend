@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AvailabilityModule } from '../availability/availability.module';
 import { ServiceCategoriesModule } from '../service-categories/service-categories.module';
+import { WorkerPhotoModule } from '../worker-photo/worker-photo.module';
 import { SearchController } from './search.controller';
 import { SearchRepository } from './search.repository';
 import { SearchService } from './search.service';
@@ -11,7 +12,7 @@ import { SearchService } from './search.service';
  * Matching builds on `SearchService.findEligible`; nothing depends on Matching.
  */
 @Module({
-  imports: [ServiceCategoriesModule, AvailabilityModule],
+  imports: [ServiceCategoriesModule, AvailabilityModule, WorkerPhotoModule],
   controllers: [SearchController],
   providers: [SearchRepository, SearchService],
   exports: [SearchService],

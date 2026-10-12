@@ -117,14 +117,21 @@ describe('Booking API (integration)', () => {
           'area',
           'availableFrom',
           'availableTo',
+          'budgetMaxMinor',
+          'budgetMinMinor',
+          'budgetPeriod',
           'category',
           'engagement',
           'id',
+          'requestedStartDate',
+          'requirementNote',
+          'respondBy',
           'scheduleType',
           'scheduledAt',
           'startDate',
           'status',
           'updatedAt',
+          'workerRespondedAt',
         ].sort(),
       );
       expect(JSON.stringify(mine.body)).not.toContain(customer.userId);
@@ -158,7 +165,7 @@ describe('Booking API (integration)', () => {
       for (const bad of [
         { category: 'house' },
         { areaId: 'x' },
-        { engagement: 'DAILY' },
+        { engagement: 'FORTNIGHTLY' },
         { availableFrom: '12:00', availableTo: '09:00' },
         { availableFrom: '9' },
         { workerId: 'nope' },
@@ -256,7 +263,15 @@ describe('Booking API (integration)', () => {
         where: { payload: { path: ['params', 'bookingId'], equals: id } },
       });
       expect(outbox.map((o) => (o.payload as { event: string }).event).sort()).toEqual(
-        ['BOOKING_CONFIRMED', 'INTERVIEW_TRIAL_SCHEDULED', 'JOB_OPPORTUNITY'].sort(),
+        [
+          'BOOKING_COMPLETED',
+          'BOOKING_CONFIRMED',
+          'BOOKING_PAYMENT_DUE',
+          'BOOKING_STARTED',
+          'INTERVIEW_OUTCOME',
+          'INTERVIEW_TRIAL_SCHEDULED',
+          'JOB_OPPORTUNITY',
+        ].sort(),
       );
     });
 

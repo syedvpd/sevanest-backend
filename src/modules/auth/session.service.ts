@@ -3,7 +3,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { AppConfigService } from '../../config/app-config.service';
-import type { DevicePlatform, UserType } from '../../generated/prisma/client';
+import type { DevicePlatform, Prisma, UserType } from '../../generated/prisma/client';
 import { UserEvents } from '../users/user-events';
 import { UsersService } from '../users/users.service';
 import { AuthErrorCode } from './auth.errors';
@@ -167,6 +167,18 @@ export class SessionService implements OnModuleInit {
         },
         tx,
       );
+    });
+  }
+
+  /** Runs `work` and revokes every session of the user except `keepSessionId`, in one transaction (credential change). */
+  revokeOthersWith(
+    userId: string,
+    keepSessionId: string,
+    work: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<number> {
+    return this.repository.transaction(async (tx) => {
+      await work(tx);
+      return this.repository.revokeAllForUser(userId, tx, keepSessionId);
     });
   }
 

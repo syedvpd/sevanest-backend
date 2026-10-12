@@ -92,6 +92,20 @@ export class CustomersService {
     }
   }
 
+  /**
+   * Contract for Booking: one of the customer's own, still active addresses (id and city only). null covers "not mine",
+   * "removed" and "no profile yet", so a caller cannot tell them apart.
+   */
+  async findActiveAddressForBooking(
+    userId: string,
+    addressId: string,
+  ): Promise<{ id: string; city: string } | null> {
+    const profile = await this.repository.findProfileByUserId(userId);
+    if (!profile) return null;
+    const address = await this.repository.findActiveAddress(profile.id, addressId);
+    return address ? { id: address.id, city: address.city } : null;
+  }
+
   async getMyProfile(userId: string): Promise<CustomerProfileResponse> {
     const [profile, user] = await Promise.all([
       this.repository.findProfileByUserId(userId),

@@ -102,6 +102,9 @@ export async function createTestApp(): Promise<TestApp> {
     redis: { ping: jest.fn().mockResolvedValue(undefined) },
   };
   const authRepository = {
+    userStatus: jest.fn((userId: string) =>
+      Promise.resolve(userId === 'user-suspended' ? ('SUSPENDED' as const) : ('ACTIVE' as const)),
+    ),
     findActiveSession: jest.fn((sessionId: string) => {
       const byId: Record<string, { userId: string; userStatus: 'ACTIVE' | 'SUSPENDED' }> = {
         'session-active': { userId: 'user-admin', userStatus: 'ACTIVE' },

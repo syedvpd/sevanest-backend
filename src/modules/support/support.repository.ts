@@ -22,8 +22,20 @@ export interface TicketRecord {
   resolution: string | null;
   closedAt: Date | null;
   closedByUserId: string | null;
+  dueAt: Date | null;
+  slaBreachedAt: Date | null;
   createdAt: Date;
   category: { id: string; code: string; name: string };
+}
+
+export interface MessageRecord {
+  id: string;
+  ticketId: string;
+  authorUserId: string;
+  authorKind: 'CUSTOMER' | 'WORKER' | 'ADMIN';
+  body: string;
+  isInternal: boolean;
+  createdAt: Date;
 }
 
 export interface TicketEventRecord {
@@ -62,6 +74,8 @@ export interface TicketChange {
   resolution?: string;
   closedAt?: Date;
   closedByUserId?: string;
+  dueAt?: Date | null;
+  slaBreachedAt?: Date;
 }
 
 /** The only place that touches `support_tickets`, `support_ticket_events` and `support_categories`. */
@@ -82,6 +96,7 @@ export class SupportRepository {
       bookingId: string | null;
       categoryId: string;
       description: string;
+      dueAt?: Date | null;
     },
     tx: Prisma.TransactionClient,
   ): Promise<TicketRecord> {
@@ -165,6 +180,57 @@ export class SupportRepository {
         createdAt: true,
       },
     });
+  }
+
+  // --- messages ---------------------------------------------------------------------------------------------------
+
+  async addMessage(
+    input: {
+      ticketId: string;
+      authorUserId: string;
+      authorKind: 'CUSTOMER' | 'WORKER' | 'ADMIN';
+      body: string;
+      isInternal: boolean;
+    },
+    tx: Prisma.TransactionClient,
+  ): Promise<MessageRecord> {
+    return tx.supportMessage.create({ data: input });
+  }
+
+  listMessages(
+    ticketId: string,
+    includeInternal: boolean,
+    skip: number,
+    take: number,
+  ): Promise<MessageRecord[]> {
+    return this.prisma.supportMessage.findMany({
+      where: { ticketId, ...(includeInternal ? {} : { isInternal: false }) },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      skip,
+      take,
+    });
+  }
+
+  countMessages(ticketId: string, includeInternal: boolean): Promise<number> {
+    return this.prisma.supportMessage.count({
+      where: { ticketId, ...(includeInternal ? {} : { isInternal: false }) },
+    });
+  }
+
+  // --- SLA --------------------------------------------------------------------------------------------------------
+
+  /** Open tickets whose resolution target has passed and that were not yet flagged. */
+  findBreached(
+    limit: number,
+  ): Promise<Array<{ id: string; dueAt: Date; priority: string | null }>> {
+    return this.prisma.supportTicket
+      .findMany({
+        where: { status: { not: 'CLOSED' }, dueAt: { lt: new Date() }, slaBreachedAt: null },
+        select: { id: true, dueAt: true, priority: true },
+        orderBy: { dueAt: 'asc' },
+        take: limit,
+      })
+      .then((rows) => rows.map((r) => ({ id: r.id, dueAt: r.dueAt!, priority: r.priority })));
   }
 
   // --- categories ------------------------------------------------------------------------------------------------

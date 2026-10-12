@@ -262,7 +262,7 @@ describe('Search API (integration)', () => {
         `${base()}&limit=0`,
         `${base()}&page=0`,
         `${base()}&page=abc`,
-        `${base()}&engagement=DAILY`,
+        `${base()}&engagement=FORTNIGHTLY`,
         `${base()}&availableFrom=09:00`,
         `${base()}&availableTo=09:00`,
         `${base()}&availableFrom=12:00&availableTo=09:00`,
@@ -301,6 +301,8 @@ describe('Search API (integration)', () => {
           'engagementPreference',
           'experienceMonths',
           'languages',
+          'photo',
+          'rating',
           'serviceAreas',
           'verification',
           'workerId',
@@ -362,7 +364,7 @@ describe('Search API (integration)', () => {
         await search(`${base()}&minExperienceMonths=1000`).expect(200);
         const none = spy.mock.calls.length;
         expect(one).toBe(many);
-        expect(one).toBe(6);
+        expect(one).toBe(8); // page, count, 4 look-ups, rating aggregates, current photos
         expect(none).toBe(2);
       } finally {
         spy.mockRestore();

@@ -25,6 +25,15 @@ export interface BookingRecord {
   cancelledAt: Date | null;
   cancelledByUserId: string | null;
   replacesBookingId: string | null;
+  addressId: string | null;
+  /** YYYY-MM-DD (India date): when the customer wants the service to begin (PRD 5.2). */
+  requestedStartDate: string | null;
+  budgetMinMinor: number | null;
+  budgetMaxMinor: number | null;
+  budgetPeriod: string | null;
+  requirementNote: string | null;
+  workerRespondedAt: Date | null;
+  respondBy: Date | null;
   idempotencyKey: string | null;
   requestHash: string | null;
   createdAt: Date;
@@ -62,6 +71,16 @@ function toRecord(row: Row): BookingRecord {
     cancelledAt: row.cancelledAt,
     cancelledByUserId: row.cancelledByUserId,
     replacesBookingId: row.replacesBookingId,
+    addressId: row.addressId,
+    requestedStartDate: row.requestedStartDate
+      ? row.requestedStartDate.toISOString().slice(0, 10)
+      : null,
+    budgetMinMinor: row.budgetMinMinor,
+    budgetMaxMinor: row.budgetMaxMinor,
+    budgetPeriod: row.budgetPeriod,
+    requirementNote: row.requirementNote,
+    workerRespondedAt: row.workerRespondedAt,
+    respondBy: row.respondBy,
     idempotencyKey: row.idempotencyKey,
     requestHash: row.requestHash,
     createdAt: row.createdAt,
@@ -79,6 +98,8 @@ export interface BookingChange {
   cancelReason?: string | null;
   cancelledAt?: Date | null;
   cancelledByUserId?: string | null;
+  workerRespondedAt?: Date | null;
+  respondBy?: Date | null;
 }
 
 export interface BookingFilter {
@@ -109,6 +130,12 @@ export class BookingRepository {
       replacesBookingId?: string | null;
       workerId?: string | null;
       status?: BookingStatusValue;
+      addressId?: string | null;
+      requestedStartDate?: string | null;
+      budgetMinMinor?: number | null;
+      budgetMaxMinor?: number | null;
+      budgetPeriod?: string | null;
+      requirementNote?: string | null;
     },
     tx: Prisma.TransactionClient,
   ): Promise<BookingRecord> {
@@ -126,6 +153,14 @@ export class BookingRepository {
           replacesBookingId: input.replacesBookingId ?? null,
           workerId: input.workerId ?? null,
           status: input.status ?? 'NEW_REQUEST',
+          addressId: input.addressId ?? null,
+          requestedStartDate: input.requestedStartDate
+            ? new Date(`${input.requestedStartDate}T00:00:00.000Z`)
+            : null,
+          budgetMinMinor: input.budgetMinMinor ?? null,
+          budgetMaxMinor: input.budgetMaxMinor ?? null,
+          budgetPeriod: input.budgetPeriod ?? null,
+          requirementNote: input.requirementNote ?? null,
         },
       }),
     );
@@ -173,7 +208,37 @@ export class BookingRepository {
         cancelReason: change.cancelReason,
         cancelledAt: change.cancelledAt,
         cancelledByUserId: change.cancelledByUserId,
+        workerRespondedAt: change.workerRespondedAt,
+        respondBy: change.respondBy,
       },
+    });
+  }
+
+  // --- scheduled-job queries ------------------------------------------------------------------------------------
+
+  /** MATCHED opportunities whose response deadline has passed without an answer. */
+  async findNoResponse(
+    limit: number,
+  ): Promise<Array<{ id: string; workerId: string | null; respondBy: Date }>> {
+    const rows = await this.prisma.booking.findMany({
+      where: { status: 'MATCHED', workerRespondedAt: null, respondBy: { lt: new Date() } },
+      select: { id: true, workerId: true, respondBy: true },
+      orderBy: { respondBy: 'asc' },
+      take: limit,
+    });
+    return rows.map((r) => ({ id: r.id, workerId: r.workerId, respondBy: r.respondBy! }));
+  }
+
+  /** Bookings that have waited in PENDING_PAYMENT since before `olderThan` (the status last changed then). */
+  async findWaitingForPayment(
+    olderThan: Date,
+    limit: number,
+  ): Promise<Array<{ id: string; updatedAt: Date }>> {
+    return this.prisma.booking.findMany({
+      where: { status: 'PENDING_PAYMENT', updatedAt: { lt: olderThan } },
+      select: { id: true, updatedAt: true },
+      orderBy: { updatedAt: 'asc' },
+      take: limit,
     });
   }
 

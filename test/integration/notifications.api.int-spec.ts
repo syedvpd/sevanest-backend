@@ -424,6 +424,8 @@ describe('Notifications (integration)', () => {
       expect(codes.sort()).toEqual(
         [
           'BOOKING_CONFIRMED',
+          'BOOKING_PAYMENT_DUE',
+          'INTERVIEW_OUTCOME',
           'INTERVIEW_TRIAL_SCHEDULED',
           'JOB_OPPORTUNITY',
           'PAYMENT_SUCCEEDED',

@@ -209,7 +209,7 @@ describe('Matching API (integration)', () => {
         expect((await match(body)).status).toBe(400);
       }
       for (const bad of [
-        { engagement: 'DAILY' },
+        { engagement: 'FORTNIGHTLY' },
         { availableFrom: '12:00', availableTo: '09:00' },
         { availableFrom: '09:00', availableTo: '09:00' },
         { availableFrom: '9', availableTo: '12:00' },

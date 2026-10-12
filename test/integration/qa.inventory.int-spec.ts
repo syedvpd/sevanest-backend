@@ -97,6 +97,9 @@ describe('QA - API inventory and route invariants (integration)', () => {
         'POST /api/v1/auth/otp/verify',
         'POST /api/v1/auth/token/refresh',
         'POST /api/v1/webhooks/payments',
+        'GET /api/v1/app-config',
+        'GET /api/v1/reference-data',
+        'GET /api/v1/legal/current',
       ].sort(),
     );
   });
@@ -106,8 +109,12 @@ describe('QA - API inventory and route invariants (integration)', () => {
     const noPermission = admin
       .filter((r) => r.permissions.length === 0)
       .map((r) => `${r.method} ${r.path}`);
-    // Reviewed exception: the dashboard is open to every admin and returns only the sections the caller's permissions allow.
-    expect(noPermission).toEqual(['GET /api/v1/admin/dashboard']);
+    // Reviewed exceptions: the dashboard is open to every admin and returns only the sections the caller's permissions allow;
+    // the password change acts only on the caller's own account and re-verifies the current password.
+    expect(noPermission.sort()).toEqual([
+      'GET /api/v1/admin/dashboard',
+      'POST /api/v1/admin/account/password',
+    ]);
     expect(admin.every((r) => r.userTypes.includes('ADMIN'))).toBe(true);
 
     const openToAnySignedIn = routes
@@ -116,7 +123,9 @@ describe('QA - API inventory and route invariants (integration)', () => {
     // Reviewed: read-only catalogue data and the caller's own identity/session management.
     expect(
       openToAnySignedIn.every((p) =>
-        /^(GET|POST|DELETE) \/api\/v1\/(auth|users\/me|service-categories|service-areas)/.test(p),
+        /^(GET|POST|DELETE) \/api\/v1\/(auth|users\/me|service-categories|service-areas|notifications|legal|me\/deletion-request)/.test(
+          p,
+        ),
       ),
     ).toBe(true);
   });

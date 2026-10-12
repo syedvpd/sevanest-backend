@@ -22,7 +22,15 @@ const trim = ({ value }: { value: unknown }): unknown =>
 const toBoolean = ({ value }: { value: unknown }): unknown =>
   value === 'true' ? true : value === 'false' ? false : value;
 
-const ENGAGEMENT = ['FULL_TIME', 'PART_TIME', 'LIVE_IN'] as const;
+const ENGAGEMENT = [
+  'FULL_TIME',
+  'PART_TIME',
+  'LIVE_IN',
+  'DAILY',
+  'HOURLY',
+  'SHIFT',
+  'ONE_TIME',
+] as const;
 
 /** Sizes below are TECHNICAL bounds (the specs set no limits), not product rules. */
 export class TimeWindowDto {

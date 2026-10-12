@@ -4,9 +4,15 @@ import { AppConfigService } from '../../config/app-config.service';
 import { SmsProviderKind } from '../../config/env.validation';
 import { DisabledSmsProvider } from '../../integrations/notifications/disabled-sms.provider';
 import { InMemorySmsProvider } from '../../integrations/notifications/in-memory-sms.provider';
-import { SMS_PROVIDER } from '../../integrations/notifications/notification-providers.interface';
+import { Msg91SmsProvider } from '../../integrations/notifications/msg91-sms.provider';
+import {
+  SMS_PROVIDER,
+  type SmsProvider,
+} from '../../integrations/notifications/notification-providers.interface';
+import { TwilioSmsProvider } from '../../integrations/notifications/twilio.provider';
 import { UsersModule } from '../users/users.module';
 import { AdminLoginThrottle } from './admin-login-throttle.service';
+import { AdminAccountController } from './admin-account.controller';
 import { AuthController } from './auth.controller';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
@@ -18,6 +24,19 @@ import { OtpService } from './otp.service';
 import { SessionRepository } from './session.repository';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
+
+function smsProviderFor(config: AppConfigService): SmsProvider {
+  switch (config.smsProvider) {
+    case SmsProviderKind.Memory:
+      return new InMemorySmsProvider();
+    case SmsProviderKind.Twilio:
+      return new TwilioSmsProvider(config.twilio);
+    case SmsProviderKind.Msg91:
+      return new Msg91SmsProvider(config.msg91);
+    default:
+      return new DisabledSmsProvider();
+  }
+}
 
 /**
  * Auth & Session: mobile OTP login (customers, workers), credential login (admins), token sessions with rotating
@@ -35,7 +54,7 @@ import { TokenService } from './token.service';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, AdminAccountController],
   providers: [
     AuthRepository,
     AuthorizationService,
@@ -51,10 +70,7 @@ import { TokenService } from './token.service';
     {
       provide: SMS_PROVIDER,
       inject: [AppConfigService],
-      useFactory: (config: AppConfigService) =>
-        config.smsProvider === SmsProviderKind.Memory
-          ? new InMemorySmsProvider()
-          : new DisabledSmsProvider(),
+      useFactory: (config: AppConfigService) => smsProviderFor(config),
     },
   ],
   exports: [

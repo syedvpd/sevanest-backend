@@ -29,6 +29,8 @@ import {
   DeliveryListQuery,
   DeliveryView,
   EventView,
+  InboxItemView,
+  InboxQuery,
   TemplateListQuery,
   TemplateView,
   UpdateTemplateDto,
@@ -40,6 +42,15 @@ import {
   TemplateRecord,
 } from './notifications.repository';
 
+export interface HealthView {
+  notifications: {
+    byStatus: Record<'QUEUED' | 'SENT' | 'FAILED' | 'SKIPPED', number>;
+    oldestQueuedSeconds: number | null;
+  };
+  outbox: { pending: number; oldestPendingSeconds: number | null; deadLettered: number };
+  queue: { waiting: number; active: number; delayed: number; failed: number } | null;
+}
+
 export const DEFAULT_LANGUAGE = 'en';
 const OUTBOX_BATCH = 50;
 /** A queued notification nobody picked up after this long is handed to the queue again (the job id keeps it single). */
@@ -50,12 +61,24 @@ export const NotificationErrorCode = {
   TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
   TEMPLATE_EXISTS: 'TEMPLATE_EXISTS',
   UNKNOWN_PLACEHOLDER: 'UNKNOWN_PLACEHOLDER',
+  NOTIFICATION_NOT_FOUND: 'NOTIFICATION_NOT_FOUND',
+  NOTIFICATION_NOT_FAILED: 'NOTIFICATION_NOT_FAILED',
+  OUTBOX_EVENT_NOT_DEAD_LETTERED: 'OUTBOX_EVENT_NOT_DEAD_LETTERED',
 } as const;
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z][A-Za-z0-9]*)\s*\}\}/g;
 
 export function placeholdersOf(text: string): string[] {
   return [...text.matchAll(PLACEHOLDER)].map((m) => m[1]);
+}
+
+/** Where a tap on an inbox item should lead, from the ids in its parameters (deep link). */
+export function routeFor(params: Record<string, string>): { type: string; id: string } | null {
+  if (params.bookingId) return { type: 'booking', id: params.bookingId };
+  if (params.ticketId) return { type: 'ticket', id: params.ticketId };
+  if (params.replacementId) return { type: 'replacement', id: params.replacementId };
+  if (params.paymentId) return { type: 'payment', id: params.paymentId };
+  return null;
 }
 
 export function render(text: string, params: Record<string, string>): string {
@@ -90,42 +113,76 @@ export class NotificationsService {
   async dispatchOutbox(): Promise<{ events: number; queued: number }> {
     const ids: string[] = [];
     let events = 0;
-    await this.repository.transaction(async (tx) => {
-      const pending = await this.outbox.claimPending(OUTBOX_BATCH, tx);
-      events = pending.length;
-      for (const event of pending) {
-        if (event.topic !== NOTIFICATION_TOPIC) continue;
-        const payload = event.payload as NotificationOutboxPayload;
-        const templates = await this.repository.activeTemplatesFor(
-          payload.event,
-          DEFAULT_LANGUAGE,
-          tx,
-        );
-        for (const recipientUserId of payload.recipients) {
-          for (const template of templates) {
-            const id = await this.repository.insertQueued(
-              {
-                outboxEventId: event.id,
-                recipientUserId,
-                eventCode: payload.event,
-                channel: template.channel,
-                templateId: template.id,
-                params: payload.params,
-                dedupeKey: `${event.id}:${recipientUserId}:${template.channel}`,
-              },
-              tx,
-            );
-            if (id) ids.push(id);
+    // One event per transaction: a poison event (malformed payload, bug) rolls back only itself, is retried with backoff and
+    // then dead-lettered, instead of blocking every event behind it forever.
+    for (let i = 0; i < OUTBOX_BATCH; i += 1) {
+      let currentId: string | undefined;
+      try {
+        const more = await this.repository.transaction(async (tx) => {
+          const [event] = await this.outbox.claimPending(1, tx);
+          if (!event) return false;
+          currentId = event.id;
+          events += 1;
+          if (event.topic === NOTIFICATION_TOPIC) {
+            ids.push(...(await this.expand(event, tx)));
           }
-        }
+          await this.outbox.markProcessed([event.id], tx);
+          return true;
+        });
+        if (!more) break;
+      } catch (error) {
+        if (!currentId) throw error; // infrastructure failure before an event was claimed: not the event's fault
+        const result = await this.outbox.recordFailure(currentId, 'DISPATCH_ERROR');
+        this.logger.error(
+          `Outbox event ${currentId} failed to dispatch (${result.deadLettered ? 'dead-lettered' : 'will retry'}): ${error instanceof Error ? error.message : 'unknown'}`,
+        );
       }
-      await this.outbox.markProcessed(
-        pending.map((p) => p.id),
-        tx,
-      );
-    });
+    }
     await this.enqueue(ids);
     return { events, queued: ids.length };
+  }
+
+  private async expand(
+    event: { id: string; payload: unknown },
+    tx: Parameters<Parameters<NotificationsRepository['transaction']>[0]>[0],
+  ): Promise<string[]> {
+    const payload = event.payload as NotificationOutboxPayload;
+    const languages = await this.repository.preferredLanguages(payload.recipients, tx);
+    const wanted = [...new Set([DEFAULT_LANGUAGE, ...languages.values()])];
+    const templates = await this.repository.activeTemplatesFor(payload.event, wanted, tx);
+    const created: string[] = [];
+    for (const recipientUserId of payload.recipients) {
+      // The recipient's own language where a template exists for that channel, otherwise the platform default.
+      const own = languages.get(recipientUserId) ?? DEFAULT_LANGUAGE;
+      const byChannel = new Map<string, TemplateRecord>();
+      for (const template of templates) {
+        if (template.language === DEFAULT_LANGUAGE && !byChannel.has(template.channel)) {
+          byChannel.set(template.channel, template);
+        }
+      }
+      for (const template of templates) {
+        if (template.language === own) byChannel.set(template.channel, template);
+      }
+      for (const template of byChannel.values()) {
+        const inApp = template.channel === 'IN_APP';
+        const id = await this.repository.insertQueued(
+          {
+            outboxEventId: event.id,
+            recipientUserId,
+            eventCode: payload.event,
+            channel: template.channel,
+            templateId: template.id,
+            params: payload.params,
+            dedupeKey: `${event.id}:${recipientUserId}:${template.channel}`,
+            delivered: inApp,
+          },
+          tx,
+        );
+        // An in-app message is complete once its row exists; only provider channels go to the queue.
+        if (id && !inApp) created.push(id);
+      }
+    }
+    return created;
   }
 
   /** Re-offers notifications that are still QUEUED long after they were created (queue outage, lost job). */
@@ -289,6 +346,7 @@ export class NotificationsService {
             language: dto.language ?? DEFAULT_LANGUAGE,
             title: dto.title ?? null,
             body: dto.body,
+            dltTemplateId: dto.dltTemplateId ?? null,
             isActive: dto.isActive ?? true,
           },
           tx,
@@ -433,9 +491,128 @@ export class NotificationsService {
       language: t.language,
       title: t.title,
       body: t.body,
+      dltTemplateId: t.dltTemplateId,
       isActive: t.isActive,
       updatedAt: t.updatedAt,
     };
+  }
+
+  // --- in-app inbox (customer and worker apps) -------------------------------------------------------------
+
+  async inbox(userId: string, query: InboxQuery): Promise<Page<InboxItemView>> {
+    const { items, total } = await this.repository.listInbox(
+      userId,
+      { unreadOnly: query.unreadOnly === true },
+      skipFor(query),
+      query.limit,
+    );
+    return {
+      data: items.map((n) => ({
+        id: n.id,
+        event: n.eventCode,
+        title: n.template?.title ? render(n.template.title, n.params) : null,
+        body: n.template ? render(n.template.body, n.params) : '',
+        route: routeFor(n.params),
+        readAt: n.readAt,
+        createdAt: n.createdAt,
+      })),
+      meta: { page: query.page, limit: query.limit, total },
+    };
+  }
+
+  async unreadCount(userId: string): Promise<{ unread: number }> {
+    return { unread: await this.repository.unreadCount(userId) };
+  }
+
+  /** Another user's notification answers exactly like an unknown one. */
+  async markRead(userId: string, id: string): Promise<void> {
+    if (!(await this.repository.markRead(userId, id))) {
+      throw new DomainException(
+        NotificationErrorCode.NOTIFICATION_NOT_FOUND,
+        'Notification not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+  }
+
+  async markAllRead(userId: string): Promise<{ updated: number }> {
+    return { updated: await this.repository.markAllRead(userId) };
+  }
+
+  /**
+   * Delivery health for operators: counts per status, the age of the oldest waiting notification and of the oldest unprocessed
+   * outbox event (a growing age means the worker process is down), and the queue depth. Aggregates only, no content.
+   */
+  async health(): Promise<HealthView> {
+    const [byStatus, oldestQueuedSeconds, outbox, queue] = await Promise.all([
+      this.repository.statusCounts(),
+      this.repository.oldestQueuedAgeSeconds(),
+      this.outbox.backlog(),
+      this.queue
+        .getJobCounts('waiting', 'active', 'delayed', 'failed')
+        .then((c) => ({
+          waiting: c.waiting ?? 0,
+          active: c.active ?? 0,
+          delayed: c.delayed ?? 0,
+          failed: c.failed ?? 0,
+        }))
+        .catch(() => null),
+    ]);
+    return { notifications: { byStatus, oldestQueuedSeconds }, outbox, queue };
+  }
+
+  /** Manual recovery: a FAILED notification goes back to the queue. Any other status is refused, so nothing is sent twice. */
+  async retryFailed(id: string, actor: Actor): Promise<void> {
+    if (!(await this.repository.findById(id))) {
+      throw new DomainException(
+        NotificationErrorCode.NOTIFICATION_NOT_FOUND,
+        'Notification not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const requeued = await this.repository.requeueFailed(id);
+    if (!requeued) {
+      throw new DomainException(
+        NotificationErrorCode.NOTIFICATION_NOT_FAILED,
+        'Only a FAILED notification can be retried',
+        HttpStatus.CONFLICT,
+      );
+    }
+    await this.audit.record({
+      action: 'notification.retry',
+      entityType: 'notification',
+      entityId: id,
+      actorId: actor.userId,
+      actorRole: actor.roles.join(',') || null,
+    });
+    try {
+      // A fresh job id: the original job (same id as the notification) is kept by the queue and would deduplicate this one.
+      await this.queue.add(
+        'deliver',
+        { notificationId: id },
+        { jobId: `${id}-retry-${requeued.attempts}` },
+      );
+    } catch {
+      this.logger.warn(`Could not queue retry of ${id}; it stays QUEUED for the next sweep`);
+    }
+  }
+
+  /** Manual recovery of a dead-lettered outbox event: it is dispatched again from scratch (notifications are de-duplicated). */
+  async retryOutboxEvent(id: string, actor: Actor): Promise<void> {
+    if (!(await this.outbox.retryDeadLettered(id))) {
+      throw new DomainException(
+        NotificationErrorCode.OUTBOX_EVENT_NOT_DEAD_LETTERED,
+        'Only a dead-lettered outbox event can be retried',
+        HttpStatus.CONFLICT,
+      );
+    }
+    await this.audit.record({
+      action: 'outbox.retry',
+      entityType: 'outbox_event',
+      entityId: id,
+      actorId: actor.userId,
+      actorRole: actor.roles.join(',') || null,
+    });
   }
 
   private templateNotFound(): DomainException {

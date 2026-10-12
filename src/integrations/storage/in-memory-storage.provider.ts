@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { buildSampleFile } from './file-signature';
+import { ProviderError } from '../provider-error';
 import type { SignedUrl, StorageProvider } from './storage-provider.interface';
 
 /**
@@ -8,6 +10,11 @@ import type { SignedUrl, StorageProvider } from './storage-provider.interface';
 @Injectable()
 export class InMemoryStorageProvider implements StorageProvider {
   private readonly objects = new Map<string, number>();
+  private readonly contents = new Map<string, Buffer>();
+  /** Keys removed through deleteObject (so tests can assert a rejected upload was discarded). */
+  readonly deleted: string[] = [];
+  /** Test switch: the next deleteObject fails like an unreachable storage. */
+  failNextDelete = false;
   readonly issuedUploads: Array<{ objectKey: string; contentType: string; maxBytes: number }> = [];
   readonly issuedDownloads: string[] = [];
 
@@ -36,13 +43,62 @@ export class InMemoryStorageProvider implements StorageProvider {
     });
   }
 
-  getObjectInfo(objectKey: string): Promise<{ sizeBytes: number } | null> {
+  getObjectInfo(objectKey: string): Promise<{ sizeBytes: number; etag?: string } | null> {
     const size = this.objects.get(objectKey);
-    return Promise.resolve(size === undefined ? null : { sizeBytes: size });
+    return Promise.resolve(size === undefined ? null : { sizeBytes: size, etag: `etag-${size}` });
   }
 
-  /** Test helper: stands in for the client uploading to the signed URL. */
-  simulateUpload(objectKey: string, sizeBytes: number): void {
+  readObjectHead(objectKey: string, length: number): Promise<Buffer | null> {
+    const content = this.contents.get(objectKey);
+    return Promise.resolve(content === undefined ? null : content.subarray(0, length));
+  }
+
+  readObject(
+    objectKey: string,
+    maxBytes: number,
+  ): Promise<{ bytes: Buffer; truncated: boolean } | null> {
+    const content = this.contents.get(objectKey);
+    if (content === undefined) return Promise.resolve(null);
+    return Promise.resolve(
+      content.length > maxBytes
+        ? { bytes: content.subarray(0, maxBytes), truncated: true }
+        : { bytes: content, truncated: false },
+    );
+  }
+
+  deleteObject(objectKey: string): Promise<void> {
+    if (this.failNextDelete) {
+      this.failNextDelete = false;
+      return Promise.reject(new ProviderError('storage', 'storage unavailable', true));
+    }
+    this.objects.delete(objectKey);
+    this.contents.delete(objectKey);
+    this.deleted.push(objectKey);
+    return Promise.resolve();
+  }
+
+  has(objectKey: string): boolean {
+    return this.objects.has(objectKey);
+  }
+
+  /**
+   * Test helper: stands in for the client uploading to the signed URL. Without `content` the object is a well-formed file of
+   * the content type the upload URL was issued for, `sizeBytes` long (an honest client); pass `content` to simulate anything
+   * else (the stored size is then `sizeBytes`, which may deliberately disagree with the content).
+   */
+  simulateUpload(objectKey: string, sizeBytes: number, content?: Buffer): void {
     this.objects.set(objectKey, sizeBytes);
+    const issued = this.issuedUploads.find((u) => u.objectKey === objectKey);
+    this.contents.set(
+      objectKey,
+      content ??
+        (issued ? buildSampleFile(issued.contentType, sizeBytes) : Buffer.alloc(sizeBytes)),
+    );
+  }
+
+  /** Test helper: the stored bytes change after confirmation (a swapped object). */
+  replaceContent(objectKey: string, content: Buffer): void {
+    this.contents.set(objectKey, content);
+    this.objects.set(objectKey, content.length);
   }
 }

@@ -125,6 +125,7 @@ describe('Workers API (integration)', () => {
           'mobile',
           'name',
           'onboardingStatus',
+          'preferredLanguage',
           'previousEmployer',
           'submittedAt',
           'updatedAt',
@@ -553,9 +554,11 @@ describe('Workers API (integration)', () => {
       await as(superAdmin)
         .patch(`/api/v1/admin/users/${worker.userId}/status`, { status: 'SUSPENDED' })
         .expect(200);
-      expect((await as(worker).get('/api/v1/workers/me')).status).toBe(401);
+      // A suspended account is told so (403 ACCOUNT_SUSPENDED), not sent round a login loop.
+      const suspended = await as(worker).get('/api/v1/workers/me');
+      expect([suspended.status, suspended.body.code]).toEqual([403, 'ACCOUNT_SUSPENDED']);
       expect((await as(worker).patch('/api/v1/workers/me', { experienceMonths: 99 })).status).toBe(
-        401,
+        403,
       );
       expect(
         (await api.prisma.workerProfile.findUniqueOrThrow({ where: { id: worker.workerId } }))

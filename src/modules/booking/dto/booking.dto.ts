@@ -1,14 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsIn,
+  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
   Length,
   Matches,
+  Max,
+  Min,
 } from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
 import { TIME_OF_DAY } from '../../availability/domain/time-windows';
@@ -47,8 +50,11 @@ export const BOOKING_ACTIONS = [
   'start',
   'complete',
   'cancel',
+  'accept',
 ] as const;
 export type BookingAction = (typeof BOOKING_ACTIONS)[number];
+
+export const BUDGET_PERIODS = ['HOUR', 'DAY', 'MONTH', 'ONE_TIME'] as const;
 
 export class CreateBookingDto {
   @ApiProperty({ example: 'HOUSE_MAID', description: 'Category code; only enabled categories.' })
@@ -80,6 +86,57 @@ export class CreateBookingDto {
   @IsOptional()
   @IsUUID()
   workerId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "One of my saved addresses (404 if it is not mine or was removed; 422 OUTSIDE_SERVICE_AREA if its city is not the area's city). Only staff see it; the worker never does.",
+  })
+  @IsOptional()
+  @IsUUID()
+  addressId?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description: 'When the service should begin; today or later (India date).',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startDate must be a date in YYYY-MM-DD form' })
+  startDate?: string;
+
+  @ApiPropertyOptional({ description: 'Smallest currency unit (paise).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  budgetMinMinor?: number;
+
+  @ApiPropertyOptional({ description: 'Smallest currency unit (paise); not below budgetMinMinor.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  budgetMaxMinor?: number;
+
+  @ApiPropertyOptional({
+    enum: BUDGET_PERIODS,
+    description: 'What the budget is per. A label only: matching does not compare budgets (Q-39).',
+  })
+  @IsOptional()
+  @IsIn(BUDGET_PERIODS)
+  budgetPeriod?: (typeof BUDGET_PERIODS)[number];
+
+  @ApiPropertyOptional({
+    maxLength: 500,
+    description: 'Free-text requirement for the worker (no HTML).',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 500)
+  @Matches(/^[^<>]*$/, { message: 'requirementNote must not contain < or >' })
+  requirementNote?: string;
 }
 
 /** One body for every action; the action decides which fields are required (400 otherwise). Unknown fields are rejected. */
@@ -117,7 +174,10 @@ export class BookingActionDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startDate must be a date in YYYY-MM-DD form' })
   startDate?: string;
 
-  @ApiPropertyOptional({ maxLength: 1000, description: 'cancel: the reason (required).' })
+  @ApiPropertyOptional({
+    maxLength: 1000,
+    description: 'cancel: the reason (required). decline: the reason (recommended).',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -182,6 +242,28 @@ export class BookingView {
   @ApiProperty({ nullable: true }) cancelReason!: string | null;
   @ApiProperty({ nullable: true, description: 'The booking this one replaces, if any.' })
   replacesBookingId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'The saved address of the job (customer and staff only).',
+  })
+  addressId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    example: '2026-11-01',
+    description: 'When the customer asked the service to begin.',
+  })
+  requestedStartDate!: string | null;
+  @ApiProperty({ nullable: true }) budgetMinMinor!: number | null;
+  @ApiProperty({ nullable: true }) budgetMaxMinor!: number | null;
+  @ApiProperty({ nullable: true, enum: BUDGET_PERIODS }) budgetPeriod!: string | null;
+  @ApiProperty({ nullable: true }) requirementNote!: string | null;
+  @ApiProperty({ nullable: true, description: 'When the matched worker accepted.' })
+  workerRespondedAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Deadline for the worker to respond, if one is configured.',
+  })
+  respondBy!: Date | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }
@@ -203,6 +285,13 @@ export class WorkerBookingView {
   @ApiProperty({ nullable: true, enum: SCHEDULE_TYPES }) scheduleType!: ScheduleTypeValue | null;
   @ApiProperty({ nullable: true }) scheduledAt!: Date | null;
   @ApiProperty({ nullable: true, example: '2026-11-01' }) startDate!: string | null;
+  @ApiProperty({ nullable: true, example: '2026-11-01' }) requestedStartDate!: string | null;
+  @ApiProperty({ nullable: true }) budgetMinMinor!: number | null;
+  @ApiProperty({ nullable: true }) budgetMaxMinor!: number | null;
+  @ApiProperty({ nullable: true, enum: BUDGET_PERIODS }) budgetPeriod!: string | null;
+  @ApiProperty({ nullable: true }) requirementNote!: string | null;
+  @ApiProperty({ nullable: true }) workerRespondedAt!: Date | null;
+  @ApiProperty({ nullable: true }) respondBy!: Date | null;
   @ApiProperty() updatedAt!: Date;
 }
 

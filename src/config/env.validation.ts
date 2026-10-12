@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { parseFcmServiceAccount } from '../integrations/notifications/fcm.provider';
 import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -25,18 +26,26 @@ export enum NodeEnv {
 export enum SmsProviderKind {
   Memory = 'memory',
   Disabled = 'disabled',
+  /** Twilio Programmable Messaging (free text; for India needs a registered sender / Messaging Service). */
+  Twilio = 'twilio',
+  /** MSG91 Flow API (India, DLT-registered template). */
+  Msg91 = 'msg91',
 }
 
 /** Payment gateway adapter. No vendor is selected (Q-08): `fake` is a deterministic test double, refused in production. */
 export enum PaymentProviderKind {
   Fake = 'fake',
   Disabled = 'disabled',
+  /** Razorpay Orders/Payments/Refunds REST API (test or live keys). */
+  Razorpay = 'razorpay',
 }
 
 /** Push (FCM) and WhatsApp adapters. Credentials and vendors are open (Q-08); `memory` is for tests and refused in production. */
 export enum MessagingProviderKind {
   Memory = 'memory',
   Disabled = 'disabled',
+  /** Firebase Cloud Messaging HTTP v1 (push only). */
+  Fcm = 'fcm',
 }
 
 /** Private object storage for KYC documents. `s3` = any S3-compatible endpoint (Supabase Storage); `memory` is for tests and is refused in production. */
@@ -45,6 +54,22 @@ export enum StorageProviderKind {
   Memory = 'memory',
   Disabled = 'disabled',
 }
+
+/** WhatsApp adapter. `twilio` = Twilio WhatsApp (Business sender or sandbox); `memory` is for tests and refused in production. */
+export enum WhatsAppProviderKind {
+  Memory = 'memory',
+  Disabled = 'disabled',
+  Twilio = 'twilio',
+}
+
+const isSms =
+  (...kinds: SmsProviderKind[]) =>
+  (o: EnvironmentVariables): boolean =>
+    kinds.includes(o.SMS_PROVIDER);
+const usesTwilio = (o: EnvironmentVariables): boolean =>
+  o.SMS_PROVIDER === SmsProviderKind.Twilio || o.WHATSAPP_PROVIDER === WhatsAppProviderKind.Twilio;
+const isRazorpay = (o: EnvironmentVariables): boolean =>
+  o.PAYMENT_PROVIDER === PaymentProviderKind.Razorpay;
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
@@ -119,6 +144,13 @@ export class EnvironmentVariables {
   THROTTLE_LIMIT!: number;
 
   /**
+   * Where the global per-IP request counters live. `redis` is shared by all API replicas; `memory` is per process, so the
+   * real limit is multiplied by the replica count. Use `redis` whenever more than one API instance runs.
+   */
+  @IsIn(['memory', 'redis'])
+  THROTTLE_STORAGE: 'memory' | 'redis' = 'memory';
+
+  /**
    * OTP, lockout and admin-password values below are OPEN business decisions (Q-12, Q-18): the specs say only
    * "configurable". They are therefore REQUIRED with no default, so production cannot start on an unreviewed value.
    */
@@ -128,9 +160,66 @@ export class EnvironmentVariables {
   @MinLength(32)
   OTP_HMAC_SECRET!: string;
 
-  /** OTP delivery channel. No SMS vendor is selected yet (SRS §14), so only these two adapters exist. */
+  /** OTP delivery channel: `twilio` or `msg91` for real delivery; `memory`/`disabled` are never a real channel. */
   @IsEnum(SmsProviderKind)
   SMS_PROVIDER!: SmsProviderKind;
+
+  /** Timeout for every outbound SMS/WhatsApp/payment-gateway call. Engineering knob, not a business rule. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  @Max(60000)
+  PROVIDER_HTTP_TIMEOUT_MS: number = 8000;
+
+  // --- Twilio (SMS and/or WhatsApp). Credentials live only in the environment / deployment secret store. ---
+  @ValidateIf(usesTwilio)
+  @IsString()
+  @Matches(/^AC[0-9a-fA-F]{32}$/, {
+    message: 'TWILIO_ACCOUNT_SID must look like AC + 32 hex characters',
+  })
+  TWILIO_ACCOUNT_SID?: string;
+
+  @ValidateIf(usesTwilio)
+  @IsString()
+  @MinLength(16)
+  TWILIO_AUTH_TOKEN?: string;
+
+  /** Preferred SMS sender (MG + 32 hex). Either this or TWILIO_SMS_FROM is required when SMS_PROVIDER=twilio. */
+  @IsOptional()
+  @Matches(/^MG[0-9a-fA-F]{32}$/, {
+    message: 'TWILIO_MESSAGING_SERVICE_SID must look like MG + 32 hex characters',
+  })
+  TWILIO_MESSAGING_SERVICE_SID?: string;
+
+  @IsOptional()
+  @Matches(/^\+[1-9]\d{6,14}$/, {
+    message: 'TWILIO_SMS_FROM must be an E.164 number such as +14155550100',
+  })
+  TWILIO_SMS_FROM?: string;
+
+  @ValidateIf((o: EnvironmentVariables) => o.WHATSAPP_PROVIDER === WhatsAppProviderKind.Twilio)
+  @IsString()
+  @Matches(/^(whatsapp:)?\+[1-9]\d{6,14}$/, {
+    message: 'TWILIO_WHATSAPP_FROM must be an E.164 number, optionally prefixed with whatsapp:',
+  })
+  TWILIO_WHATSAPP_FROM?: string;
+
+  // --- MSG91 (India, DLT) ---
+  @ValidateIf(isSms(SmsProviderKind.Msg91))
+  @IsString()
+  @MinLength(10)
+  MSG91_AUTH_KEY?: string;
+
+  /** Flow template id of the DLT-approved OTP template. */
+  @ValidateIf(isSms(SmsProviderKind.Msg91))
+  @IsString()
+  @MinLength(8)
+  MSG91_OTP_TEMPLATE_ID?: string;
+
+  /** Variable name used for the OTP inside that template (##OTP## -> OTP). */
+  @IsString()
+  @Matches(/^[A-Za-z0-9_]{1,30}$/)
+  MSG91_OTP_VARIABLE: string = 'OTP';
 
   /**
    * KYC document handling. File size, accepted types and link lifetime are OPEN decisions (Q-12), so they are REQUIRED with
@@ -170,6 +259,16 @@ export class EnvironmentVariables {
   @Min(1)
   VERIFICATION_DOCUMENT_MAX_BYTES!: number;
 
+  /**
+   * Profile photo size limit (FRD FM-04: "size limit applies", value open, Q-12). Optional on purpose: while unset, photo upload
+   * answers 503 PHOTO_NOT_CONFIGURED instead of guessing a limit. Types are fixed to JPEG and PNG (signature-checked).
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  PROFILE_PHOTO_MAX_BYTES?: number;
+
   @IsString()
   @Matches(
     /^(application\/pdf|image\/jpeg|image\/png)(,(application\/pdf|image\/jpeg|image\/png))*$/,
@@ -189,6 +288,25 @@ export class EnvironmentVariables {
   @IsEnum(PaymentProviderKind)
   PAYMENT_PROVIDER!: PaymentProviderKind;
 
+  // --- Razorpay (test keys rzp_test_*, live keys rzp_live_*). Secrets never leave the environment. ---
+  @ValidateIf(isRazorpay)
+  @IsString()
+  @Matches(/^rzp_(test|live)_[A-Za-z0-9]{8,}$/, {
+    message: 'RAZORPAY_KEY_ID must look like rzp_test_xxx or rzp_live_xxx',
+  })
+  RAZORPAY_KEY_ID?: string;
+
+  @ValidateIf(isRazorpay)
+  @IsString()
+  @MinLength(16)
+  RAZORPAY_KEY_SECRET?: string;
+
+  /** The secret typed when creating the webhook in the Razorpay dashboard (NOT the API key secret). */
+  @ValidateIf(isRazorpay)
+  @IsString()
+  @MinLength(8)
+  RAZORPAY_WEBHOOK_SECRET?: string;
+
   /** HMAC key the FAKE payment adapter uses to sign test webhooks. Required (and only used) when PAYMENT_PROVIDER=fake. */
   @ValidateIf((o: EnvironmentVariables) => o.PAYMENT_PROVIDER === PaymentProviderKind.Fake)
   @IsString()
@@ -198,8 +316,8 @@ export class EnvironmentVariables {
   @IsEnum(MessagingProviderKind)
   PUSH_PROVIDER!: MessagingProviderKind;
 
-  @IsEnum(MessagingProviderKind)
-  WHATSAPP_PROVIDER!: MessagingProviderKind;
+  @IsEnum(WhatsAppProviderKind)
+  WHATSAPP_PROVIDER!: WhatsAppProviderKind;
 
   /** Top of the rating scale (FRD FM-10: "within the configured scale"). The scale is an OPEN decision (Q-58): required, no default. Lowest score is 1. */
   @Type(() => Number)
@@ -288,6 +406,118 @@ export class EnvironmentVariables {
   @IsString()
   CORS_ORIGINS?: string;
 
+  /** Run the background loops inside the API process (see app.module.ts). Default false: use the separate worker process. */
+  @Transform(toBoolean)
+  @IsBoolean()
+  EMBEDDED_WORKERS: boolean = false;
+
+  /** Hours a worker has to accept/decline a MATCHED opportunity before staff are alerted. Unset = no deadline (Q-55: the response rule is undecided). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  WORKER_RESPONSE_HOURS?: number;
+
+  /** Hours a booking may wait in PENDING_PAYMENT before staff are alerted. Unset = no alert (Q-78). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  PENDING_PAYMENT_ALERT_HOURS?: number;
+
+  /** Hours after which an unpaid PENDING_PAYMENT booking is cancelled automatically (the payment is closed by the normal cancellation hook). Unset = never auto-cancelled (Q-78). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  PENDING_PAYMENT_AUTO_CANCEL_HOURS?: number;
+
+  /** Resolution target in hours for a ticket without a priority. Unset = no target (Q-59). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  SUPPORT_SLA_HOURS_DEFAULT?: number;
+
+  /** Resolution target in hours for LOW priority tickets. Unset = falls back to the default target. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  SUPPORT_SLA_HOURS_LOW?: number;
+
+  /** Resolution target in hours for MEDIUM priority tickets. Unset = falls back to the default target. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  SUPPORT_SLA_HOURS_MEDIUM?: number;
+
+  /** Resolution target in hours for HIGH priority tickets. Unset = falls back to the default target. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  SUPPORT_SLA_HOURS_HIGH?: number;
+
+  /** Current legal document versions. Unset = no consent is requested or enforced (legal review pending, PRD 13). */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9._-]{1,40}$/)
+  LEGAL_TERMS_VERSION?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9._-]{1,40}$/)
+  LEGAL_PRIVACY_VERSION?: string;
+
+  @IsOptional()
+  @IsString()
+  LEGAL_TERMS_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  LEGAL_PRIVACY_URL?: string;
+
+  /** When true, creating a booking requires the user to have accepted the CURRENT terms and privacy versions. */
+  @Transform(toBoolean)
+  @IsBoolean()
+  LEGAL_ACCEPTANCE_REQUIRED: boolean = false;
+
+  /** App update policy returned by GET /app-config (semver). Unset = no minimum. */
+  @IsOptional()
+  @Matches(/^\d+\.\d+\.\d+$/)
+  APP_MIN_VERSION_CUSTOMER?: string;
+
+  @IsOptional()
+  @Matches(/^\d+\.\d+\.\d+$/)
+  APP_MIN_VERSION_WORKER?: string;
+
+  @Transform(toBoolean)
+  @IsBoolean()
+  APP_MAINTENANCE_MODE: boolean = false;
+
+  @IsOptional()
+  @IsString()
+  SUPPORT_CONTACT_PHONE?: string;
+
+  @IsOptional()
+  @IsString()
+  SUPPORT_CONTACT_EMAIL?: string;
+
+  /** Firebase service-account JSON (one line) for PUSH_PROVIDER=fcm. Secret: environment only. */
+  @ValidateIf((o: EnvironmentVariables) => o.PUSH_PROVIDER === MessagingProviderKind.Fcm)
+  @IsString()
+  @MinLength(50)
+  FCM_SERVICE_ACCOUNT_JSON?: string;
+
   /** Number of reverse-proxy hops in front of the API (0 = none). Needed for correct client IPs behind a load balancer. */
   @Type(() => Number)
   @IsInt()
@@ -297,13 +527,44 @@ export class EnvironmentVariables {
 }
 
 export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVariables {
-  const config = plainToInstance(EnvironmentVariables, raw);
+  // A platform that passes blank variables (e.g. an unset dashboard field) means "not set", not an empty value.
+  const config = plainToInstance(
+    EnvironmentVariables,
+    Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== '')),
+  );
   const errors = validateSync(config, { skipMissingProperties: false });
   if (errors.length > 0) {
     const problems = errors
       .map((e) => `${e.property}: ${Object.values(e.constraints ?? {}).join('; ')}`)
       .join('\n  ');
     throw new Error(`Invalid environment configuration:\n  ${problems}`);
+  }
+  if (
+    config.SMS_PROVIDER === SmsProviderKind.Twilio &&
+    !config.TWILIO_MESSAGING_SERVICE_SID &&
+    !config.TWILIO_SMS_FROM
+  ) {
+    throw new Error(
+      'Invalid environment configuration: SMS_PROVIDER=twilio needs TWILIO_MESSAGING_SERVICE_SID or TWILIO_SMS_FROM',
+    );
+  }
+  if (config.PUSH_PROVIDER === MessagingProviderKind.Fcm) {
+    try {
+      parseFcmServiceAccount(config.FCM_SERVICE_ACCOUNT_JSON ?? '');
+    } catch (error) {
+      throw new Error(`Invalid environment configuration: ${(error as Error).message}`, {
+        cause: error,
+      });
+    }
+  }
+  if (
+    config.PENDING_PAYMENT_ALERT_HOURS !== undefined &&
+    config.PENDING_PAYMENT_AUTO_CANCEL_HOURS !== undefined &&
+    config.PENDING_PAYMENT_AUTO_CANCEL_HOURS <= config.PENDING_PAYMENT_ALERT_HOURS
+  ) {
+    throw new Error(
+      'Invalid environment configuration: PENDING_PAYMENT_AUTO_CANCEL_HOURS must be greater than PENDING_PAYMENT_ALERT_HOURS',
+    );
   }
   if (config.NODE_ENV === NodeEnv.Production) {
     if (/change-me|example|secret/i.test(config.JWT_ACCESS_SECRET)) {
@@ -323,7 +584,7 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     }
     if (
       config.PUSH_PROVIDER === MessagingProviderKind.Memory ||
-      config.WHATSAPP_PROVIDER === MessagingProviderKind.Memory
+      config.WHATSAPP_PROVIDER === WhatsAppProviderKind.Memory
     ) {
       throw new Error(
         'Invalid environment configuration: PUSH_PROVIDER/WHATSAPP_PROVIDER=memory is not allowed in production',
@@ -337,6 +598,45 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     if (config.SMS_PROVIDER === SmsProviderKind.Memory) {
       throw new Error(
         'Invalid environment configuration: SMS_PROVIDER=memory is not allowed in production',
+      );
+    }
+    if (
+      raw.TRUST_PROXY_HOPS === undefined ||
+      (typeof raw.TRUST_PROXY_HOPS === 'string' && raw.TRUST_PROXY_HOPS.trim() === '')
+    ) {
+      // Deliberately no default in production: 0 behind a load balancer collapses every per-IP limit (OTP, admin login, request
+      // throttle) onto the balancer's address; too high lets clients forge X-Forwarded-For. Only the operator knows the topology.
+      throw new Error(
+        'Invalid environment configuration: TRUST_PROXY_HOPS must be set explicitly in production ' +
+          '(number of trusted reverse-proxy hops in front of the API; 0 only if clients reach the API directly; see README)',
+      );
+    }
+    if (config.SMS_PROVIDER === SmsProviderKind.Disabled) {
+      process.emitWarning(
+        'SMS_PROVIDER=disabled in production: nobody can log in with an OTP until a real SMS provider is configured',
+        'ConfigWarning',
+      );
+    }
+    if (config.PAYMENT_PROVIDER === PaymentProviderKind.Disabled) {
+      process.emitWarning(
+        'PAYMENT_PROVIDER=disabled in production: no booking can be paid',
+        'ConfigWarning',
+      );
+    }
+    if (config.RAZORPAY_KEY_ID?.startsWith('rzp_test_')) {
+      process.emitWarning(
+        'RAZORPAY_KEY_ID is a TEST key in production: no real money moves',
+        'ConfigWarning',
+      );
+    }
+    if (raw.THROTTLE_STORAGE === undefined || raw.THROTTLE_STORAGE === '') {
+      // Production default is the shared store: a missing setting must not silently weaken the per-IP limit across replicas.
+      config.THROTTLE_STORAGE = 'redis';
+    }
+    if (config.THROTTLE_STORAGE === 'memory') {
+      process.emitWarning(
+        'THROTTLE_STORAGE=memory in production: the request limit is per process; use redis with more than one API instance',
+        'ConfigWarning',
       );
     }
     if (config.SWAGGER_ENABLED) {

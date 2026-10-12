@@ -1,5 +1,13 @@
 /** Engagement values the Availability module stores (Q-38: customer-side daily/hourly are not modelled). */
-export const ENGAGEMENTS = ['FULL_TIME', 'PART_TIME', 'LIVE_IN'] as const;
+export const ENGAGEMENTS = [
+  'FULL_TIME',
+  'PART_TIME',
+  'LIVE_IN',
+  'DAILY',
+  'HOURLY',
+  'SHIFT',
+  'ONE_TIME',
+] as const;
 export type Engagement = (typeof ENGAGEMENTS)[number];
 
 /**
@@ -18,12 +26,16 @@ export interface EligibleWorkerCriteria {
   window?: { fromMinute: number; toMinute: number };
   language?: string;
   minExperienceMonths?: number;
+  /** Minimum average rating (only workers with at least one rating qualify). */
+  minRating?: number;
+  /** The customer asking: workers blocked by (or blocking) this user are never eligible for them. */
+  forCustomerUserId?: string;
 }
 
 /**
  * Orderings are stable (the id breaks every tie). None of them is a relevance score: no ranking is defined by the specs (Q-46).
  */
-export type EligibleOrder = 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' | 'SUBMITTED_ASC';
+export type EligibleOrder = 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' | 'RATING_DESC' | 'SUBMITTED_ASC';
 
 export interface EligibleWorker {
   id: string;

@@ -50,17 +50,10 @@ export class RbacSeedService {
   }
 
   /**
-   * Development-only bootstrap of the first Super Admin from caller-supplied credentials (read from the environment by
-   * the seed entry point; never stored in the repository). Returns false when a Super Admin already exists.
+   * One-time bootstrap of the first Super Admin from caller-supplied credentials (read from the environment by the
+   * operator CLI; never stored in the repository). Returns false when a Super Admin already exists. Atomic and audited.
    */
   async bootstrapSuperAdmin(email: string, password: string): Promise<boolean> {
-    if ((await this.repository.countUsersWithRole(AdminRoleCode.SUPER_ADMIN)) > 0) {
-      return false;
-    }
-    await this.users.provisionAdmin(
-      { email, password, roleCode: AdminRoleCode.SUPER_ADMIN },
-      { userId: null, roles: ['SYSTEM_BOOTSTRAP'] },
-    );
-    return true;
+    return (await this.users.bootstrapFirstSuperAdmin({ email, password })) === 'CREATED';
   }
 }

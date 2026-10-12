@@ -18,8 +18,7 @@ class SeedModule {}
 /**
  * `npm run seed` (after `npm run build`). Idempotent reference data: roles, permissions, Super Admin mapping.
  * Optional development bootstrap: set BOOTSTRAP_SUPER_ADMIN_EMAIL and BOOTSTRAP_SUPER_ADMIN_PASSWORD in the environment
- * to create the first Super Admin. It is refused in production because production admin provisioning is an open
- * operational decision. Credentials come only from the environment and are never printed.
+ * to create a development Super Admin. It is refused in production: use `npm run bootstrap:admin` there. Credentials come only from the environment and are never printed.
  */
 async function seed(): Promise<void> {
   const app = await NestFactory.createApplicationContext(SeedModule, { logger: ['error', 'warn'] });
@@ -49,7 +48,7 @@ async function seed(): Promise<void> {
     }
     if (config.isProduction) {
       throw new Error(
-        'Super Admin bootstrap is disabled in production (provisioning is an open decision)',
+        'The seed never creates a Super Admin in production; use `npm run bootstrap:admin` (see README)',
       );
     }
     const created = await rbac.bootstrapSuperAdmin(email, password);

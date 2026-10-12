@@ -55,6 +55,8 @@ export const PermissionCode = {
   REPORT_VIEW: 'report.view',
   ROLE_MANAGE: 'role.manage',
   AUDIT_VIEW: 'audit.view',
+  ALERT_VIEW: 'alert.view',
+  ALERT_MANAGE: 'alert.manage',
 } as const;
 
 export const PERMISSION_CATALOG: ReadonlyArray<{
@@ -154,6 +156,11 @@ export const PERMISSION_CATALOG: ReadonlyArray<{
     description: 'View roles and permissions and change which permissions a role holds',
   },
   { code: PermissionCode.AUDIT_VIEW, description: 'Read the audit log' },
+  {
+    code: PermissionCode.ALERT_VIEW,
+    description: 'See operational alerts addressed to the permissions this role holds',
+  },
+  { code: PermissionCode.ALERT_MANAGE, description: 'Acknowledge and resolve operational alerts' },
 ];
 
 /**

@@ -34,6 +34,15 @@ export class FakePaymentProvider implements PaymentProvider {
   /** Test switches. */
   failNextCreateOrder = false;
   refundOutcome: ProviderPaymentOutcome = 'SUCCEEDED';
+  /** When set, every lookup/refund call fails like an unreachable gateway (retryable). */
+  outage = false;
+  /** Refund records by id, as the gateway would hold them (for refund reconciliation tests). */
+  readonly refundRecords = new Map<
+    string,
+    { providerPaymentId: string; outcome: ProviderPaymentOutcome; amountMinor: number }
+  >();
+  /** Test switch: report an amount different from what was charged, from lookups. */
+  amountOverride: number | null = null;
 
   constructor(private readonly secret: string) {}
 
@@ -91,6 +100,8 @@ export class FakePaymentProvider implements PaymentProvider {
   }
 
   getPayment(providerPaymentId: string, providerOrderId?: string): Promise<ProviderPayment> {
+    if (this.outage)
+      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
     for (const [orderId, order] of this.orders) {
       const outcome = order.payments.get(providerPaymentId);
       if (outcome && (!providerOrderId || providerOrderId === orderId)) {
@@ -98,11 +109,52 @@ export class FakePaymentProvider implements PaymentProvider {
           providerPaymentId,
           providerOrderId: orderId,
           outcome,
-          amountMinor: order.amountMinor,
+          amountMinor: this.amountOverride ?? order.amountMinor,
         });
       }
     }
     return Promise.reject(new ProviderError('payment', 'unknown payment', false));
+  }
+
+  findPaymentsForOrder(providerOrderId: string): Promise<ProviderPayment[]> {
+    if (this.outage)
+      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
+    const order = this.orders.get(providerOrderId);
+    if (!order) return Promise.reject(new ProviderError('payment', 'unknown order', false));
+    return Promise.resolve(
+      [...order.payments].map(([providerPaymentId, outcome]) => ({
+        providerPaymentId,
+        providerOrderId,
+        outcome,
+        amountMinor: this.amountOverride ?? order.amountMinor,
+      })),
+    );
+  }
+
+  findRefundsForPayment(providerPaymentId: string): Promise<ProviderRefund[]> {
+    if (this.outage)
+      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
+    return Promise.resolve(
+      [...this.refundRecords]
+        .filter(([, r]) => r.providerPaymentId === providerPaymentId)
+        .map(([providerRefundId, r]) => ({
+          providerRefundId,
+          outcome: r.outcome,
+          amountMinor: r.amountMinor,
+        })),
+    );
+  }
+
+  getRefund(providerRefundId: string): Promise<ProviderRefund> {
+    if (this.outage)
+      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
+    const record = this.refundRecords.get(providerRefundId);
+    if (!record) return Promise.reject(new ProviderError('payment', 'unknown refund', false));
+    return Promise.resolve({
+      providerRefundId,
+      outcome: record.outcome,
+      amountMinor: record.amountMinor,
+    });
   }
 
   refund(input: {
@@ -110,10 +162,28 @@ export class FakePaymentProvider implements PaymentProvider {
     amountMinor: number;
     idempotencyKey: string;
   }): Promise<ProviderRefund> {
+    if (this.outage)
+      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
     this.refunds.push(input);
-    return Promise.resolve({
-      providerRefundId: `refund_fake_${input.idempotencyKey}`,
+    const providerRefundId = `refund_fake_${input.idempotencyKey}`;
+    // Like a real gateway with an idempotency key: repeating the request returns the same refund, never a second one.
+    const existing = this.refundRecords.get(providerRefundId);
+    if (existing) {
+      return Promise.resolve({
+        providerRefundId,
+        outcome: existing.outcome,
+        amountMinor: existing.amountMinor,
+      });
+    }
+    this.refundRecords.set(providerRefundId, {
+      providerPaymentId: input.providerPaymentId,
       outcome: this.refundOutcome,
+      amountMinor: input.amountMinor,
+    });
+    return Promise.resolve({
+      providerRefundId,
+      outcome: this.refundOutcome,
+      amountMinor: input.amountMinor,
     });
   }
 
@@ -135,6 +205,13 @@ export class FakePaymentProvider implements PaymentProvider {
     };
   }
 
+  /** Test helper: the gateway finishes (or fails) a pending refund. */
+  settleRefund(providerRefundId: string, outcome: ProviderPaymentOutcome): void {
+    const record = this.refundRecords.get(providerRefundId);
+    if (record) record.outcome = outcome;
+  }
+
+  /** Test helper: a payment appears at the gateway for an order without any webhook (a lost callback). */
   /** A signed webhook body and headers for an event. */
   webhook(event: ProviderWebhookEvent): { body: Buffer; headers: Record<string, string> } {
     const body = Buffer.from(JSON.stringify(event));

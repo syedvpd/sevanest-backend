@@ -17,7 +17,25 @@ export class DisabledStorageProvider implements StorageProvider {
     );
   }
 
-  getObjectInfo(): Promise<{ sizeBytes: number } | null> {
+  readObject(): Promise<{ bytes: Buffer; truncated: boolean } | null> {
+    return Promise.reject(
+      new ProviderError('storage', 'Document storage is not configured', false),
+    );
+  }
+
+  deleteObject(): Promise<void> {
+    return Promise.reject(
+      new ProviderError('storage', 'Document storage is not configured', false),
+    );
+  }
+
+  getObjectInfo(): Promise<{ sizeBytes: number; etag?: string } | null> {
+    return Promise.reject(
+      new ProviderError('storage', 'Document storage is not configured', false),
+    );
+  }
+
+  readObjectHead(): Promise<Buffer | null> {
     return Promise.reject(
       new ProviderError('storage', 'Document storage is not configured', false),
     );

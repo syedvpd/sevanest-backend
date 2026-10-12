@@ -6,17 +6,22 @@ import { NotificationEvent } from '../../common/outbox/notification-events';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import type { Prisma } from '../../generated/prisma/client';
+import { AppConfigService } from '../../config/app-config.service';
+import { AlertsService } from '../alerts/alerts.service';
 import { BookingService } from '../booking/booking.service';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import { WorkersService } from '../workers/workers.service';
 import {
+  AdminMessageView,
   AdminSupportCategoryView,
   AdminTicketDetailView,
   AdminTicketListQuery,
   AdminTicketView,
   CreateSupportCategoryDto,
   CreateTicketDto,
+  MessageListQuery,
+  MessageView,
   MyTicketListQuery,
   SupportCategoryView,
   TicketDetailView,
@@ -26,6 +31,7 @@ import {
 } from './dto/support.dto';
 import {
   CategoryRecord,
+  MessageRecord,
   SupportRepository,
   TicketEventRecord,
   TicketRecord,
@@ -54,9 +60,10 @@ export interface StaffActor {
 /**
  * Support tickets and complaints (SRS 3.14, FRD FM-12). A customer or a worker raises a ticket with a configured category and
  * a description, optionally about one of THEIR OWN bookings; staff (`support.view` / `support.manage`) assign, prioritise,
- * escalate and close it, recording the resolution. Every transition locks the ticket row, appends an immutable history line
+ * escalate and close it, recording the resolution, and talk to the creator in a message thread. Every transition locks the ticket row, appends an immutable history line
  * and an audit record in the same transaction, and tells the ticket creator. No SLA, auto-assignment, auto-escalation,
- * attachments, chat or report/block effect is built: the specification gives no values or rules for them (Q-59).
+ * attachments or auto-escalation is built: the specification gives no values or rules for them (Q-59). Resolution targets exist only when
+ * SUPPORT_SLA_HOURS_* is configured; a breach raises a staff alert once.
  */
 @Injectable()
 export class SupportService {
@@ -67,6 +74,8 @@ export class SupportService {
     private readonly users: UsersService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly alerts: AlertsService,
+    private readonly config: AppConfigService,
   ) {}
 
   // --- categories --------------------------------------------------------------------------------------------
@@ -154,6 +163,13 @@ export class SupportService {
 
   // --- the person who raised it ------------------------------------------------------------------------------
 
+  /** Resolution target for a priority, from configuration only (Q-59: no value is invented). null = none configured. */
+  private dueAtFor(priority: TicketPriorityValue | null, from: Date): Date | null {
+    const sla = this.config.ops.supportSlaHours;
+    const hours = (priority ? sla[priority] : undefined) ?? sla.default;
+    return hours ? new Date(from.getTime() + hours * 3_600_000) : null;
+  }
+
   async create(creator: TicketCreator, dto: CreateTicketDto): Promise<TicketDetailView> {
     const category = await this.repository.findCategory(dto.categoryId);
     if (!category || !category.isEnabled) {
@@ -173,6 +189,7 @@ export class SupportService {
           bookingId: dto.bookingId ?? null,
           categoryId: category.id,
           description: dto.description,
+          dueAt: this.dueAtFor(null, new Date()),
         },
         tx,
       );
@@ -223,6 +240,134 @@ export class SupportService {
     const ticket = await this.repository.findById(ticketId);
     if (!ticket || ticket.creatorUserId !== creatorUserId) throw this.notFound();
     return this.detail(ticket);
+  }
+
+  // --- conversation ----------------------------------------------------------------------------------------
+
+  /** The ticket creator writes on their own open ticket. 404 for anyone else's; 409 once it is closed. */
+  async postMessage(creator: TicketCreator, ticketId: string, body: string): Promise<MessageView> {
+    return this.repository.transaction(async (tx) => {
+      const ticket = await this.repository.lock(ticketId, tx);
+      if (!ticket || ticket.creatorUserId !== creator.userId) throw this.notFound();
+      this.requireOpen(ticket);
+      const message = await this.repository.addMessage(
+        {
+          ticketId,
+          authorUserId: creator.userId,
+          authorKind: creator.kind,
+          body,
+          isInternal: false,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: 'ticket.message',
+          entityType: 'support_ticket',
+          entityId: ticketId,
+          actorId: creator.userId,
+          // The text stays out of the audit log.
+          metadata: { authorKind: creator.kind, internal: false },
+        },
+        tx,
+      );
+      return this.messageView(message);
+    });
+  }
+
+  async listMessagesMine(
+    creatorUserId: string,
+    ticketId: string,
+    query: MessageListQuery,
+  ): Promise<Page<MessageView>> {
+    const ticket = await this.repository.findById(ticketId);
+    if (!ticket || ticket.creatorUserId !== creatorUserId) throw this.notFound();
+    const [items, total] = await Promise.all([
+      this.repository.listMessages(ticketId, false, skipFor(query), query.limit),
+      this.repository.countMessages(ticketId, false),
+    ]);
+    return {
+      data: items.map((m) => this.messageView(m)),
+      meta: { page: query.page, limit: query.limit, total },
+    };
+  }
+
+  /** Staff reply (or internal note). A reply is shown to, and notified to, the ticket creator; a note never is. */
+  async staffMessage(
+    ticketId: string,
+    body: string,
+    internal: boolean,
+    actor: StaffActor,
+  ): Promise<AdminMessageView> {
+    return this.repository.transaction(async (tx) => {
+      const ticket = await this.repository.lock(ticketId, tx);
+      if (!ticket) throw this.notFound();
+      this.requireOpen(ticket);
+      const message = await this.repository.addMessage(
+        { ticketId, authorUserId: actor.userId, authorKind: 'ADMIN', body, isInternal: internal },
+        tx,
+      );
+      await this.auditStep('ticket.message', ticket, actor, tx, { internal });
+      if (!internal) {
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.TICKET_MESSAGE,
+            recipients: [ticket.creatorUserId],
+            params: { ticketId },
+          },
+          tx,
+        );
+      }
+      return this.adminMessageView(message);
+    });
+  }
+
+  async adminListMessages(
+    ticketId: string,
+    query: MessageListQuery,
+  ): Promise<Page<AdminMessageView>> {
+    const ticket = await this.repository.findById(ticketId);
+    if (!ticket) throw this.notFound();
+    const [items, total] = await Promise.all([
+      this.repository.listMessages(ticketId, true, skipFor(query), query.limit),
+      this.repository.countMessages(ticketId, true),
+    ]);
+    return {
+      data: items.map((m) => this.adminMessageView(m)),
+      meta: { page: query.page, limit: query.limit, total },
+    };
+  }
+
+  // --- scheduled job: SLA -------------------------------------------------------------------------------------
+
+  /**
+   * Flags open tickets whose configured resolution target has passed and alerts support staff, once per ticket. It does not
+   * escalate or reassign on its own (no such rule is specified, Q-59). Returns how many tickets were flagged.
+   */
+  async flagSlaBreaches(limit = 100): Promise<number> {
+    let flagged = 0;
+    for (const item of await this.repository.findBreached(limit)) {
+      await this.repository.transaction(async (tx) => {
+        const ticket = await this.repository.lock(item.id, tx);
+        if (!ticket || ticket.status === 'CLOSED' || ticket.slaBreachedAt) return;
+        await this.repository.update(ticket.id, { slaBreachedAt: new Date() }, tx);
+        await this.alerts.raise(
+          {
+            dedupeKey: `SUPPORT_SLA_BREACH:${ticket.id}`,
+            type: 'SUPPORT_SLA_BREACH',
+            severity: ticket.priority === 'HIGH' ? 'CRITICAL' : 'WARNING',
+            title: 'A support ticket passed its resolution target',
+            requiredPermission: PermissionCode.SUPPORT_MANAGE,
+            entityType: 'support_ticket',
+            entityId: ticket.id,
+            detail: { dueAt: item.dueAt.toISOString(), priority: ticket.priority },
+          },
+          tx,
+        );
+        flagged++;
+      });
+    }
+    return flagged;
   }
 
   // --- staff -------------------------------------------------------------------------------------------------
@@ -298,7 +443,12 @@ export class SupportService {
   ): Promise<AdminTicketDetailView> {
     await this.transition(ticketId, async (ticket, tx) => {
       if (ticket.priority === priority) return;
-      await this.repository.update(ticketId, { priority }, tx);
+      // The target follows the priority, counted from when the ticket was raised; no target configured = none.
+      await this.repository.update(
+        ticketId,
+        { priority, dueAt: this.dueAtFor(priority, ticket.createdAt) },
+        tx,
+      );
       await this.repository.addEvent(
         {
           ticketId,
@@ -373,6 +523,7 @@ export class SupportService {
         from: ticket.status,
         to: 'CLOSED',
       });
+      await this.alerts.autoResolve(`SUPPORT_SLA_BREACH:${ticketId}`, 'the ticket was closed', tx);
       await this.notifyCreator(ticket, 'CLOSED', tx);
     });
     return this.adminGet(ticketId);
@@ -397,6 +548,29 @@ export class SupportService {
       }
       await work(ticket, tx);
     });
+  }
+
+  private requireOpen(ticket: TicketRecord): void {
+    if (ticket.status === 'CLOSED') {
+      throw new DomainException(
+        SupportErrorCode.TICKET_CLOSED,
+        'This ticket is closed',
+        HttpStatus.CONFLICT,
+      );
+    }
+  }
+
+  private messageView(m: MessageRecord): MessageView {
+    return {
+      id: m.id,
+      from: m.authorKind === 'ADMIN' ? 'ADMIN' : m.authorKind,
+      body: m.body,
+      createdAt: m.createdAt,
+    };
+  }
+
+  private adminMessageView(m: MessageRecord): AdminMessageView {
+    return { ...this.messageView(m), authorUserId: m.authorUserId, internal: m.isInternal };
   }
 
   private auditStep(
@@ -513,6 +687,7 @@ export class SupportService {
       description: t.description,
       status: t.status,
       resolution: t.resolution,
+      dueAt: t.dueAt,
       createdAt: t.createdAt,
       closedAt: t.closedAt,
     };
@@ -534,6 +709,8 @@ export class SupportService {
       resolution: t.resolution,
       closedAt: t.closedAt,
       closedByUserId: t.closedByUserId,
+      dueAt: t.dueAt,
+      slaBreachedAt: t.slaBreachedAt,
       createdAt: t.createdAt,
     };
   }

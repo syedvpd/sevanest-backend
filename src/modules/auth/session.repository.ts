@@ -97,9 +97,17 @@ export class SessionRepository {
     return result.count > 0;
   }
 
-  async revokeAllForUser(userId: string, tx: Prisma.TransactionClient): Promise<number> {
+  async revokeAllForUser(
+    userId: string,
+    tx: Prisma.TransactionClient,
+    exceptSessionId?: string,
+  ): Promise<number> {
     const active = await tx.session.findMany({
-      where: { userId, revokedAt: null },
+      where: {
+        userId,
+        revokedAt: null,
+        ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}),
+      },
       select: { id: true },
     });
     if (active.length === 0) {

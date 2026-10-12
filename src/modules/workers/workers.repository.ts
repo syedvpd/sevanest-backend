@@ -12,6 +12,7 @@ const PROFILE_SELECT = {
   submittedAt: true,
   experienceMonths: true,
   expectedSalary: true,
+  preferredLanguage: true,
   addressLine: true,
   addressArea: true,
   addressCity: true,
@@ -37,6 +38,7 @@ export interface WorkerRecord {
   submittedAt: Date | null;
   experienceMonths: number | null;
   expectedSalary: number | null;
+  preferredLanguage: string | null;
   address: { line: string; area: string; city: string; pincode: string } | null;
   emergencyContact: { name: string; mobile: string } | null;
   previousEmployer: { name: string; mobile: string } | null;
@@ -56,6 +58,7 @@ function toRecord(row: ProfileRow): WorkerRecord {
     submittedAt: row.submittedAt,
     experienceMonths: row.experienceMonths,
     expectedSalary: row.expectedSalary === null ? null : Number(row.expectedSalary),
+    preferredLanguage: row.preferredLanguage,
     address:
       row.addressLine === null
         ? null
@@ -93,6 +96,7 @@ export type ProfileScalarUpdate = Partial<
     | 'name'
     | 'experienceMonths'
     | 'expectedSalary'
+    | 'preferredLanguage'
     | 'addressLine'
     | 'addressArea'
     | 'addressCity'
@@ -180,6 +184,10 @@ export class WorkersRepository {
     if (categoryIds.length > 0) {
       await tx.workerSkill.deleteMany({ where: { workerId, categoryId: { in: categoryIds } } });
     }
+  }
+
+  async setPhotoRef(id: string, ref: string, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.workerProfile.update({ where: { id }, data: { profilePhotoRef: ref } });
   }
 
   async markSubmitted(id: string, at: Date, tx: Prisma.TransactionClient): Promise<void> {

@@ -124,6 +124,15 @@ export class UpdateWorkerProfileDto {
   expectedSalary?: number | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    example: 'hi',
+    description: 'Language for my notifications and app. null clears it (platform default).',
+  })
+  @IsOptional()
+  @Matches(LANGUAGE_CODE, { message: 'preferredLanguage must be a language code such as "hi"' })
+  preferredLanguage?: string | null;
+
+  @ApiPropertyOptional({
     type: [String],
     example: ['en', 'hi'],
     description: 'Replaces the whole list; at least one.',
@@ -221,6 +230,7 @@ export class WorkerProfileResponse {
   @ApiProperty({ nullable: true }) submittedAt!: Date | null;
   @ApiProperty({ nullable: true }) experienceMonths!: number | null;
   @ApiProperty({ nullable: true }) expectedSalary!: number | null;
+  @ApiProperty({ nullable: true }) preferredLanguage!: string | null;
   @ApiProperty({ type: [String] }) languages!: string[];
   @ApiProperty({ type: WorkerAddressResponse, nullable: true })
   address!: WorkerAddressResponse | null;

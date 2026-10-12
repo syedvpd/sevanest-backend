@@ -386,6 +386,7 @@ describe('Admin API (integration)', () => {
     it('shows every section to a Super Admin, matching the database', async () => {
       const res = await as(api, superAdmin).get('/api/v1/admin/dashboard').expect(200);
       expect(Object.keys(res.body.sections as object).sort()).toEqual([
+        'alerts',
         'bookings',
         'collections',
         'complaints',

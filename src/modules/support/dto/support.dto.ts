@@ -182,6 +182,11 @@ export class TicketView {
   @ApiProperty() description!: string;
   @ApiProperty({ enum: TICKET_STATUSES }) status!: TicketStatusValue;
   @ApiProperty({ nullable: true }) resolution!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Resolution target, when the business configured one.',
+  })
+  dueAt!: Date | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty({ nullable: true }) closedAt!: Date | null;
 }
@@ -205,9 +210,52 @@ export class AdminTicketView {
   @ApiProperty({ nullable: true }) resolution!: string | null;
   @ApiProperty({ nullable: true }) closedAt!: Date | null;
   @ApiProperty({ nullable: true }) closedByUserId!: string | null;
+  @ApiProperty({ nullable: true }) dueAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Set once when the resolution target passed while the ticket was open.',
+  })
+  slaBreachedAt!: Date | null;
   @ApiProperty() createdAt!: Date;
 }
 
 export class AdminTicketDetailView extends AdminTicketView {
   @ApiProperty({ type: [AdminTicketEventView] }) history!: AdminTicketEventView[];
+}
+
+export class PostMessageDto {
+  @ApiProperty({ maxLength: 2000, description: 'No HTML.' })
+  @Transform(trim)
+  @IsString()
+  @Length(1, 2000)
+  @Matches(/^[^<>]*$/, { message: 'body must not contain < or >' })
+  body!: string;
+}
+
+export class StaffMessageDto extends PostMessageDto {
+  @ApiPropertyOptional({
+    default: false,
+    description: 'true = an internal note the ticket creator never sees.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  internal?: boolean;
+}
+
+export class MessageListQuery extends PageQueryDto {}
+
+export class MessageView {
+  @ApiProperty() id!: string;
+  @ApiProperty({
+    enum: ['CUSTOMER', 'WORKER', 'ADMIN'],
+    description: 'Who wrote it. Staff are not identified to the creator.',
+  })
+  from!: string;
+  @ApiProperty() body!: string;
+  @ApiProperty() createdAt!: Date;
+}
+
+export class AdminMessageView extends MessageView {
+  @ApiProperty() authorUserId!: string;
+  @ApiProperty() internal!: boolean;
 }

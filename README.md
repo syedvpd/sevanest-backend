@@ -60,7 +60,24 @@ approved business values** (the specifications leave them open); production must
 `SMS_PROVIDER=memory` (tests/local only, refused in production) keeps OTPs in process memory.
 
 Optional, development only: set `BOOTSTRAP_SUPER_ADMIN_EMAIL` and `BOOTSTRAP_SUPER_ADMIN_PASSWORD` in the environment
-(never in a committed file) before `npm run seed` to create the first Super Admin. It is refused in production.
+(never in a committed file) before `npm run seed` to create a development Super Admin. The seed refuses this in production.
+
+### First Super Admin in production (one-time)
+Run once, in a shell of the deployed service (Render: the service's **Shell** tab; Docker: `docker exec -it`), so the command uses the
+production `DATABASE_URL`. The password is typed at a **hidden prompt** (nothing is stored, logged or put in shell history):
+```bash
+BOOTSTRAP_SUPER_ADMIN_EMAIL=owner@yourcompany.example BOOTSTRAP_SUPER_ADMIN_CONFIRM=create-first-super-admin npm run bootstrap:admin
+```
+Where no terminal exists (CI, Kubernetes job) supply the password as a secret **file** instead: `BOOTSTRAP_SUPER_ADMIN_PASSWORD_FILE=/run/secrets/admin_pw`.
+(`BOOTSTRAP_SUPER_ADMIN_PASSWORD` in the environment still works for compatibility; set it only for that one run and remove it.)
+
+Refusals, all with exit code 1 and nothing written: not `NODE_ENV=production`-confirmed (missing `BOOTSTRAP_SUPER_ADMIN_CONFIRM`), missing or
+invalid email, no password, a **weak password** (shorter than `ADMIN_PASSWORD_MIN_LENGTH`, fewer than three character classes, repeated
+runs, contains the email name or a very common password), or **a Super Admin already exists** (audited as `admin.bootstrap_rejected`).
+The check-and-create is one transaction under a lock, so two simultaneous runs create exactly one account; a failure midway rolls
+everything back. Success is audited as `admin.bootstrap` (no email, no password in the row). Normal start-up and `npm run seed` never
+create a production user (the seed refuses `BOOTSTRAP_*` in production; the demo seed refuses any non-local database).
+After the first login change the password (`POST /api/v1/admin/account/password`) and create further admins through the API.
 
 ## Run
 ```bash
@@ -84,6 +101,85 @@ docker compose exec postgres createdb -U <POSTGRES_USER> sevanest_test
 DATABASE_URL=postgresql://<user>:<password>@localhost:5432/sevanest_test?schema=public npx prisma migrate deploy
 # then add TEST_DATABASE_URL=<that URL> to your local .env
 ```
+
+## Providers (what to configure)
+| Concern | Setting | Notes |
+|---|---|---|
+| OTP SMS | `SMS_PROVIDER=twilio` or `msg91` | Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_MESSAGING_SERVICE_SID` (or `TWILIO_SMS_FROM`). MSG91 (India/DLT): `MSG91_AUTH_KEY`, `MSG91_OTP_TEMPLATE_ID`, `MSG91_OTP_VARIABLE`. |
+| WhatsApp | `WHATSAPP_PROVIDER=twilio` | needs the Twilio credentials plus `TWILIO_WHATSAPP_FROM` (an approved WhatsApp sender or the Twilio sandbox number) |
+| Payments | `PAYMENT_PROVIDER=razorpay` | `RAZORPAY_KEY_ID` (`rzp_test_*` or `rzp_live_*`), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` |
+| Push | `PUSH_PROVIDER=fcm` | Firebase Cloud Messaging HTTP v1: `FCM_SERVICE_ACCOUNT_JSON` (the service-account key on one line, a secret). Apps send their device token to `PUT /api/v1/auth/device-token`. |
+
+A provider whose settings are missing or malformed stops the process at start-up with the name of the variable. `memory`/`fake` adapters are
+refused in production, and `disabled` is never silently replaced by a fake one: OTP requests answer `503 SMS_NOT_CONFIGURED`, payments `503`.
+Indian SMS must be sent from a **DLT-registered** sender and template: register with your operator (or through MSG91/Twilio's DLT support) and
+use the approved template; the application never sends free text through MSG91. The adapters are tested against faked HTTP responses; **no real
+SMS or payment has been sent by this repository's tests** - do a sandbox/test-mode delivery before launch.
+
+Razorpay setup: create the webhook `https://<api-host>/api/v1/webhooks/payments` with the secret in `RAZORPAY_WEBHOOK_SECRET` and events
+`payment.captured`, `payment.failed`, `refund.processed`, `refund.failed`; keep **auto-capture** enabled (an authorized-only payment is
+never treated as paid). The checkout response contains only the public `keyId`, `orderId`, `amount`, `currency`; the client sends back
+`providerPaymentId` and `signature` to `POST /api/v1/payments/{id}/verify`, and the server re-checks both with Razorpay before changing any state.
+
+## Bookings, payments and money problems
+* Cancelling a booking closes its unpaid payment (`FAILED`, `BOOKING_CANCELLED`) and keeps checking the gateway order for a short tail. If the
+  customer still pays, the payment is recorded as `SUCCEEDED` (the money is real) but is **never** treated as a normal booking payment: a
+  `LATE_PAYMENT_BOOKING_NOT_PENDING` exception is raised and the customer is told it is under review.
+* Cancelling a booking that is already paid raises `PAID_BOOKING_CANCELLED`. **Nothing is refunded automatically** - the refund and
+  cancellation-fee policy is undecided (Q-17/Q-21), so a person with `payment.refund` decides (`POST /admin/payments/{id}/refund`) and then closes the
+  item (`POST /admin/payment-exceptions/{id}/resolve`).
+* Other money problems become exceptions too: `AMOUNT_MISMATCH`, `CURRENCY_MISMATCH`, `DUPLICATE_PAYMENT` (second charge on a paid order),
+  `UNKNOWN_ORDER_EVENT`, `RECONCILIATION_EXHAUSTED`, `REFUND_STUCK`, `REFUND_NOT_REQUESTED`. List them with `GET /admin/payment-exceptions?status=OPEN`
+  (`payment.view`); each states the booking and payment state, amount, gateway references and the required action. Staff with `payment.manage` also get a
+  `PAYMENT_EXCEPTION_ALERT` notification **if an admin has configured a template for that event** (templates are admin data, none is seeded) - the list is
+  the source of truth.
+* Recovery (worker process, every minute): payments with an open gateway order are checked against the gateway **by order** after 5 minutes and then with
+  exponential backoff (5 min doubling, capped at 6 h, jittered, 12 checks); pending refunds are polled; webhooks that arrived before their order are replayed;
+  cancelled bookings that still hold money are re-flagged. Rows are claimed atomically in PostgreSQL (`FOR UPDATE SKIP LOCKED` plus a lapsing claim), so
+  restarts and several workers are safe. `GET /admin/payment-recovery/summary` shows the queue; a growing `dueForCheck` means the worker is not running.
+* No booking-expiry rule exists (undecided), so unpaid `PENDING_PAYMENT` bookings are **not** auto-cancelled.
+
+## Background jobs (why "nothing happens in real time" on a web-only deployment)
+The API (`node dist/main`) only serves HTTP. Notification delivery, payment recovery, re-check reminders and KYC clean-up run in the **worker**
+(`node dist/worker`), a separate process. If only the API is deployed (for example one Render *Web Service*) the outbox fills up and nothing is
+delivered or recovered. Either deploy a second service running `node dist/worker` (Render: *Background Worker*, same environment variables; see `render.yaml`),
+or set `EMBEDDED_WORKERS=true` on the API to run the same loops inside it. Redis is only used for BullMQ delivery jobs, OTP state and rate limits; the
+recovery state lives in PostgreSQL.
+
+## Proxy and client IP (`TRUST_PROXY_HOPS`)
+Per-IP limits (global throttle, OTP requests, admin-login lockout) key on the client IP. `TRUST_PROXY_HOPS` tells Express how many reverse proxies in front
+of the API to trust when reading `X-Forwarded-For`; it is **required in production** (the API refuses to start without it) because no default is safe:
+0 behind a load balancer puts all users in one bucket (a platform-wide OTP cap and one attacker can lock out all admins), and too high lets a client forge
+the header. Count the hops between the internet and the API: Render web service = 1; Cloudflare in front of Render = 2; direct exposure = 0. Check it
+after deploying: (1) too low - exhaust the OTP per-IP limit from one network, then request an OTP from a second network (a phone on mobile data): if that
+one is refused too, every client shares one IP, so raise the value; (2) too high - repeat the requests while changing `X-Forwarded-For` on each call: if the limit
+never triggers, the header is trusted too far, so lower the value. Per-account (admin email) and per-phone (OTP) limits do not depend on the IP, so rotating IPs does
+not bypass them. `THROTTLE_STORAGE` defaults to `redis` in production so the global limit is shared by all replicas; if Redis is unreachable the request
+counter degrades to per-process memory (logged) instead of failing every request.
+
+## Staff alerts, scheduled checks and launch readiness
+* **Alert inbox** - `GET /api/v1/admin/alerts` (+ `/summary`, acknowledge, resolve; permissions `alert.view` / `alert.manage`; a count appears on the dashboard).
+  Alerts are deduplicated per problem, visible only to admins holding the permission the problem concerns, closed automatically when the problem
+  disappears, and re-opened if it returns. Raised by: money problems (`PAYMENT_EXCEPTION`), a matched worker who has not answered
+  (`BOOKING_NO_RESPONSE`), a booking returned to staff after a decline (`BOOKING_NEEDS_MATCH`), a booking waiting for payment
+  (`BOOKING_STUCK_PAYMENT`), a support ticket past its target (`SUPPORT_SLA_BREACH`), safety reports (`SAFETY_REPORT`) and account-deletion requests.
+  The alert inbox needs no notification template, so it works on day one.
+* **Rules that need a number are OFF until you set one** (the business has not decided them): `WORKER_RESPONSE_HOURS`,
+  `PENDING_PAYMENT_ALERT_HOURS`, `PENDING_PAYMENT_AUTO_CANCEL_HOURS`, `SUPPORT_SLA_HOURS_*` (see `.env.example`). Auto-cancel goes through the normal
+  cancellation path; nothing is ever refunded or reassigned automatically.
+* **Worker loops** (`node dist/worker`, or `EMBEDDED_WORKERS=true`): notification delivery, re-check reminders, abandoned-upload clean-up, payment
+  recovery, booking checks, support SLA. Each records a heartbeat in Redis every tick.
+* **Launch readiness** - `GET /api/v1/admin/system/readiness` (Super Admin) lists every prerequisite and whether it is met: enabled areas and categories,
+  required verification checks, booking fee, SMS/payment/storage providers, templates per event and whether the worker loops are alive (with the
+  exact fix when they are not). `npm run seed:launch` installs only what the PRD itself specifies - the five Hyderabad pilot areas - and starter
+  in-app wording for each event (never overwriting an administrator's text); the booking fee and the verification set stay for you to decide.
+* **In-app inbox** - `GET /api/v1/notifications` (+ `unread-count`, `:id/read`, `read-all`) for customers and workers. Channel `IN_APP` is delivered
+  the moment the event is processed, needs no provider, and each item carries a deep link `route`. A recipient's `preferredLanguage` selects the template language.
+* **Support** is a conversation: the creator and staff exchange messages on a ticket (`/support/tickets/:id/messages`), staff can leave internal notes, and a
+  resolution target (SLA) is set from configuration. **Safety** - `POST /safety/blocks` and `/safety/reports` (customers and workers); a block hides the pair
+  from each other in search, shortlist, matching, replacement and booking. **Legal** - `GET /legal/current`, `POST /legal/accept`, and
+  `POST /me/deletion-request` (recorded for staff; nothing is erased automatically because retention rules are undecided). **App start-up** -
+  `GET /app-config` and `GET /reference-data` are public and cacheable.
 
 ## Database safety
 Schema changes only via `prisma migrate dev` (reviewed SQL in `prisma/migrations`) and `prisma migrate deploy` elsewhere.

@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import type { Prisma } from '../../generated/prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -84,6 +85,11 @@ export class WorkersService {
       throw this.profileNotFound();
     }
     return ref;
+  }
+
+  /** Contract for Worker Photo: records which stored object is the current profile photo (never accepted from a request body). */
+  setPhotoRef(workerId: string, ref: string, tx: Prisma.TransactionClient): Promise<void> {
+    return this.repository.setPhotoRef(workerId, ref, tx);
   }
 
   async requireRefById(workerId: string): Promise<WorkerRef> {
@@ -413,6 +419,7 @@ export class WorkersService {
       submittedAt: worker.submittedAt,
       experienceMonths: worker.experienceMonths,
       expectedSalary: worker.expectedSalary,
+      preferredLanguage: worker.preferredLanguage,
       languages: worker.languages,
       address: worker.address,
       emergencyContact: worker.emergencyContact,
@@ -456,6 +463,7 @@ function scalarUpdate(dto: UpdateWorkerProfileDto): ProfileScalarUpdate {
   if (dto.name !== undefined) data.name = dto.name;
   if (dto.experienceMonths !== undefined) data.experienceMonths = dto.experienceMonths;
   if (dto.expectedSalary !== undefined) data.expectedSalary = dto.expectedSalary;
+  if (dto.preferredLanguage !== undefined) data.preferredLanguage = dto.preferredLanguage;
   if (dto.address) {
     data.addressLine = dto.address.line;
     data.addressArea = dto.address.area;

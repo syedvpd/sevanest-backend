@@ -7,6 +7,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import type { Job } from 'bullmq';
+import { HeartbeatService } from '../../infrastructure/cache/heartbeat.service';
 import { NOTIFICATION_QUEUE } from './notifications.constants';
 import { NotificationsModule } from './notifications.module';
 import { NotificationsService } from './notifications.service';
@@ -36,7 +37,10 @@ export class NotificationDispatchLoop implements OnApplicationBootstrap, OnModul
   private timer?: NodeJS.Timeout;
   private running = false;
 
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly heartbeat: HeartbeatService,
+  ) {}
 
   onApplicationBootstrap(): void {
     this.timer = setInterval(() => void this.tick(), 5_000);
@@ -50,6 +54,7 @@ export class NotificationDispatchLoop implements OnApplicationBootstrap, OnModul
     if (this.running) return;
     this.running = true;
     try {
+      await this.heartbeat.beat('notifications');
       await this.notifications.dispatchOutbox();
       await this.notifications.requeueStale();
     } catch (error) {

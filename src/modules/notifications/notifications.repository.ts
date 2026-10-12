@@ -4,7 +4,7 @@ import { PrismaService } from '../../infrastructure/database/prisma.service';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
-export type Channel = 'PUSH' | 'SMS' | 'WHATSAPP';
+export type Channel = 'PUSH' | 'SMS' | 'WHATSAPP' | 'IN_APP';
 export type DeliveryStatus = 'QUEUED' | 'SENT' | 'FAILED' | 'SKIPPED';
 
 export interface TemplateRecord {
@@ -14,6 +14,7 @@ export interface TemplateRecord {
   language: string;
   title: string | null;
   body: string;
+  dltTemplateId: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +33,7 @@ export interface NotificationRecord {
   lastError: string | null;
   providerMessageId: string | null;
   sentAt: Date | null;
+  readAt: Date | null;
   createdAt: Date;
 }
 
@@ -57,6 +59,7 @@ export class NotificationsRepository {
       language: string;
       title: string | null;
       body: string;
+      dltTemplateId?: string | null;
       isActive: boolean;
     },
     tx: Prisma.TransactionClient,
@@ -70,7 +73,12 @@ export class NotificationsRepository {
 
   updateTemplate(
     id: string,
-    data: { title?: string | null; body?: string; isActive?: boolean },
+    data: {
+      title?: string | null;
+      body?: string;
+      isActive?: boolean;
+      dltTemplateId?: string | null;
+    },
     tx: Prisma.TransactionClient,
   ): Promise<TemplateRecord> {
     return tx.notificationTemplate.update({ where: { id }, data });
@@ -96,10 +104,112 @@ export class NotificationsRepository {
 
   activeTemplatesFor(
     eventCode: string,
-    language: string,
+    languages: string[],
     tx: Prisma.TransactionClient,
   ): Promise<TemplateRecord[]> {
-    return tx.notificationTemplate.findMany({ where: { eventCode, language, isActive: true } });
+    return tx.notificationTemplate.findMany({
+      where: { eventCode, language: { in: languages }, isActive: true },
+    });
+  }
+
+  /** Preferred language of each user (worker or customer profile); users without a profile or a preference are absent. */
+  async preferredLanguages(
+    userIds: string[],
+    tx: Prisma.TransactionClient,
+  ): Promise<Map<string, string>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await tx.$queryRaw<Array<{ user_id: string; lang: string | null }>>`
+      SELECT u.id AS user_id, COALESCE(wp.preferred_language, cp.preferred_language) AS lang
+      FROM users u
+      LEFT JOIN worker_profiles wp ON wp.user_id = u.id
+      LEFT JOIN customer_profiles cp ON cp.user_id = u.id
+      WHERE u.id = ANY(${userIds}::uuid[])`;
+    return new Map(rows.filter((r) => r.lang).map((r) => [r.user_id, r.lang!]));
+  }
+
+  async upsertDefaultTemplate(
+    input: {
+      eventCode: string;
+      channel: Channel;
+      language: string;
+      title: string | null;
+      body: string;
+    },
+    db: Db = this.prisma,
+  ): Promise<boolean> {
+    const existing = await db.notificationTemplate.findUnique({
+      where: {
+        eventCode_channel_language: {
+          eventCode: input.eventCode,
+          channel: input.channel,
+          language: input.language,
+        },
+      },
+    });
+    if (existing) return false; // an administrator's wording is never overwritten
+    await db.notificationTemplate.create({ data: { ...input, isActive: true } });
+    return true;
+  }
+
+  // --- in-app inbox ------------------------------------------------------------------------------------------
+
+  async listInbox(
+    userId: string,
+    filter: { unreadOnly: boolean },
+    skip: number,
+    take: number,
+  ): Promise<{
+    items: Array<NotificationRecord & { template: TemplateRecord | null }>;
+    total: number;
+  }> {
+    const where: Prisma.NotificationWhereInput = {
+      recipientUserId: userId,
+      channel: 'IN_APP',
+      status: 'SENT',
+      ...(filter.unreadOnly ? { readAt: null } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where,
+        include: { template: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+      this.prisma.notification.count({ where }),
+    ]);
+    return {
+      items: rows.map((r) => ({ ...toNotification(r), template: r.template })),
+      total,
+    };
+  }
+
+  unreadCount(userId: string): Promise<number> {
+    return this.prisma.notification.count({
+      where: { recipientUserId: userId, channel: 'IN_APP', status: 'SENT', readAt: null },
+    });
+  }
+
+  /** Marks one of the user's own inbox items read. false = not theirs / not an inbox item / unknown. Repeating is harmless. */
+  async markRead(userId: string, id: string): Promise<boolean> {
+    const found = await this.prisma.notification.findFirst({
+      where: { id, recipientUserId: userId, channel: 'IN_APP' },
+      select: { id: true },
+    });
+    if (!found) return false;
+    await this.prisma.notification.updateMany({
+      where: { id, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return true;
+  }
+
+  async markAllRead(userId: string): Promise<number> {
+    const result = await this.prisma.notification.updateMany({
+      where: { recipientUserId: userId, channel: 'IN_APP', readAt: null },
+      data: { readAt: new Date() },
+    });
+    return result.count;
   }
 
   // --- notifications ----------------------------------------------------------------------------------------
@@ -114,13 +224,17 @@ export class NotificationsRepository {
       templateId: string;
       params: Record<string, string>;
       dedupeKey: string;
+      /** IN_APP notifications are born SENT: the row is the message. */
+      delivered?: boolean;
     },
     tx: Prisma.TransactionClient,
   ): Promise<string | null> {
+    const status = input.delivered ? 'SENT' : 'QUEUED';
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
-      INSERT INTO notifications (id, outbox_event_id, recipient_user_id, event_code, channel, template_id, params, dedupe_key, updated_at)
+      INSERT INTO notifications (id, outbox_event_id, recipient_user_id, event_code, channel, template_id, params, status, sent_at, dedupe_key, updated_at)
       VALUES (gen_random_uuid(), ${input.outboxEventId}::uuid, ${input.recipientUserId}::uuid, ${input.eventCode},
               ${input.channel}::"NotificationChannel", ${input.templateId}::uuid, ${JSON.stringify(input.params)}::jsonb,
+              ${status}::"NotificationStatus", ${input.delivered ? new Date() : null}::timestamptz,
               ${input.dedupeKey}, now())
       ON CONFLICT (dedupe_key) DO NOTHING
       RETURNING id`;
@@ -177,6 +291,31 @@ export class NotificationsRepository {
       },
     });
     return updated.count === 1;
+  }
+
+  async statusCounts(): Promise<Record<DeliveryStatus, number>> {
+    const groups = await this.prisma.notification.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    });
+    const counts: Record<DeliveryStatus, number> = { QUEUED: 0, SENT: 0, FAILED: 0, SKIPPED: 0 };
+    for (const g of groups) counts[g.status] = g._count._all;
+    return counts;
+  }
+
+  async oldestQueuedAgeSeconds(): Promise<number | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ age: number | null }>>`
+      SELECT EXTRACT(EPOCH FROM now() - min(created_at))::float8 AS age FROM notifications WHERE status = 'QUEUED'`;
+    const age = rows[0]?.age;
+    return age === null || age === undefined ? null : Math.floor(age);
+  }
+
+  /** FAILED -> QUEUED for a manual retry; null when the notification is not FAILED (or does not exist). */
+  async requeueFailed(id: string): Promise<{ attempts: number } | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ attempts: number }>>`
+      UPDATE notifications SET status = 'QUEUED', last_error = NULL, updated_at = now()
+      WHERE id = ${id}::uuid AND status = 'FAILED' RETURNING attempts`;
+    return rows[0] ?? null;
   }
 
   async staleQueuedIds(olderThanSeconds: number, limit: number): Promise<string[]> {

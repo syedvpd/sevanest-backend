@@ -15,6 +15,7 @@ interface PageRow {
 const ORDER_BY: Record<EligibleOrder, Prisma.Sql> = {
   EXPERIENCE_DESC: Prisma.sql`wp.experience_months DESC NULLS LAST, wp.id ASC`,
   EXPERIENCE_ASC: Prisma.sql`wp.experience_months ASC NULLS LAST, wp.id ASC`,
+  RATING_DESC: Prisma.sql`(SELECT rs.rating_sum::float8 / NULLIF(rs.rating_count, 0) FROM worker_rating_summaries rs WHERE rs.worker_id = wp.id) DESC NULLS LAST, wp.experience_months DESC NULLS LAST, wp.id ASC`,
   SUBMITTED_ASC: Prisma.sql`wp.submitted_at ASC, wp.id ASC`,
 };
 
@@ -54,6 +55,38 @@ export class SearchRepository {
         WHERE ${where}`),
     ]);
     return { items: await this.hydrate(rows), total: totals[0]?.total ?? 0 };
+  }
+
+  /**
+   * Customer visibility of specific workers (profile, shortlist): active account, submitted profile, fully verified. Unlike
+   * `findEligible` it does not ask for a category or area. Ineligible and unknown ids are simply absent.
+   */
+  async findVisibleByIds(ids: string[], forCustomerUserId?: string): Promise<EligibleWorker[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.$queryRaw<PageRow[]>(Prisma.sql`
+      SELECT wp.id, wp.user_id AS "userId", wp.name,
+             wp.experience_months AS "experienceMonths",
+             wpref.engagement_preference::text AS "engagementPreference"
+      FROM worker_profiles wp
+      JOIN users u ON u.id = wp.user_id
+      LEFT JOIN worker_work_preferences wpref ON wpref.worker_id = wp.id
+      WHERE wp.id = ANY(${ids}::uuid[])
+        AND wp.onboarding_status = 'SUBMITTED'
+        AND u.type = 'WORKER' AND u.status = 'ACTIVE'
+        AND ${verifiedWorkerCondition('wp.id')}
+        AND ${this.notBlocked(forCustomerUserId)}`);
+    return this.hydrate(rows);
+  }
+
+  /** Aggregate rating of each given worker (workers with no rating are absent). */
+  async ratingSummaries(ids: string[]): Promise<Map<string, { sum: number; count: number }>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; sum: number; count: number }>>(
+      Prisma.sql`
+      SELECT worker_id AS id, rating_sum AS sum, rating_count AS count
+      FROM worker_rating_summaries WHERE worker_id = ANY(${ids}::uuid[]) AND rating_count > 0`,
+    );
+    return new Map(rows.map((r) => [r.id, { sum: r.sum, count: r.count }]));
   }
 
   /** Cheap yes/no for one worker: the same eligibility, one statement, no hydration. */
@@ -98,7 +131,22 @@ export class SearchRepository {
     if (c.minExperienceMonths !== undefined) {
       conditions.push(Prisma.sql`wp.experience_months >= ${c.minExperienceMonths}`);
     }
+    if (c.minRating !== undefined) {
+      conditions.push(
+        Prisma.sql`EXISTS (SELECT 1 FROM worker_rating_summaries rs WHERE rs.worker_id = wp.id AND rs.rating_count > 0 AND rs.rating_sum::float8 / rs.rating_count >= ${c.minRating})`,
+      );
+    }
+    conditions.push(this.notBlocked(c.forCustomerUserId));
     return Prisma.join(conditions, ' AND ');
+  }
+
+  /** A block in either direction between the customer and the worker's account hides the worker from that customer. */
+  private notBlocked(customerUserId: string | undefined): Prisma.Sql {
+    if (!customerUserId) return Prisma.sql`TRUE`;
+    return Prisma.sql`NOT EXISTS (
+      SELECT 1 FROM user_blocks ub
+      WHERE (ub.blocker_user_id = ${customerUserId}::uuid AND ub.blocked_user_id = wp.user_id)
+         OR (ub.blocker_user_id = wp.user_id AND ub.blocked_user_id = ${customerUserId}::uuid))`;
   }
 
   private async hydrate(rows: PageRow[]): Promise<EligibleWorker[]> {

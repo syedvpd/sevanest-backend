@@ -5,7 +5,7 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { PasswordHasher } from '../../common/security/password-hasher.service';
 import { AppConfigService } from '../../config/app-config.service';
-import type { UserStatus, UserType } from '../../generated/prisma/client';
+import type { Prisma, UserStatus, UserType } from '../../generated/prisma/client';
 import { AdminRoleCodeValue, PermissionCode } from './rbac.constants';
 import { UserEvents } from './user-events';
 import { UsersRepository } from './users.repository';
@@ -54,6 +54,36 @@ export class UsersService {
   /** Used by admin login only; the hash must never leave Auth. */
   findCredentialsByEmail(email: string): Promise<UserCredentialRecord | null> {
     return this.repository.findCredentialsByEmail(email);
+  }
+
+  /** Used by the admin password change only; the hash must never leave Auth. */
+  findCredentialsById(id: string): Promise<UserCredentialRecord | null> {
+    return this.repository.findCredentialsById(id);
+  }
+
+  /** Minimum length is configuration (ADMIN_PASSWORD_MIN_LENGTH); throws 400 when the candidate is shorter. */
+  assertPasswordMeetsPolicy(password: string, field = 'password'): void {
+    const minLength = this.config.adminLogin.passwordMinLength;
+    if (password.length < minLength) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field, messages: [`${field} must be at least ${minLength} characters`] }],
+      );
+    }
+  }
+
+  hashPassword(password: string): Promise<string> {
+    return this.hasher.hash(password);
+  }
+
+  setPasswordHash(
+    userId: string,
+    passwordHash: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    return this.repository.updatePasswordHash(userId, passwordHash, tx);
   }
 
   getAccess(userId: string): Promise<RoleAndPermissions> {
@@ -142,6 +172,83 @@ export class UsersService {
     }
     const passwordHash = await this.hasher.hash(input.password);
     return this.createAdmin({ email: input.email, passwordHash, roleCode: input.roleCode }, actor);
+  }
+
+  /**
+   * One-time creation of the first Super Admin (operator CLI `npm run bootstrap:admin`, never an HTTP route).
+   * Atomic under the Super-Admin advisory lock, so two concurrent runs create at most one. Refused when ANY Super Admin
+   * assignment exists (even a suspended account). Both outcomes are audited; the audit rows never hold the email or password.
+   */
+  async bootstrapFirstSuperAdmin(input: {
+    email: string;
+    password: string;
+  }): Promise<'CREATED' | 'ALREADY_BOOTSTRAPPED'> {
+    const minLength = this.config.adminLogin.passwordMinLength;
+    if (input.password.length < minLength) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'password', messages: [`password must be at least ${minLength} characters`] }],
+      );
+    }
+    const role = await this.repository.findRoleIdByCode('SUPER_ADMIN');
+    if (!role) {
+      throw new DomainException(
+        UsersErrorCode.ROLE_NOT_FOUND,
+        'The SUPER_ADMIN role does not exist; run the seed first',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const passwordHash = await this.hasher.hash(input.password);
+    const actor = { actorId: null, actorRole: 'SYSTEM_BOOTSTRAP' };
+    try {
+      const outcome = await this.repository.transaction(async (tx) => {
+        await this.repository.lockSuperAdminAssignments(tx);
+        if ((await this.repository.superAdminAssignmentCount(tx)) > 0)
+          return 'ALREADY_BOOTSTRAPPED' as const;
+        const user = await this.repository.create(
+          { type: 'ADMIN', email: input.email, passwordHash },
+          tx,
+        );
+        await this.repository.assignRole(user.id, role.id, tx);
+        await this.audit.record(
+          {
+            action: 'admin.bootstrap',
+            entityType: 'user',
+            entityId: user.id,
+            ...actor,
+            metadata: { roleCode: 'SUPER_ADMIN' },
+          },
+          tx,
+        );
+        return 'CREATED' as const;
+      });
+      if (outcome === 'ALREADY_BOOTSTRAPPED') {
+        await this.audit.record({
+          action: 'admin.bootstrap_rejected',
+          entityType: 'user',
+          ...actor,
+          metadata: { reason: 'SUPER_ADMIN_EXISTS' },
+        });
+      }
+      return outcome;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        await this.audit.record({
+          action: 'admin.bootstrap_rejected',
+          entityType: 'user',
+          ...actor,
+          metadata: { reason: 'EMAIL_TAKEN' },
+        });
+        throw new DomainException(
+          UsersErrorCode.ADMIN_EMAIL_TAKEN,
+          'An account with this email already exists',
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
   }
 
   private async createAdmin(

@@ -53,14 +53,26 @@ export class SearchWorkersQuery extends PageQueryDto {
   minExperienceMonths?: number;
 
   @ApiPropertyOptional({
-    enum: ['EXPERIENCE_DESC', 'EXPERIENCE_ASC'],
-    default: 'EXPERIENCE_DESC',
+    minimum: 1,
+    maximum: 10,
     description:
-      'A stable ordering by the stated attribute, not a relevance ranking (none is defined).',
+      'Only workers whose average rating is at least this (workers with no rating are excluded).',
   })
   @IsOptional()
-  @IsIn(['EXPERIENCE_DESC', 'EXPERIENCE_ASC'])
-  sort: 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' = 'EXPERIENCE_DESC';
+  @Type(() => Number)
+  @Min(1)
+  @Max(10)
+  minRating?: number;
+
+  @ApiPropertyOptional({
+    enum: ['EXPERIENCE_DESC', 'EXPERIENCE_ASC', 'RATING_DESC'],
+    default: 'EXPERIENCE_DESC',
+    description:
+      'A stable ordering by the stated attribute, not a relevance ranking (none is defined). Unknown values are rejected (400).',
+  })
+  @IsOptional()
+  @IsIn(['EXPERIENCE_DESC', 'EXPERIENCE_ASC', 'RATING_DESC'])
+  sort: 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' | 'RATING_DESC' = 'EXPERIENCE_DESC';
 }
 
 export class CategoryRefView {
@@ -79,10 +91,22 @@ export class AvailabilityWindowView {
   @ApiProperty({ example: '13:00' }) end!: string;
 }
 
+export class RatingSummaryView {
+  @ApiProperty({ description: 'Mean score, two decimals.' }) average!: number;
+  @ApiProperty() count!: number;
+}
+
+export class PhotoLinkView {
+  @ApiProperty({ description: 'Short-lived link to the private image. Do not store it.' })
+  url!: string;
+  @ApiProperty() expiresAt!: Date;
+}
+
 /**
  * The worker card (FR-WD-001): experience, skills, language, area, availability and the verification badge. It carries no
  * name, contact detail, address, emergency contact, salary, document or internal identifier of the account (FR-WD-007).
- * The profile photo and the rating summary are not available yet (photo upload and Ratings are not built).
+ * The photo is a short-lived signed link (null when the worker has none) and the rating is the aggregate only (null until the
+ * first rating): no reviewer, no review text.
  */
 export class WorkerCard {
   @ApiProperty({ description: 'Opaque worker reference for the next step (not the account id).' })
@@ -98,4 +122,6 @@ export class WorkerCard {
     description: 'Customers only ever see fully verified workers.',
   })
   verification!: 'VERIFIED';
+  @ApiProperty({ type: RatingSummaryView, nullable: true }) rating!: RatingSummaryView | null;
+  @ApiProperty({ type: PhotoLinkView, nullable: true }) photo!: PhotoLinkView | null;
 }

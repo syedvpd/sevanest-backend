@@ -5,6 +5,7 @@ import { Page, skipFor } from '../../common/pagination/pagination';
 import { toMinutes, toText } from '../availability/domain/time-windows';
 import { ServiceAreasService } from '../availability/service-areas.service';
 import { ServiceCategoriesService } from '../service-categories/service-categories.service';
+import { WorkerPhotoService } from '../worker-photo/worker-photo.service';
 import { SearchWorkersQuery, WorkerCard } from './dto/search.dto';
 import { SearchRepository } from './search.repository';
 import type {
@@ -23,6 +24,9 @@ export interface RequirementInput {
   availableTo?: string;
   language?: string;
   minExperienceMonths?: number;
+  minRating?: number;
+  /** Internal: the customer the search is for (block exclusion). Never taken from a client. */
+  forCustomerUserId?: string;
   excludeWorkerId?: string;
 }
 
@@ -37,10 +41,14 @@ export class SearchService {
     private readonly repository: SearchRepository,
     private readonly categories: ServiceCategoriesService,
     private readonly areas: ServiceAreasService,
+    private readonly photos: WorkerPhotoService,
   ) {}
 
-  async searchForCustomer(query: SearchWorkersQuery): Promise<Page<WorkerCard>> {
-    const criteria = await this.resolve(query);
+  async searchForCustomer(
+    query: SearchWorkersQuery,
+    customerUserId?: string,
+  ): Promise<Page<WorkerCard>> {
+    const criteria = { ...(await this.resolve(query)), forCustomerUserId: customerUserId };
     const { items, total } = await this.repository.findEligible(
       criteria,
       query.sort,
@@ -48,9 +56,48 @@ export class SearchService {
       query.limit,
     );
     return {
-      data: items.map(toCard),
+      data: await this.decorate(items),
       meta: { page: query.page, limit: query.limit, total },
     };
+  }
+
+  /**
+   * Contract for the customer-facing profile and shortlist (FR-WD-005, FRD FM-03 step 6): the cards of those given workers
+   * that are visible to customers (active, submitted, fully verified), keyed by worker id. Unknown, ineligible, suspended and
+   * expired-verification workers are absent, so a caller can never tell them apart.
+   */
+  async getVisibleCards(ids: string[], customerUserId?: string): Promise<Map<string, WorkerCard>> {
+    const workers = await this.repository.findVisibleByIds(ids, customerUserId);
+    const cards = await this.decorate(workers);
+    return new Map(cards.map((c) => [c.workerId, c]));
+  }
+
+  async getProfile(workerId: string, customerUserId?: string): Promise<WorkerCard> {
+    const card = (await this.getVisibleCards([workerId], customerUserId)).get(workerId);
+    if (!card) {
+      throw new DomainException('WORKER_NOT_FOUND', 'Worker not found', HttpStatus.NOT_FOUND);
+    }
+    return card;
+  }
+
+  /** Adds the rating aggregate and a short-lived photo link in two batched look-ups (no per-worker queries). */
+  private async decorate(workers: EligibleWorker[]): Promise<WorkerCard[]> {
+    const ids = workers.map((w) => w.id);
+    const [ratings, photos] = await Promise.all([
+      this.repository.ratingSummaries(ids),
+      this.photos.linksFor(ids),
+    ]);
+    return workers.map((w) => {
+      const rating = ratings.get(w.id);
+      const photo = photos.get(w.id);
+      return {
+        ...toCard(w),
+        rating: rating
+          ? { average: Math.round((rating.sum / rating.count) * 100) / 100, count: rating.count }
+          : null,
+        photo: photo ? { url: photo.url, expiresAt: photo.expiresAt } : null,
+      };
+    });
   }
 
   /**
@@ -99,6 +146,8 @@ export class SearchService {
       window,
       language: input.language,
       minExperienceMonths: input.minExperienceMonths,
+      minRating: input.minRating,
+      forCustomerUserId: input.forCustomerUserId,
       excludeWorkerId: input.excludeWorkerId,
     };
   }
@@ -114,7 +163,7 @@ export class SearchService {
 }
 
 /** The customer-safe projection: explicit allow-list, so a new field on the worker can never leak by accident. */
-export function toCard(worker: EligibleWorker): WorkerCard {
+export function toCard(worker: EligibleWorker): Omit<WorkerCard, 'rating' | 'photo'> {
   return {
     workerId: worker.id,
     experienceMonths: worker.experienceMonths,

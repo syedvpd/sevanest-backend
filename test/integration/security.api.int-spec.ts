@@ -25,6 +25,9 @@ const PUBLIC_ROUTES = [
   'GET /api/v1/health/live',
   'GET /api/v1/health/ready',
   'POST /api/v1/webhooks/payments',
+  'GET /api/v1/app-config',
+  'GET /api/v1/reference-data',
+  'GET /api/v1/legal/current',
 ];
 /** Routes any signed-in user may call because the service scopes them to the caller's own data or to shared reference data. */
 const ANY_SIGNED_IN_ROUTES = [
@@ -36,9 +39,24 @@ const ANY_SIGNED_IN_ROUTES = [
   'GET /api/v1/service-areas/:areaId',
   'GET /api/v1/service-categories',
   'GET /api/v1/service-categories/:categoryId',
+  'GET /api/v1/notifications',
+  'GET /api/v1/notifications/unread-count',
+  'POST /api/v1/notifications/read-all',
+  'POST /api/v1/notifications/:notificationId/read',
+  'GET /api/v1/legal/status',
+  'POST /api/v1/legal/accept',
+  'GET /api/v1/me/deletion-request',
+  'POST /api/v1/me/deletion-request',
+  'DELETE /api/v1/me/deletion-request',
 ];
-/** Admin routes without @Permissions: the dashboard shows each section only to a holder of that section's own permission. */
-const ADMIN_WITHOUT_PERMISSION = ['GET /api/v1/admin/dashboard'];
+/**
+ * Admin routes without @Permissions: the dashboard shows each section only to a holder of that section's own permission;
+ * the password change acts only on the caller's own account and re-verifies the current password.
+ */
+const ADMIN_WITHOUT_PERMISSION = [
+  'GET /api/v1/admin/dashboard',
+  'POST /api/v1/admin/account/password',
+];
 
 const key = (r: Pick<RouteInfo, 'method' | 'path'>): string => `${r.method} ${r.path}`;
 
@@ -217,7 +235,7 @@ describe('Security hardening (integration)', () => {
         .patch(`/api/v1/admin/users/${victim.userId}/status`, { status: 'SUSPENDED' })
         .expect(200);
       const res = await as(api, victim).get('/api/v1/admin/reports');
-      expect(res.status).toBe(401);
+      expect([res.status, res.body.code]).toEqual([403, 'ACCOUNT_SUSPENDED']);
     });
   });
 

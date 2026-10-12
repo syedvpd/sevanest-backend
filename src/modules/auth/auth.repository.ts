@@ -36,6 +36,15 @@ export class AuthRepository {
     };
   }
 
+  /** Current status of an account (null = no such user). Used only on the failure path of authentication. */
+  async userStatus(userId: string): Promise<'ACTIVE' | 'SUSPENDED' | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { status: true },
+    });
+    return user ? user.status : null;
+  }
+
   /** Role codes and the union of their permission codes, in a fixed number of queries (no N+1). */
   async getRoleAndPermissionCodes(userId: string): Promise<RoleAndPermissionCodes> {
     const assignments = await this.prisma.userRole.findMany({

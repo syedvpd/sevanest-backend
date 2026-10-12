@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 import type { CheckType, StoredCheckStatus } from './dto/verification.dto';
-import { verifiedWorkerCondition } from './verification-eligibility';
+import { INDIA_TODAY_SQL, verifiedWorkerCondition } from './verification-eligibility';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -28,6 +28,8 @@ export interface DocumentRecord {
   status: 'PENDING_UPLOAD' | 'UPLOADED';
   uploadedAt: Date | null;
   submittedAt: Date | null;
+  contentSha256: string | null;
+  purgedAt: Date | null;
   createdAt: Date;
 }
 
@@ -121,6 +123,33 @@ export class VerificationRepository {
   async findCheckById(id: string, db: Db = this.prisma): Promise<CheckRecord | null> {
     const row = await db.workerVerificationCheck.findUnique({ where: { id } });
     return row ? toCheck(row) : null;
+  }
+
+  /**
+   * Approved checks whose re-check date has been reached and whose worker has not been reminded for that date yet. Locked
+   * (SKIP LOCKED) so two loops never pick the same row. Only reads the check and the worker's account id.
+   */
+  claimRecheckDue(
+    limit: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<Array<{ checkId: string; checkType: CheckType; userId: string }>> {
+    return tx.$queryRaw<
+      Array<{ checkId: string; checkType: CheckType; userId: string }>
+    >(Prisma.sql`
+      SELECT vc.id AS "checkId", vc.check_type::text AS "checkType", wp.user_id AS "userId"
+      FROM worker_verification_checks vc
+      JOIN worker_profiles wp ON wp.id = vc.worker_id
+      WHERE vc.status = 'APPROVED' AND vc.recheck_at IS NOT NULL
+        AND vc.recheck_at <= ${INDIA_TODAY_SQL}
+        AND vc.recheck_notified_for IS DISTINCT FROM vc.recheck_at
+      ORDER BY vc.recheck_at, vc.id
+      LIMIT ${limit}
+      FOR UPDATE OF vc SKIP LOCKED`);
+  }
+
+  async markRecheckNotified(checkIds: string[], tx: Prisma.TransactionClient): Promise<void> {
+    if (checkIds.length === 0) return;
+    await tx.$executeRaw`UPDATE worker_verification_checks SET recheck_notified_for = recheck_at WHERE id = ANY(${checkIds}::uuid[])`;
   }
 
   /** Locks one check row for the rest of the transaction; every status change goes through it. */
@@ -243,7 +272,9 @@ export class VerificationRepository {
 
   /** Open draft documents of a check (not yet part of any submission). */
   countOpenDocuments(checkId: string, tx: Prisma.TransactionClient): Promise<number> {
-    return tx.verificationDocument.count({ where: { checkId, submittedAt: null } });
+    return tx.verificationDocument.count({
+      where: { checkId, submittedAt: null, purgedAt: null },
+    });
   }
 
   countUploadedOpenDocuments(checkId: string, tx: Prisma.TransactionClient): Promise<number> {
@@ -252,10 +283,38 @@ export class VerificationRepository {
     });
   }
 
-  async markUploaded(id: string, at: Date, tx: Prisma.TransactionClient): Promise<void> {
+  async markUploaded(
+    id: string,
+    at: Date,
+    proof: { contentSha256: string; storageEtag: string | null },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
     await tx.verificationDocument.update({
       where: { id },
-      data: { status: 'UPLOADED', uploadedAt: at },
+      data: {
+        status: 'UPLOADED',
+        uploadedAt: at,
+        contentSha256: proof.contentSha256,
+        storageEtag: proof.storageEtag,
+      },
+    });
+  }
+
+  /** The object was discarded (failed validation, or never confirmed). Only an unconfirmed document may be marked. */
+  async markPurged(id: string, code: string, at: Date, db: Db = this.prisma): Promise<boolean> {
+    const result = await db.verificationDocument.updateMany({
+      where: { id, status: 'PENDING_UPLOAD', purgedAt: null },
+      data: { purgedAt: at, rejectionCode: code },
+    });
+    return result.count === 1;
+  }
+
+  /** Unconfirmed uploads older than `before` whose object has not been discarded yet. */
+  findAbandonedUploads(before: Date, limit: number): Promise<DocumentRecord[]> {
+    return this.prisma.verificationDocument.findMany({
+      where: { status: 'PENDING_UPLOAD', purgedAt: null, createdAt: { lt: before } },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
     });
   }
 

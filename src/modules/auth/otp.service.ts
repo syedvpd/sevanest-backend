@@ -118,6 +118,7 @@ export class OtpService {
       await this.sms.sendSms({
         to: mobile,
         body: `${code} is your SevaNest verification code. Do not share it with anyone.`,
+        template: { key: 'OTP', variables: { code } },
       });
     } catch (error) {
       // Let the user retry immediately: nothing was delivered. Counters keep counting (abuse protection).

@@ -166,7 +166,7 @@ describe('Foundation (e2e, infrastructure stubbed)', () => {
       await http()
         .get('/api/v1/test/protected')
         .set('Authorization', await t.bearer(TEST_USERS.suspended))
-        .expect(401);
+        .expect(403); // says why (ACCOUNT_SUSPENDED), no login loop
     });
 
     it('rejects a token signed with another secret', async () => {

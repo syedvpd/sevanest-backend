@@ -41,6 +41,8 @@ describe('JwtAuthGuard', () => {
     metadata?: Record<string, unknown>;
     claims?: { sub: string; sid: string } | Error;
     session?: object | null;
+    /** Account status looked up on the failure path; default ACTIVE. */
+    accountStatus?: 'ACTIVE' | 'SUSPENDED' | null;
   }) => {
     const tokens = {
       verifyAccessToken: jest.fn(() =>
@@ -53,6 +55,7 @@ describe('JwtAuthGuard', () => {
       findActiveSession: jest.fn(() =>
         Promise.resolve(opts.session === undefined ? activeSession : opts.session),
       ),
+      userStatus: jest.fn(() => Promise.resolve(opts.accountStatus ?? 'ACTIVE')),
     } as unknown as AuthRepository;
     return {
       guard: new JwtAuthGuard(reflectorFor(opts.metadata ?? {}), tokens, repository),
@@ -99,8 +102,25 @@ describe('JwtAuthGuard', () => {
     ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
   });
 
-  it('rejects a suspended user even with a valid token and session', async () => {
-    const { guard } = build({ session: { ...activeSession, userStatus: 'SUSPENDED' } });
+  it('rejects a suspended user even with a valid token and session, saying so (403 ACCOUNT_SUSPENDED)', async () => {
+    const { guard } = build({
+      session: { ...activeSession, userStatus: 'SUSPENDED' },
+      accountStatus: 'SUSPENDED',
+    });
+    await expect(
+      guard.canActivate(context({ headers: { authorization: 'Bearer x.y.z' } })),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED', status: 403 });
+  });
+
+  it('tells a suspended user whose sessions were already revoked the same thing, not a login loop', async () => {
+    const { guard } = build({ session: null, accountStatus: 'SUSPENDED' });
+    await expect(
+      guard.canActivate(context({ headers: { authorization: 'Bearer x.y.z' } })),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED', status: 403 });
+  });
+
+  it('keeps answering 401 for a session that merely ended while the account is active', async () => {
+    const { guard } = build({ session: null, accountStatus: 'ACTIVE' });
     await expect(
       guard.canActivate(context({ headers: { authorization: 'Bearer x.y.z' } })),
     ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });

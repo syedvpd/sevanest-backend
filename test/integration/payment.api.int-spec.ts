@@ -427,9 +427,23 @@ describe('Payment API (integration)', () => {
       const booking = await pending();
       const started = (await startPayment(booking.id)).body as Started;
       const manager = await loginAdminWithPermissions(api, ['payment.manage']);
+      // Nobody has attempted payment yet: the gateway is asked about the ORDER (no payment id needed) and has nothing to report.
       const nothing = await as(api, manager).post(`${A}/payments/${started.id}/reconcile`);
-      expect(nothing.status).toBe(422);
-      expect(nothing.body.code).toBe('NOTHING_TO_RECONCILE');
+      expect(nothing.status).toBe(200);
+      expect(nothing.body.status).toBe('PENDING');
+      // A payment that never started a checkout has nothing to ask about.
+      const noOrder = await api.prisma.payment.create({
+        data: {
+          bookingId: (await pending()).id,
+          customerUserId: customer.userId,
+          feeCode: 'BOOKING_FEE',
+          amountMinor: 50000,
+          currency: 'INR',
+        },
+      });
+      const none = await as(api, manager).post(`${A}/payments/${noOrder.id}/reconcile`);
+      expect(none.status).toBe(422);
+      expect(none.body.code).toBe('NOTHING_TO_RECONCILE');
       const done = gateway().completeCheckout(started.checkout.orderId, 'PENDING');
       await as(api, customer).post(`${P}/${started.id}/verify`, done).expect(200);
       expect((await as(api, customer).get(`${P}/${started.id}`)).body.status).toBe('PENDING');
@@ -518,13 +532,12 @@ describe('Payment API (integration)', () => {
         reason: 'try again',
       });
       expect(retry.body.status).toBe('REFUNDED');
+      // A retry after a FAILED refund is a new attempt with its own key (a gateway would replay the failed one for the old key).
       expect(
-        new Set(
-          gateway()
-            .refunds.filter((r) => r.providerPaymentId === reported.providerPaymentId)
-            .map((r) => r.idempotencyKey),
-        ).size,
-      ).toBe(1);
+        gateway()
+          .refunds.filter((r) => r.providerPaymentId === reported.providerPaymentId)
+          .map((r) => r.idempotencyKey),
+      ).toEqual([`refund-${started.id}`, `refund-${started.id}-f1`]);
     });
 
     it('lists and filters payments for staff only', async () => {

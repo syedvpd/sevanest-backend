@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -9,10 +9,15 @@ import { OutboxService } from '../../common/outbox/outbox.service';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { indiaToday, isRealDate } from '../../common/time/india';
 import type { Prisma } from '../../generated/prisma/client';
+import { AppConfigService } from '../../config/app-config.service';
 import { toMinutes, toText } from '../availability/domain/time-windows';
 import { ServiceAreasService } from '../availability/service-areas.service';
 import { SearchService } from '../search/search.service';
 import { ServiceCategoriesService } from '../service-categories/service-categories.service';
+import { AlertsService } from '../alerts/alerts.service';
+import { CustomersService } from '../customers/customers.service';
+import { LegalService } from '../legal/legal.service';
+import { PermissionCode } from '../users/rbac.constants';
 import { WorkersService } from '../workers/workers.service';
 import { BookingLifecycleHooks } from './booking-hooks';
 import {
@@ -38,6 +43,8 @@ export const BookingErrorCode = {
   WORKER_NOT_ELIGIBLE: 'WORKER_NOT_ELIGIBLE',
   DUPLICATE_BOOKING: 'DUPLICATE_BOOKING',
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
+  ADDRESS_NOT_FOUND: 'ADDRESS_NOT_FOUND',
+  OUTSIDE_SERVICE_AREA: 'OUTSIDE_SERVICE_AREA',
 } as const;
 
 export type ActorKindValue = 'CUSTOMER' | 'WORKER' | 'ADMIN' | 'SYSTEM';
@@ -83,6 +90,7 @@ const RULES: Record<BookingAction, Rule[]> = {
   'confirm-worker': [
     { from: ['INTERVIEW_TRIAL_COMPLETED'], to: 'PENDING_PAYMENT', actors: ['CUSTOMER', 'ADMIN'] },
   ],
+  accept: [{ from: ['MATCHED'], to: 'MATCHED', actors: ['WORKER', 'ADMIN'] }],
   start: [{ from: ['CONFIRMED'], to: 'ACTIVE', actors: ['CUSTOMER', 'WORKER', 'ADMIN'] }],
   complete: [{ from: ['ACTIVE'], to: 'COMPLETED', actors: ['CUSTOMER', 'ADMIN'] }],
   cancel: [
@@ -123,7 +131,13 @@ export class BookingService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly hooks: BookingLifecycleHooks,
+    private readonly customers: CustomersService,
+    private readonly legal: LegalService,
+    private readonly alerts: AlertsService,
+    private readonly config: AppConfigService,
   ) {}
+
+  private readonly logger = new Logger(BookingService.name);
 
   // --- customer ---------------------------------------------------------------------------------------------
 
@@ -137,6 +151,8 @@ export class BookingService {
     if (fromMinute >= toMinute) {
       throw this.invalid('availableFrom', 'availableFrom must be earlier than availableTo');
     }
+    await this.legal.assertAccepted(customerUserId);
+    this.validateRequest(dto);
     const requestHash = createHash('sha256')
       .update(
         JSON.stringify([
@@ -146,6 +162,12 @@ export class BookingService {
           fromMinute,
           toMinute,
           dto.workerId ?? null,
+          dto.addressId ?? null,
+          dto.startDate ?? null,
+          dto.budgetMinMinor ?? null,
+          dto.budgetMaxMinor ?? null,
+          dto.budgetPeriod ?? null,
+          dto.requirementNote ?? null,
         ]),
       )
       .digest('hex');
@@ -159,6 +181,30 @@ export class BookingService {
       this.categories.requireEnabledByCode(dto.category),
       this.areas.requireEnabled(dto.areaId),
     ]);
+    let addressId: string | null = null;
+    if (dto.addressId) {
+      const address = await this.customers.findActiveAddressForBooking(
+        customerUserId,
+        dto.addressId,
+      );
+      // Someone else's, removed and unknown addresses are indistinguishable.
+      if (!address) {
+        throw new DomainException(
+          BookingErrorCode.ADDRESS_NOT_FOUND,
+          'Address not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      if (address.city.trim().toLowerCase() !== area.city.trim().toLowerCase()) {
+        throw new DomainException(
+          BookingErrorCode.OUTSIDE_SERVICE_AREA,
+          'The address is outside the city of the selected service area',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          [{ field: 'addressId', messages: ['the address is not in the service area city'] }],
+        );
+      }
+      addressId = address.id;
+    }
     if (dto.workerId) {
       await this.assertEligible(dto.workerId, {
         categoryId: category.id,
@@ -166,6 +212,7 @@ export class BookingService {
         engagement: dto.engagement,
         fromMinute,
         toMinute,
+        customerUserId,
       });
     }
     try {
@@ -180,6 +227,12 @@ export class BookingService {
             toMinute,
             idempotencyKey: idempotencyKey ?? null,
             requestHash: idempotencyKey ? requestHash : null,
+            addressId,
+            requestedStartDate: dto.startDate ?? null,
+            budgetMinMinor: dto.budgetMinMinor ?? null,
+            budgetMaxMinor: dto.budgetMaxMinor ?? null,
+            budgetPeriod: dto.budgetPeriod ?? null,
+            requirementNote: dto.requirementNote ?? null,
           },
           tx,
         );
@@ -391,6 +444,15 @@ export class BookingService {
     };
   }
 
+  /** The booking's status inside the caller's transaction (the caller holds its row lock). null = no such booking. */
+  async statusInTx(
+    bookingId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<BookingStatusValue | null> {
+    const booking = await this.repository.findById(bookingId, tx);
+    return booking ? booking.status : null;
+  }
+
   /** Payment succeeded: PENDING_PAYMENT to CONFIRMED in the payment's own transaction. False if the booking moved on. */
   async applyPaymentSucceeded(bookingId: string, tx: Prisma.TransactionClient): Promise<boolean> {
     const booking = await this.repository.lock(bookingId, tx);
@@ -406,6 +468,15 @@ export class BookingService {
       tx,
     );
     return true;
+  }
+
+  /**
+   * Takes the booking row lock for the rest of the transaction. Cross-module rule: when a workflow touches a booking AND its
+   * own record (a replacement request), it locks the BOOKING first, exactly as a booking cancellation does before it calls
+   * its hooks. Locking in the other order deadlocks when the two run together.
+   */
+  async lockBooking(bookingId: string, tx: Prisma.TransactionClient): Promise<void> {
+    if (!(await this.repository.lock(bookingId, tx))) throw this.notFound();
   }
 
   /** Replacement requested (customer). The booking must be theirs and ACTIVE. */
@@ -505,10 +576,34 @@ export class BookingService {
         await this.assign(booking, dto.workerId!, actor, tx, audit);
         return;
       }
+      case 'accept': {
+        if (booking.workerRespondedAt) return; // repeating changes nothing
+        await this.move(booking, { status: rule.to, workerRespondedAt: new Date() }, actor, tx, {
+          action: audit,
+          note: 'worker accepted',
+        });
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.WORKER_ACCEPTED,
+            recipients: [booking.customerUserId],
+            params: { bookingId: booking.id },
+          },
+          tx,
+        );
+        return;
+      }
       case 'schedule': {
         await this.move(
           booking,
-          { status: rule.to, scheduleType: dto.scheduleType, scheduledAt: prepared.scheduledAt },
+          {
+            status: rule.to,
+            scheduleType: dto.scheduleType,
+            scheduledAt: prepared.scheduledAt,
+            // A worker who proposes or confirms the slot has plainly responded to the opportunity.
+            ...(actor.kind === 'WORKER' && !booking.workerRespondedAt
+              ? { workerRespondedAt: new Date() }
+              : {}),
+          },
           actor,
           tx,
           { action: audit },
@@ -530,12 +625,35 @@ export class BookingService {
         await this.move(
           booking,
           toNew
-            ? { status: rule.to, workerId: null }
+            ? { status: rule.to, workerId: null, workerRespondedAt: null, respondBy: null }
             : { status: rule.to, scheduleType: null, scheduledAt: null },
           actor,
           tx,
-          { action: audit },
+          { action: audit, note: dto.reason },
         );
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.WORKER_DECLINED,
+            recipients: [booking.customerUserId],
+            params: { bookingId: booking.id },
+          },
+          tx,
+        );
+        if (toNew) {
+          // The request is back with staff and nobody is assigned: someone has to find another worker.
+          await this.alerts.raise(
+            {
+              dedupeKey: `BOOKING_NEEDS_MATCH:${booking.id}`,
+              type: 'BOOKING_NEEDS_MATCH',
+              severity: 'WARNING',
+              title: 'A booking has no worker after the worker declined',
+              requiredPermission: PermissionCode.BOOKING_MANAGE,
+              entityType: 'booking',
+              entityId: booking.id,
+            },
+            tx,
+          );
+        }
         return;
       }
       case 'reopen-matching': {
@@ -553,6 +671,16 @@ export class BookingService {
           action: audit,
           note: dto.outcomeNote,
         });
+        if (booking.workerId) {
+          await this.outbox.notify(
+            {
+              event: NotificationEvent.INTERVIEW_OUTCOME,
+              recipients: [(await this.workers.requireRefById(booking.workerId)).userId],
+              params: { bookingId: booking.id },
+            },
+            tx,
+          );
+        }
         return;
       }
       case 'confirm-worker': {
@@ -560,6 +688,14 @@ export class BookingService {
         await this.move(booking, { status: rule.to, startDate: dto.startDate }, actor, tx, {
           action: audit,
         });
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.BOOKING_PAYMENT_DUE,
+            recipients: [booking.customerUserId],
+            params: { bookingId: booking.id },
+          },
+          tx,
+        );
         return;
       }
       case 'cancel': {
@@ -576,6 +712,25 @@ export class BookingService {
           { action: audit, note: dto.reason },
         );
         await this.hooks.cancelled(booking.id, actor, tx);
+        await this.notifyBoth(
+          booking,
+          NotificationEvent.BOOKING_CANCELLED,
+          { bookingId: booking.id },
+          tx,
+        );
+        return;
+      }
+      case 'start':
+      case 'complete': {
+        await this.move(booking, { status: rule.to }, actor, tx, { action: audit });
+        await this.notifyBoth(
+          booking,
+          action === 'start'
+            ? NotificationEvent.BOOKING_STARTED
+            : NotificationEvent.BOOKING_COMPLETED,
+          { bookingId: booking.id },
+          tx,
+        );
         return;
       }
       default:
@@ -591,7 +746,29 @@ export class BookingService {
     tx: Prisma.TransactionClient,
     auditAction = 'booking.match',
   ): Promise<void> {
-    await this.move(booking, { status: 'MATCHED', workerId }, actor, tx, { action: auditAction });
+    const hours = this.config.ops.workerResponseHours;
+    await this.move(
+      booking,
+      {
+        status: 'MATCHED',
+        workerId,
+        workerRespondedAt: null,
+        respondBy: hours ? new Date(Date.now() + hours * 3_600_000) : null,
+      },
+      actor,
+      tx,
+      { action: auditAction },
+    );
+    if (actor.kind === 'ADMIN') {
+      await this.outbox.notify(
+        {
+          event: NotificationEvent.BOOKING_MATCHED,
+          recipients: [booking.customerUserId],
+          params: { bookingId: booking.id },
+        },
+        tx,
+      );
+    }
     const worker = await this.workers.requireRefById(workerId);
     const [category] = await this.categories.findByIds([booking.categoryId]);
     const [area] = await this.areas.findByIds([booking.areaId]);
@@ -613,6 +790,28 @@ export class BookingService {
     info: { action: string; note?: string },
   ): Promise<void> {
     await this.repository.update(booking.id, change, tx);
+    // Alerts about a state the booking has left are closed by the move itself.
+    if (change.status !== 'NEW_REQUEST') {
+      await this.alerts.autoResolve(
+        `BOOKING_NEEDS_MATCH:${booking.id}`,
+        'the booking moved on',
+        tx,
+      );
+    }
+    if (change.status !== 'PENDING_PAYMENT') {
+      await this.alerts.autoResolve(
+        `BOOKING_STUCK_PAYMENT:${booking.id}`,
+        'the booking moved on',
+        tx,
+      );
+    }
+    if (change.status !== 'MATCHED' || change.workerRespondedAt) {
+      await this.alerts.autoResolve(
+        `BOOKING_NO_RESPONSE:${booking.id}`,
+        'the worker responded or the booking moved on',
+        tx,
+      );
+    }
     await this.repository.addEvent(
       {
         bookingId: booking.id,
@@ -727,9 +926,11 @@ export class BookingService {
       engagement: BookingRecord['engagement'];
       fromMinute: number;
       toMinute: number;
+      customerUserId?: string;
     },
   ): Promise<void> {
     const eligible = await this.search.isEligible({
+      forCustomerUserId: requirement.customerUserId,
       workerId,
       categoryId: requirement.categoryId,
       areaId: requirement.areaId,
@@ -796,6 +997,14 @@ export class BookingService {
         startDate: b.startDate,
         cancelReason: b.cancelReason,
         replacesBookingId: b.replacesBookingId,
+        addressId: b.addressId,
+        requestedStartDate: b.requestedStartDate,
+        budgetMinMinor: b.budgetMinMinor,
+        budgetMaxMinor: b.budgetMaxMinor,
+        budgetPeriod: b.budgetPeriod,
+        requirementNote: b.requirementNote,
+        workerRespondedAt: b.workerRespondedAt,
+        respondBy: b.respondBy,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
       };
@@ -832,8 +1041,80 @@ export class BookingService {
       scheduleType: view.scheduleType,
       scheduledAt: view.scheduledAt,
       startDate: view.startDate,
+      requestedStartDate: view.requestedStartDate,
+      budgetMinMinor: view.budgetMinMinor,
+      budgetMaxMinor: view.budgetMaxMinor,
+      budgetPeriod: view.budgetPeriod,
+      requirementNote: view.requirementNote,
+      workerRespondedAt: view.workerRespondedAt,
+      respondBy: view.respondBy,
       updatedAt: view.updatedAt,
     };
+  }
+
+  /** Field rules that need no lookups (the lookups follow in create). */
+  private validateRequest(dto: CreateBookingDto): void {
+    if (dto.startDate !== undefined) {
+      if (!isRealDate(dto.startDate)) {
+        throw this.invalid('startDate', 'startDate is not a real date');
+      }
+      if (dto.startDate < indiaToday()) {
+        throw this.invalid('startDate', 'startDate must be today or later');
+      }
+    }
+    if (
+      dto.budgetMinMinor !== undefined &&
+      dto.budgetMaxMinor !== undefined &&
+      dto.budgetMinMinor > dto.budgetMaxMinor
+    ) {
+      throw this.invalid('budgetMinMinor', 'budgetMinMinor must not exceed budgetMaxMinor');
+    }
+    if (
+      dto.budgetPeriod !== undefined &&
+      dto.budgetMinMinor === undefined &&
+      dto.budgetMaxMinor === undefined
+    ) {
+      throw this.invalid('budgetPeriod', 'budgetPeriod needs a budget amount');
+    }
+  }
+
+  /**
+   * Scheduled job helper: cancels a booking that has waited for payment longer than the configured time. The normal cancellation
+   * path runs (payment closed by the cancellation hook, both parties told); nothing is refunded here. false = not eligible any more.
+   */
+  async autoCancelUnpaid(bookingId: string, olderThanHours: number): Promise<boolean> {
+    return this.repository.transaction(async (tx) => {
+      const booking = await this.repository.lock(bookingId, tx);
+      if (
+        !booking ||
+        booking.status !== 'PENDING_PAYMENT' ||
+        Date.now() - booking.updatedAt.getTime() < olderThanHours * 3_600_000
+      ) {
+        return false;
+      }
+      const actor: BookingActor = { kind: 'SYSTEM', userId: null };
+      await this.move(
+        booking,
+        {
+          status: 'CANCELLED',
+          cancelReason: `Not paid within ${olderThanHours} hours`,
+          cancelledAt: new Date(),
+          cancelledByUserId: null,
+        },
+        actor,
+        tx,
+        { action: 'booking.auto_cancel', note: `Not paid within ${olderThanHours} hours` },
+      );
+      await this.hooks.cancelled(booking.id, actor, tx);
+      await this.notifyBoth(
+        booking,
+        NotificationEvent.BOOKING_CANCELLED,
+        { bookingId: booking.id },
+        tx,
+      );
+      this.logger.log(`Booking ${booking.id} auto-cancelled: unpaid after ${olderThanHours} h`);
+      return true;
+    });
   }
 
   private notFound(): DomainException {

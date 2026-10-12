@@ -1,0 +1,108 @@
+# DECISION_INDEX
+
+Status: APPROVED(client) / USER-DIRECTED / RECOMMENDED(doc) / OPEN. No client-signed decision is evidenced anywhere.
+
+| ID | Decision | Status | Source |
+|---|---|---|---|
+| D-01 | Flutter ×2 apps, React admin, PostgreSQL, FCM, REST token sessions | Specified by PRD §11 (recommendation language) | PRD §11, SRS §7 |
+| D-02 | Backend = NestJS + TypeScript modular monolith (not Spring Boot) | USER-DIRECTED 2026-10-07; BEA RECOMMENDED; client sign-off pending | BEA p11-12, user msg |
+| D-03 | Prisma ORM, Redis+BullMQ, API+worker processes; module grouping = 12 PRD §11.1 components, BEA's 21 domains are internal (MODULE_MAP.md) | RECOMMENDED | BEA p1,3,8 |
+| D-04 | Provider-adapter pattern for all vendors | REQUIRED (FR-PAY-009, EIR-SW-002) | SRS |
+| D-05 | Webhook-authoritative payments, idempotency keys | RECOMMENDED | BEA p7 |
+| D-06 | JWT access ~15 min + rotating opaque refresh; argon2/bcrypt | RECOMMENDED (values "suggested") | BEA p5 |
+| D-07 | Cloud AWS vs Azure | OPEN | SRS item 9 |
+| D-08 | Payment provider Razorpay/Cashfree/PayU | OPEN | SRS item 9 |
+| D-09 | Booking states / verification states / role matrix | PROPOSED only (3 conflicting versions) → OPEN | FRD §2,4,5; TRD 6.3-6.4; BEA p5-6 |
+| D-10 | Governance pack stack claims (Spring Boot, SQS, outbox) not adopted | APPLIED (user instructed 2026-10-07: legacy material must not override the NestJS direction); root MAP.md states precedence | conflict C-01 |
+| D-11 | Global governance pack is EXTERNAL/LOCAL and intentionally gitignored (a local copy may sit in `governance/`; never committed). The repo holds only project-specific thin root CLAUDE/AGENTS/MAP + project-intelligence | USER-DIRECTED 2026-10-08 (corrects the earlier "tracked" plan) | user |
+| D-13 | Toolchain: Node 24 LTS, NestJS 11.2.7 (CJS), TypeScript 5.9.3, Prisma 7.10.0 exact, Jest 30, npm. Rejected: Nest 12 + TS 6 (tool ceilings, ESM/Vitest default); Node 22 + Prisma 6 (Node 22 EOL 2027-04-30, Prisma 6 last release 2026-04-01) | USER-APPROVED 2026-10-08 after experiment (Node 24 + Nest 11 + TS 5.9 + Prisma 7 all green) | CURRENT_STATE.md |
+| D-14 | Repo is backend-only; module grouping = 12 PRD §11.1 components, audit cross-cutting (MODULE_MAP.md) | USER-DIRECTED 2026-10-07 | PRD §11.1 |
+
+ADR folder: none exists yet. Create `docs/architecture/DECISIONS.md` (governance pack template) when first ADR is approved.
+
+## Document conflicts / gaps register (C-xx = conflict, G-xx = gap). Never silently resolved.
+| ID | Conflict | Sources | Impact | Clarification needed |
+|---|---|---|---|---|
+| C-01 | Backend stack: NestJS/Prisma/BullMQ vs governance pack "Spring Boot/Java 21, SQS, outbox" and SRS/PRD "NestJS or Spring Boot" | BEA p11-12; PRD §11; SRS §7; governance `sevanest_backend_governance/MEMORY.md` | Wrong tooling/queue assumptions | Client written approval of NestJS (Q-13); correct/remove pack claims |
+| C-02 | Booking states: FRD §4 (11 states, Pending Payment BEFORE Confirmed) vs TRD 6.4 (10, no payment state, separate Interview/Trial) vs BEA p6 (9: REQUESTED…CONFIRMED→PAID→ACTIVE…) vs CFA timeline labels | FRD §4; TRD 6.4; BEA p6; CFA p6,8 | Core schema/state machine, payment trigger | Freeze one model (SRS item 6, Week-8 per plan) |
+| C-03 | Verification states: FRD §5 (Not Submitted/Submitted/In Review/Approved/Rejected/Recheck Due) vs TRD 6.3 (adds "Additional information required") vs BEA p6 worker lifecycle (PROFILE_DRAFT…ELIGIBLE_FOR_JOBS) vs WFA doc labels | as listed | KYC schema, badges | Separate per-check status vs worker-level lifecycle; confirm |
+| C-04 | Booking vs Engagement: BEA has Engagements (ACTIVE>REPLACEMENT_IN_PROGRESS>ENDED) while FRD/TRD put ACTIVE/COMPLETED/REPLACED on Booking | BEA p4,6; FRD §4; SRS glossary | Duplicate/ambiguous state, ratings/attendance FK | Q-15 |
+| C-05 | Payment status vocab: BEA CREATED/PENDING/SUCCESS/FAILED/REFUND_* vs CFA INITIATED/PROCESSING/SUCCESS/FAILED | BEA p7; CFA p7 | API enum mismatch | Frontend maps from backend enum; confirm |
+| C-06 | Admin roles: FRD §2 matrix (Ops Admin: no configuration, payments View only) vs TRD §4 (Ops Admin manages "marketplace configuration") vs BEA p5 example (graphic grid, 5 cols incl. customer) vs WIRE ("matrix not defined") | FRD §2; TRD §4; BEA p5; WIRE §12 | RBAC seed, refunds | Q-11, Q-17 |
+| C-07 | Worker eligibility to be booked: PRD journey "view verified workers", FRD FM-04 no jobs until verified vs FRD FM-06 "verified (or verification-in-progress, as configured)", PRD §22 pilot pool "verified/in-progress" | PRD §8,§22; FRD FM-04/06 | Trust rule | Q-16 |
+| C-08 | Interview vs Trial: one combined state (FRD) vs two modules/entities (BEA) vs separate states (TRD) | FRD §4; BEA p3-4; TRD 6.4 | Schema | fold into Q-05 |
+| C-09 | Channels: TRD §9 lists Email integration; SRS has push/SMS/WhatsApp(optional) only | TRD §9; SRS 3.15 | Scope | Q-20 |
+| C-10 | Replacement modelled as booking states (FRD) vs own state machine REQUESTED→CONFIRMED + engagement status (BEA) | FRD §4; BEA p6 | Two sources of truth | fold into Q-05/Q-15 |
+| C-11 | BEA cites "role-permission matrix = SRS item 11"; SRS item 11 is emergency-contact/doc-access policy (matrix is FRD item 7) | BEA p12; SRS §14; FRD §9 | Minor traceability | none |
+| C-12 | Pack numeric perf targets (p95 300/500/600 ms) are not in any project source | governance MEMORY.md vs SRS §5.2 | False SLAs | treat as unapproved ideas |
+| G-01 | No Admin-web architecture doc | — | Admin API needs undefined | Q-19 |
+| G-02 | No home for config masters, shortlist, report/block, ops notes, dashboards in the BEA domain list (partly answered: config masters → reporting-admin, see MODULE_MAP.md) | BEA p3 vs SRS 3.17/3.19, 3.4, 3.14 | Module boundary gaps | Q-14 |
+| G-03 | All spec docs are Draft; no sign-off evidence; Wireframes only "for review" | SRS/FRD cover; WIRE | Nothing is frozen | Confirm M1/M2 status |
+
+## Decisions from Modules 1-3 - 2026-10-08
+| ID | Decision | Status |
+|---|---|---|
+| D-15 | Password hashing = Node built-in `crypto.scrypt` (N=2^17, r=8, p=1, salted, params stored per hash); no new dependency | USER-APPROVED (policy "scrypt if no extra dependency") |
+| D-16 | Users and Customers are implementation domains inside the PRD "User/Profile" component: `src/modules/users`, `src/modules/customers`. Auth -> Users and Customers -> Users only; Users reaches Auth through `UserEvents` | Implementation decision, consistent with D-14 |
+| D-17 | Replay of a rotated refresh token revokes the session and is audited; refresh lifetime is absolute | USER-DIRECTED |
+| D-18 | Open business values (OTP, lockout, password length) are REQUIRED environment config without defaults; `SMS_PROVIDER=memory` is test/local only and refused in production; no SMS vendor selected | USER-DIRECTED |
+| D-19 | Customer verification = PENDING/VERIFIED, admin-controlled, no auto-promotion, no history table (audit log holds before/after); suspension stays on `users.status` | USER-DIRECTED |
+| D-20 | Committing integration tests run only against a dedicated database named `*_test`/`*_ci`; they refuse any other name | USER-DIRECTED |
+| D-21 | Seed = idempotent roles + the 5 permission codes Modules 1-3 need + Super Admin mapping; dev-only Super Admin bootstrap from env, refused in production | USER-DIRECTED |
+
+## Decisions from Modules 4-6 - 2026-10-09
+| ID | Decision | Status |
+|---|---|---|
+| D-22 | Boundaries: Workers owns profile/skills/languages; Service Categories owns the category master; Availability owns engagement preference, preferred areas, time windows and the service-area master. Dependencies: workers -> users, service-categories; availability -> users, workers; enforced by an automated boundary test | Implementation decision (BEA data model) |
+| D-23 | The six PRD/FRD categories are seeded as data (re-seed never overwrites admin edits); no service areas are seeded | Implementation decision |
+| D-24 | Time windows stored as minutes after local midnight with a GiST exclusion constraint (btree_gist) against overlap; per-worker advisory lock for updates | Implementation decision |
+| D-25 | New permission codes: worker.view, worker.manage, category.manage, area.manage (only SUPER_ADMIN mapped, Q-33) | Implementation decision |
+| D-26 | Search is a deliberate read-only query module: one parameterised SQL over the tables owned by Workers, Availability, Service Categories and Verification (correct paging needs filter and order in the database); a test forbids any write; Verification's "fully verified" is a SQL fragment it owns and Search embeds | Implementation decision |
+| D-27 | Verification: FRD section 5 status model (PROPOSED) with RECHECK_DUE derived from the re-check date (no scheduler); required checks are data and empty by default (fail closed); append-only history; transitions lock the check row | Implementation decision |
+| D-28 | KYC documents go through the existing StorageProvider abstraction (signed upload/download links, `STORAGE_PROVIDER=disabled|memory`); the storage key never leaves the backend; every link issue is audited before it is returned | Implementation decision |
+| D-29 | New permission codes: verification.review, verification.decide, verification.document.view, verification.configure, matching.run (only SUPER_ADMIN mapped, Q-33/Q-49) | Implementation decision |
+| D-30 | Booking uses the FRD section 4 states as the working model (PROPOSED, C-02/Q-05 stay open); booking and engagement are one entity (Q-15); actions are one generic `POST .../{action}` per role mapped to permitted transitions | Implementation decision |
+| D-31 | Notifications use a transactional outbox (shared `OutboxService`, same transaction as the business change), a BullMQ queue and a worker-process consumer; business modules never import Notifications | Implementation decision |
+| D-32 | Payment state changes come only from the gateway (verified webhook, server-side verification, reconciliation); amounts come from admin-set `fee_configs`; replay protection by `payment_events`; webhook authenticated by the provider adapter | Implementation decision |
+| D-33 | Replacement eligibility is a policy boundary (`REPLACEMENT_POLICY`); Booking learns about cancellations through `BookingLifecycleHooks`; new permission codes booking.*, payment.*, notification.manage, attendance.*, replacement.* (only SUPER_ADMIN mapped, Q-33) | Implementation decision |
+
+## Decisions from Modules 15-19 - 2026-10-12
+| ID | Decision | Status |
+|---|---|---|
+| D-34 | Ratings, Support and Reports are separate modules (`src/modules/ratings`, `support`, `reports`). Ratings depend on Booking/Workers/Users; Support on Booking/Workers/Users; Reports on Users and Verification's SQL fragment only. Rating totals are an atomically maintained summary table; Search/Matching do not use ratings (Q-46, Q-52) | Implementation decision |
+| D-35 | Reports are read-only by construction: every query runs in a PostgreSQL `READ ONLY` transaction, a constant number of aggregate statements per report, bounded India-calendar range, definitions returned with every response | Implementation decision |
+| D-36 | The open permission matrix (Q-11, Q-33) is configured by the Super Admin through an audited role-permission API instead of being seeded; `role.manage`, `audit.view`, `admin.manage_users` are Super-Admin-only and the SUPER_ADMIN role is immutable; only a Super Admin may create/promote/demote a Super Admin; the last active Super Admin cannot be demoted | Implementation decision |
+| D-37 | Admin has no module of its own: admin accounts and roles live in Users, the dashboard in Reports, the audit viewer in the audit layer (`src/common/audit`); config masters stay with their owning modules | Implementation decision |
+| D-38 | Refused access (user type, role, permission) by a signed-in caller is an audit event holding only the route pattern, method, reason and caller type; wrong-OTP attempts are audited without mobile or code; the audit write never changes the HTTP answer | Implementation decision |
+| D-39 | `RATING_SCALE_MAX` is required configuration with no default (same rule as D-18) | Implementation decision |
+
+## Decisions from the backend gap-remediation phase - 2026-10-09
+Status for all rows: IMPLEMENTATION DECISION taken by the engineer; NOT client-approved (client approval tracked in Q-66..Q-70).
+
+| ID | Decision | Status |
+|---|---|---|
+| D-40 | First Super Admin is created only by the operator CLI `npm run bootstrap:admin` (`src/bootstrap-admin.ts`): credentials from the environment only, no default, production also needs `BOOTSTRAP_SUPER_ADMIN_CONFIRM=create-first-super-admin`, atomic under the Super-Admin advisory lock, refused once ANY Super Admin assignment exists, success and refusal audited (`admin.bootstrap`, `admin.bootstrap_rejected`) without email or password. The seed keeps its development-only path and still refuses production. Supersedes D-21's "dev-only" limit for production | Implementation decision (Q-66) |
+| D-41 | Admin self-service password change `POST /admin/account/password`: re-verifies the current password (wrong attempts count towards the admin lockout), enforces `ADMIN_PASSWORD_MIN_LENGTH`, revokes all OTHER sessions in the same transaction, audited. No reset flow and no MFA are added (no channel/decision, Q-66) | Implementation decision |
+| D-42 | Global per-IP throttle can use a Redis-backed fixed-window store (`THROTTLE_STORAGE=redis`, `src/infrastructure/cache/redis-throttler.storage.ts`); on Redis failure it degrades to per-process counting and logs. Default stays `memory`; production start-up warns on `memory` and on `TRUST_PROXY_HOPS=0` | Implementation decision (Q-67) |
+| D-43 | KYC `confirm` reads the first bytes of the stored object and requires the file signature to match the declared PDF/JPEG/PNG type; mismatch = 422 `DOCUMENT_CONTENT_MISMATCH`, audited, document stays `PENDING_UPLOAD`. `StorageProvider.readObjectHead` is part of the storage boundary | Implementation decision (Q-69) |
+| D-44 | Operators get `GET /admin/notifications/health` (counts, oldest waiting age, outbox backlog, queue depth) and `POST /admin/notifications/{id}/retry` (FAILED only, audited), both under `notification.manage` | Implementation decision (Q-68) |
+| D-45 | Migration `20261014090000_fk_covering_indexes` adds five covering indexes for joined foreign keys (additive; rollback = drop the indexes). The remaining 12 uncovered FKs are `*_user_id` audit-style columns on Restrict relations; left as is | Implementation decision |
+
+## Decisions from gap-remediation phase 2 - 2026-10-09
+Status for all rows: IMPLEMENTATION DECISION by the engineer; NOT client-approved (see Q-71..Q-75).
+
+| ID | Decision | Status |
+|---|---|---|
+| D-46 | New module `worker-photo` (profile photo, private storage, signed links, size + JPEG/PNG signature check at confirm) and shared `StorageModule` so KYC and photos use ONE storage provider instance. Photo size limit is optional config (feature stays off until set) | Implementation decision (Q-71) |
+| D-47 | New module `shortlist` (customer-owned, per-customer cap 100, only workers currently visible to customers, idempotent add/remove, unavailable entries kept and marked). Depends on Search | Implementation decision (Q-72) |
+| D-48 | Customer-safe worker profile = `GET /search/workers/{id}` reusing the card allow-list; cards and profile now also carry the rating aggregate and a short-lived photo link. Visibility is one SQL definition (active, submitted, fully verified); unknown and invisible workers answer identically | Implementation decision (Q-52, Q-60) |
+| D-49 | Outbox events are dispatched one per transaction; a failing event is retried with exponential backoff (5 s doubling) and dead-lettered after 5 attempts (`failed_at`), counted in `/admin/notifications/health` and recoverable via `POST /admin/outbox-events/{id}/retry`. Limit 5 is an engineering default | Implementation decision |
+| D-50 | Re-check reminder loop (worker process, every 5 min): once per due date it queues a `RECHECK_DUE` notification to the worker. It never changes a check; searchability already excludes a check whose date is reached (`verifiedWorkerCondition`) | Implementation decision (Q-75) |
+| D-51 | Production default for `THROTTLE_STORAGE` is `redis` when the variable is absent (explicit `memory` still allowed, with a warning). `scripts/seed-demo-env.ts` refuses a non-local `DATABASE_URL` | Implementation decision (Q-67) |
+| D-52 | SMS: provider-neutral `SmsProvider` with `twilio` (free text, Messaging Service/From) and `msg91` (DLT template flow) adapters over one shared HTTP helper (timeout, retry classification, no secrets/OTP in errors). A 2xx without a message id, or MSG91 `{"type":"error"}`, is a failed delivery. `disabled` is never replaced by a fake in production (warning only; OTP answers 503). WhatsApp via Twilio uses the same client | Implementation decision (Q-76) |
+| D-53 | Payments: `razorpay` adapter (Orders, Payments, Refunds REST v1 via Node `fetch`, no new dependency). `PaymentProvider` gains authoritative lookups: payments by order, refunds by payment, refund by id. Only `captured` is success; `authorized`/unknown stay PENDING | Implementation decision (Q-79) |
+| D-54 | Booking cancellation x payment: the Payment module registers a cancellation hook (same transaction, booking locked first, then payment - the same lock order as webhooks). Unpaid -> payment closed `FAILED/BOOKING_CANCELLED` with a short tail of gateway checks; paid -> `PaymentException`. No automatic refund (Q-77) | Implementation decision (Q-77) |
+| D-55 | `payment_exceptions` (additive migration `20261018090000`): durable, deduplicated money problems with a required action, listed and resolved through admin endpoints and alerted through the outbox. Resolving moves no money | Implementation decision (Q-80) |
+| D-56 | Recovery: due payments/refunds are claimed atomically in PostgreSQL (`FOR UPDATE SKIP LOCKED` + lapsing claim), checked against the gateway by order, backoff 5 min x 2^n capped 6 h with jitter, 12 checks (4 after a failure or a cancellation); exhaustion escalates only when the gateway showed something unfinished. Webhooks stored as `UNKNOWN_ORDER` are replayed once the order exists and escalated after 30 min. Loops run in the worker process; `EMBEDDED_WORKERS=true` runs them in the API | Implementation decision (Q-78, Q-80) |
+| D-57 | KYC: confirmation reads the whole object (bounded by the size limit), requires exact declared size and a complete file of the declared type, stores SHA-256 + ETag, deletes rejected uploads; the reviewer link re-checks the hash (409 `DOCUMENT_INTEGRITY_FAILED`); a sweeper deletes uploads never confirmed after 24 h | Implementation decision (Q-81) |
+| D-58 | `TRUST_PROXY_HOPS` has no production default: the process refuses to start without an explicit value. First Super Admin password is read from a hidden prompt, a secret file or (compatibility) the environment, and must pass a strength check | Implementation decision (Q-82) |

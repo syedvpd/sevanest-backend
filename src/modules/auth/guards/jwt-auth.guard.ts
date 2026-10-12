@@ -39,6 +39,17 @@ export class JwtAuthGuard implements CanActivate {
     const claims = await this.tokens.verifyAccessToken(match[1]);
     const session = await this.repository.findActiveSession(claims.sid, new Date());
     if (!session || session.userId !== claims.sub || session.userStatus !== 'ACTIVE') {
+      // A validly signed token whose owner is suspended gets a distinct answer, so the app can explain instead of looping to login.
+      if (
+        (!session || session.userStatus === 'SUSPENDED') &&
+        (await this.repository.userStatus(claims.sub)) === 'SUSPENDED'
+      ) {
+        throw new DomainException(
+          'ACCOUNT_SUSPENDED',
+          'This account is suspended. Please contact support.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
       throw this.unauthenticated('Session is not active');
     }
 

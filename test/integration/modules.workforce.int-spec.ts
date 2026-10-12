@@ -35,7 +35,9 @@ describe('Module boundaries (static)', () => {
       workers: ['users', 'service-categories'],
       availability: ['users', 'workers'],
       verification: ['users', 'workers'],
-      search: ['service-categories', 'availability', 'verification'],
+      search: ['service-categories', 'availability', 'verification', 'worker-photo'],
+      'worker-photo': ['workers'],
+      shortlist: ['search'],
       matching: ['search', 'availability', 'users'],
       booking: ['users', 'workers', 'service-categories', 'availability', 'search'],
       payment: ['booking', 'users'],
@@ -46,7 +48,27 @@ describe('Module boundaries (static)', () => {
       support: ['booking', 'users', 'workers'],
       // Reports read other modules' tables with SELECTs only; the sole code it imports is Verification's SQL definition of "verified" and Users (permissions).
       reports: ['verification', 'users'],
+      // Gap closing: alerts and legal are leaf services (global); safety talks to the parties' bookings and workers; meta only assembles public reference data.
+      alerts: ['users'],
+      legal: ['alerts', 'users'],
+      safety: ['booking', 'workers', 'users', 'alerts'],
+      meta: ['booking', 'legal', 'safety', 'support', 'search'],
+      system: ['users'],
+      // Existing modules gained leaf dependencies.
     };
+    allowed.booking = [
+      'users',
+      'workers',
+      'service-categories',
+      'availability',
+      'search',
+      'customers',
+      'legal',
+      'alerts',
+      'users',
+    ];
+    allowed.payment = ['booking', 'users', 'alerts'];
+    allowed.support = ['booking', 'users', 'workers', 'alerts'];
     const violations: string[] = [];
     for (const [file, content] of text) {
       const owner = moduleOf(file);
@@ -104,10 +126,19 @@ describe('Module boundaries (static)', () => {
       supportCategory: 'support',
       supportTicket: 'support',
       supportTicketEvent: 'support',
+      supportMessage: 'support',
+      paymentException: 'payment',
+      userBlock: 'safety',
+      safetyReport: 'safety',
+      adminAlert: 'alerts',
+      legalAcceptance: 'legal',
+      deletionRequest: 'legal',
     };
     const violations: string[] = [];
     for (const [file, content] of text) {
       const owner = moduleOf(file);
+      // The readiness check is a read-only diagnostic over other modules' configuration tables (counts only), like Reports.
+      if (owner === 'system') continue;
       for (const [model, home] of Object.entries(owners)) {
         if (
           home !== owner &&
@@ -277,10 +308,10 @@ describe('Workforce journey and contract (integration)', () => {
     await call(admin, 'patch', `/api/v1/admin/users/${worker.userId}/status`, {
       status: 'SUSPENDED',
     }).expect(200);
-    await call(worker, 'get', '/api/v1/workers/me').expect(401);
+    await call(worker, 'get', '/api/v1/workers/me').expect(403);
     await call(worker, 'patch', '/api/v1/workers/me/availability', {
       engagementPreference: 'FULL_TIME',
-    }).expect(401);
+    }).expect(403);
     expect((await call(admin, 'get', `/api/v1/admin/workers/${workerId}`)).body.accountStatus).toBe(
       'SUSPENDED',
     );
@@ -450,6 +481,7 @@ describe('Workforce journey and contract (integration)', () => {
         'experienceMonths',
         'languages',
         'name',
+        'preferredLanguage',
         'previousEmployer',
       ]);
       expect(props('UpdateAvailabilityDto')).toEqual([
@@ -485,6 +517,8 @@ describe('Workforce journey and contract (integration)', () => {
           'engagementPreference',
           'experienceMonths',
           'languages',
+          'photo',
+          'rating',
           'serviceAreas',
           'verification',
           'workerId',

@@ -3,7 +3,11 @@ import { PaymentProviderKind } from '../../config/env.validation';
 import { AppConfigService } from '../../config/app-config.service';
 import { DisabledPaymentProvider } from '../../integrations/payments/disabled-payment.provider';
 import { FakePaymentProvider } from '../../integrations/payments/fake-payment.provider';
-import { PAYMENT_PROVIDER } from '../../integrations/payments/payment-provider.interface';
+import {
+  PAYMENT_PROVIDER,
+  type PaymentProvider,
+} from '../../integrations/payments/payment-provider.interface';
+import { RazorpayPaymentProvider } from '../../integrations/payments/razorpay-payment.provider';
 import { BookingModule } from '../booking/booking.module';
 import { UsersModule } from '../users/users.module';
 import {
@@ -11,6 +15,7 @@ import {
   PaymentsController,
   PaymentWebhookController,
 } from './payment.controller';
+import { PaymentRecoveryService } from './payment-recovery.service';
 import { PaymentRepository } from './payment.repository';
 import { PaymentService } from './payment.service';
 
@@ -24,15 +29,22 @@ import { PaymentService } from './payment.service';
   providers: [
     PaymentRepository,
     PaymentService,
+    PaymentRecoveryService,
     {
       provide: PAYMENT_PROVIDER,
       inject: [AppConfigService],
-      useFactory: (config: AppConfigService) =>
-        config.paymentProvider === PaymentProviderKind.Fake
-          ? new FakePaymentProvider(config.paymentFakeWebhookSecret)
-          : new DisabledPaymentProvider(),
+      useFactory: (config: AppConfigService): PaymentProvider => {
+        switch (config.paymentProvider) {
+          case PaymentProviderKind.Fake:
+            return new FakePaymentProvider(config.paymentFakeWebhookSecret);
+          case PaymentProviderKind.Razorpay:
+            return new RazorpayPaymentProvider(config.razorpay);
+          default:
+            return new DisabledPaymentProvider();
+        }
+      },
     },
   ],
-  exports: [PaymentService],
+  exports: [PaymentService, PaymentRecoveryService],
 })
 export class PaymentModule {}

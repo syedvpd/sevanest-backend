@@ -13,6 +13,7 @@ export interface DashboardView {
     complaints?: { open: number; inProgress: number; escalated: number; unassigned: number };
     replacements?: { requested: number; approved: number };
     collections?: Array<{ currency: string; todayMinor: number; monthToDateMinor: number }>;
+    alerts?: { open: number; critical: number; warning: number };
   };
 }
 
@@ -30,18 +31,20 @@ export class DashboardService {
     const has = (code: string): boolean => permissions.includes(code);
     const today = indiaToday();
     const monthStart = `${today.slice(0, 8)}01`;
-    const [bookings, workers, kyc, complaints, replacements, collections] = await Promise.all([
-      has(PermissionCode.BOOKING_VIEW) ? this.repository.bookingsByStatus() : undefined,
-      has(PermissionCode.WORKER_VIEW) ? this.repository.activeWorkers() : undefined,
-      has(PermissionCode.VERIFICATION_REVIEW)
-        ? this.repository.pendingVerificationChecks()
-        : undefined,
-      has(PermissionCode.SUPPORT_VIEW) ? this.repository.openTickets() : undefined,
-      has(PermissionCode.REPLACEMENT_VIEW) ? this.repository.openReplacements() : undefined,
-      has(PermissionCode.PAYMENT_VIEW)
-        ? this.repository.collectionsSince(today, monthStart)
-        : undefined,
-    ]);
+    const [bookings, workers, kyc, complaints, replacements, collections, alerts] =
+      await Promise.all([
+        has(PermissionCode.BOOKING_VIEW) ? this.repository.bookingsByStatus() : undefined,
+        has(PermissionCode.WORKER_VIEW) ? this.repository.activeWorkers() : undefined,
+        has(PermissionCode.VERIFICATION_REVIEW)
+          ? this.repository.pendingVerificationChecks()
+          : undefined,
+        has(PermissionCode.SUPPORT_VIEW) ? this.repository.openTickets() : undefined,
+        has(PermissionCode.REPLACEMENT_VIEW) ? this.repository.openReplacements() : undefined,
+        has(PermissionCode.PAYMENT_VIEW)
+          ? this.repository.collectionsSince(today, monthStart)
+          : undefined,
+        has(PermissionCode.ALERT_VIEW) ? this.repository.openAlerts(permissions) : undefined,
+      ]);
     return {
       generatedAt: new Date().toISOString(),
       sections: {
@@ -52,6 +55,7 @@ export class DashboardService {
         ...(kyc ? { pendingKyc: kyc } : {}),
         ...(complaints ? { complaints } : {}),
         ...(replacements ? { replacements } : {}),
+        ...(alerts ? { alerts } : {}),
         ...(collections
           ? {
               collections: collections.map((c) => ({

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   EnvironmentVariables,
   MessagingProviderKind,
+  WhatsAppProviderKind,
   NodeEnv,
   PaymentProviderKind,
   SmsProviderKind,
@@ -75,8 +76,12 @@ export class AppConfigService {
   get refreshTokenTtlSeconds(): number {
     return this.get('REFRESH_TOKEN_TTL_SECONDS');
   }
-  get throttle(): { ttlMs: number; limit: number } {
-    return { ttlMs: this.get('THROTTLE_TTL_SECONDS') * 1000, limit: this.get('THROTTLE_LIMIT') };
+  get throttle(): { ttlMs: number; limit: number; storage: 'memory' | 'redis' } {
+    return {
+      ttlMs: this.get('THROTTLE_TTL_SECONDS') * 1000,
+      limit: this.get('THROTTLE_LIMIT'),
+      storage: this.get('THROTTLE_STORAGE'),
+    };
   }
   get otpHmacSecret(): string {
     return this.get('OTP_HMAC_SECRET');
@@ -90,10 +95,98 @@ export class AppConfigService {
   get paymentFakeWebhookSecret(): string {
     return this.get('PAYMENT_FAKE_WEBHOOK_SECRET') ?? '';
   }
+  /** Operational thresholds. Every value is optional: unset means the rule is not enforced (nothing is invented). */
+  get ops(): {
+    workerResponseHours?: number;
+    pendingPaymentAlertHours?: number;
+    pendingPaymentAutoCancelHours?: number;
+    supportSlaHours: { default?: number; LOW?: number; MEDIUM?: number; HIGH?: number };
+  } {
+    return {
+      workerResponseHours: this.get('WORKER_RESPONSE_HOURS'),
+      pendingPaymentAlertHours: this.get('PENDING_PAYMENT_ALERT_HOURS'),
+      pendingPaymentAutoCancelHours: this.get('PENDING_PAYMENT_AUTO_CANCEL_HOURS'),
+      supportSlaHours: {
+        default: this.get('SUPPORT_SLA_HOURS_DEFAULT'),
+        LOW: this.get('SUPPORT_SLA_HOURS_LOW'),
+        MEDIUM: this.get('SUPPORT_SLA_HOURS_MEDIUM'),
+        HIGH: this.get('SUPPORT_SLA_HOURS_HIGH'),
+      },
+    };
+  }
+  get legal(): {
+    termsVersion?: string;
+    privacyVersion?: string;
+    termsUrl?: string;
+    privacyUrl?: string;
+    required: boolean;
+  } {
+    return {
+      termsVersion: this.get('LEGAL_TERMS_VERSION'),
+      privacyVersion: this.get('LEGAL_PRIVACY_VERSION'),
+      termsUrl: this.get('LEGAL_TERMS_URL'),
+      privacyUrl: this.get('LEGAL_PRIVACY_URL'),
+      required: this.get('LEGAL_ACCEPTANCE_REQUIRED'),
+    };
+  }
+  get appPolicy(): {
+    minVersionCustomer?: string;
+    minVersionWorker?: string;
+    maintenance: boolean;
+    supportPhone?: string;
+    supportEmail?: string;
+  } {
+    return {
+      minVersionCustomer: this.get('APP_MIN_VERSION_CUSTOMER'),
+      minVersionWorker: this.get('APP_MIN_VERSION_WORKER'),
+      maintenance: this.get('APP_MAINTENANCE_MODE'),
+      supportPhone: this.get('SUPPORT_CONTACT_PHONE'),
+      supportEmail: this.get('SUPPORT_CONTACT_EMAIL'),
+    };
+  }
+  get fcmServiceAccountJson(): string {
+    return this.get('FCM_SERVICE_ACCOUNT_JSON') ?? '';
+  }
+  get providerHttpTimeoutMs(): number {
+    return this.get('PROVIDER_HTTP_TIMEOUT_MS');
+  }
+  get twilio(): {
+    accountSid: string;
+    authToken: string;
+    messagingServiceSid?: string;
+    smsFrom?: string;
+    whatsappFrom?: string;
+    timeoutMs: number;
+  } {
+    return {
+      accountSid: this.get('TWILIO_ACCOUNT_SID') ?? '',
+      authToken: this.get('TWILIO_AUTH_TOKEN') ?? '',
+      messagingServiceSid: this.get('TWILIO_MESSAGING_SERVICE_SID') || undefined,
+      smsFrom: this.get('TWILIO_SMS_FROM') || undefined,
+      whatsappFrom: this.get('TWILIO_WHATSAPP_FROM') || undefined,
+      timeoutMs: this.providerHttpTimeoutMs,
+    };
+  }
+  get msg91(): { authKey: string; otpTemplateId: string; otpVariable: string; timeoutMs: number } {
+    return {
+      authKey: this.get('MSG91_AUTH_KEY') ?? '',
+      otpTemplateId: this.get('MSG91_OTP_TEMPLATE_ID') ?? '',
+      otpVariable: this.get('MSG91_OTP_VARIABLE'),
+      timeoutMs: this.providerHttpTimeoutMs,
+    };
+  }
+  get razorpay(): { keyId: string; keySecret: string; webhookSecret: string; timeoutMs: number } {
+    return {
+      keyId: this.get('RAZORPAY_KEY_ID') ?? '',
+      keySecret: this.get('RAZORPAY_KEY_SECRET') ?? '',
+      webhookSecret: this.get('RAZORPAY_WEBHOOK_SECRET') ?? '',
+      timeoutMs: this.providerHttpTimeoutMs,
+    };
+  }
   get pushProvider(): MessagingProviderKind {
     return this.get('PUSH_PROVIDER');
   }
-  get whatsappProvider(): MessagingProviderKind {
+  get whatsappProvider(): WhatsAppProviderKind {
     return this.get('WHATSAPP_PROVIDER');
   }
   get ratingScaleMax(): number {
@@ -137,6 +230,13 @@ export class AppConfigService {
     return {
       maxBytes: this.get('VERIFICATION_DOCUMENT_MAX_BYTES'),
       contentTypes: this.get('VERIFICATION_DOCUMENT_CONTENT_TYPES').split(','),
+      signedUrlTtlSeconds: this.get('SIGNED_URL_TTL_SECONDS'),
+    };
+  }
+  /** Profile photo limits; `maxBytes` is undefined until the business sets PROFILE_PHOTO_MAX_BYTES (feature stays off). */
+  get profilePhoto(): { maxBytes: number | undefined; signedUrlTtlSeconds: number } {
+    return {
+      maxBytes: this.get('PROFILE_PHOTO_MAX_BYTES'),
       signedUrlTtlSeconds: this.get('SIGNED_URL_TTL_SECONDS'),
     };
   }

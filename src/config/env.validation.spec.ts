@@ -80,6 +80,7 @@ describe('validateEnvironment', () => {
       PAYMENT_PROVIDER: 'disabled',
       PUSH_PROVIDER: 'disabled',
       WHATSAPP_PROVIDER: 'disabled',
+      TRUST_PROXY_HOPS: '1',
     };
 
     it('accepts an explicit, non-placeholder production configuration', () => {
@@ -110,6 +111,43 @@ describe('validateEnvironment', () => {
       expect(() =>
         validateEnvironment({ ...withoutSecret, PAYMENT_PROVIDER: 'disabled' }),
       ).not.toThrow();
+    });
+
+    it('refuses to start in production without an explicit TRUST_PROXY_HOPS (0 is allowed when stated)', () => {
+      const { TRUST_PROXY_HOPS: _omit, ...unset } = production;
+      expect(() => validateEnvironment(unset)).toThrow('TRUST_PROXY_HOPS must be set explicitly');
+      expect(() => validateEnvironment({ ...unset, TRUST_PROXY_HOPS: '' })).toThrow(
+        'TRUST_PROXY_HOPS must be set explicitly',
+      );
+      expect(validateEnvironment({ ...production, TRUST_PROXY_HOPS: '0' }).TRUST_PROXY_HOPS).toBe(
+        0,
+      );
+      expect(validateEnvironment({ ...production, TRUST_PROXY_HOPS: '2' }).TRUST_PROXY_HOPS).toBe(
+        2,
+      );
+    });
+
+    it('validates THROTTLE_STORAGE and warns about per-process limits and an untrusted proxy in production', () => {
+      expect(validateEnvironment(valid).THROTTLE_STORAGE).toBe('memory');
+      // production: unset means the shared Redis store; an explicit choice is respected
+      expect(validateEnvironment(production).THROTTLE_STORAGE).toBe('redis');
+      expect(
+        validateEnvironment({ ...production, THROTTLE_STORAGE: 'memory' }).THROTTLE_STORAGE,
+      ).toBe('memory');
+      expect(() => validateEnvironment({ ...valid, THROTTLE_STORAGE: 'file' })).toThrow(
+        'THROTTLE_STORAGE',
+      );
+      const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+      try {
+        validateEnvironment({ ...production, THROTTLE_STORAGE: 'memory' });
+        const messages = warn.mock.calls.map((c) => String(c[0]));
+        expect(messages.some((m) => m.includes('THROTTLE_STORAGE=memory'))).toBe(true);
+        // a production setup with no SMS / payment provider is allowed but loudly flagged, never silent
+        expect(messages.some((m) => m.includes('SMS_PROVIDER=disabled'))).toBe(true);
+        expect(messages.some((m) => m.includes('PAYMENT_PROVIDER=disabled'))).toBe(true);
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('refuses the in-memory storage adapter in production', () => {
@@ -164,8 +202,95 @@ describe('validateEnvironment', () => {
       expect(() => validateEnvironment(rest)).toThrow(key);
     });
 
+    describe('real providers', () => {
+      const twilioSid = `AC${'a'.repeat(32)}`;
+      const twilio = {
+        ...production,
+        SMS_PROVIDER: 'twilio',
+        TWILIO_ACCOUNT_SID: twilioSid,
+        TWILIO_AUTH_TOKEN: 't'.repeat(32),
+        TWILIO_SMS_FROM: '+14155550100',
+      };
+      const msg91 = {
+        ...production,
+        SMS_PROVIDER: 'msg91',
+        MSG91_AUTH_KEY: 'k'.repeat(20),
+        MSG91_OTP_TEMPLATE_ID: 'tpl-12345678',
+      };
+      const razorpay = {
+        ...production,
+        PAYMENT_PROVIDER: 'razorpay',
+        RAZORPAY_KEY_ID: 'rzp_test_abcdefgh12',
+        RAZORPAY_KEY_SECRET: 's'.repeat(24),
+        RAZORPAY_WEBHOOK_SECRET: 'w'.repeat(12),
+      };
+
+      it('accepts a complete Twilio, MSG91 or Razorpay configuration in production', () => {
+        expect(validateEnvironment(twilio).SMS_PROVIDER).toBe('twilio');
+        expect(
+          validateEnvironment({
+            ...twilio,
+            TWILIO_SMS_FROM: undefined,
+            TWILIO_MESSAGING_SERVICE_SID: `MG${'b'.repeat(32)}`,
+          }).SMS_PROVIDER,
+        ).toBe('twilio');
+        expect(validateEnvironment(msg91).MSG91_OTP_VARIABLE).toBe('OTP');
+        expect(validateEnvironment(razorpay).PAYMENT_PROVIDER).toBe('razorpay');
+      });
+
+      it.each([
+        ['twilio', 'TWILIO_ACCOUNT_SID', twilio],
+        ['twilio', 'TWILIO_AUTH_TOKEN', twilio],
+        ['msg91', 'MSG91_AUTH_KEY', msg91],
+        ['msg91', 'MSG91_OTP_TEMPLATE_ID', msg91],
+        ['razorpay', 'RAZORPAY_KEY_ID', razorpay],
+        ['razorpay', 'RAZORPAY_KEY_SECRET', razorpay],
+        ['razorpay', 'RAZORPAY_WEBHOOK_SECRET', razorpay],
+      ])('%s: refuses to start without %s (no silent fallback)', (_name, key, config) => {
+        const { [key]: _omitted, ...rest } = config as Record<string, string>;
+        expect(() => validateEnvironment(rest)).toThrow(key);
+      });
+
+      it('twilio needs a sender (messaging service or from number)', () => {
+        expect(() => validateEnvironment({ ...twilio, TWILIO_SMS_FROM: undefined })).toThrow(
+          'TWILIO_MESSAGING_SERVICE_SID or TWILIO_SMS_FROM',
+        );
+      });
+
+      it('rejects malformed credentials and warns on a test key in production', () => {
+        expect(() => validateEnvironment({ ...razorpay, RAZORPAY_KEY_ID: 'key_123' })).toThrow(
+          'RAZORPAY_KEY_ID',
+        );
+        expect(() => validateEnvironment({ ...twilio, TWILIO_ACCOUNT_SID: 'nope' })).toThrow(
+          'TWILIO_ACCOUNT_SID',
+        );
+        const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+        try {
+          validateEnvironment(razorpay);
+          expect(warn.mock.calls.some((c) => String(c[0]).includes('TEST key'))).toBe(true);
+        } finally {
+          warn.mockRestore();
+        }
+      });
+
+      it('twilio WhatsApp needs the account credentials and a sender', () => {
+        const { TWILIO_ACCOUNT_SID: _a, TWILIO_AUTH_TOKEN: _b, ...base } = twilio;
+        expect(() =>
+          validateEnvironment({ ...base, SMS_PROVIDER: 'disabled', WHATSAPP_PROVIDER: 'twilio' }),
+        ).toThrow('TWILIO_ACCOUNT_SID');
+        expect(
+          validateEnvironment({
+            ...twilio,
+            SMS_PROVIDER: 'disabled',
+            WHATSAPP_PROVIDER: 'twilio',
+            TWILIO_WHATSAPP_FROM: 'whatsapp:+14155238886',
+          }).WHATSAPP_PROVIDER,
+        ).toBe('twilio');
+      });
+    });
+
     it('rejects an unknown SMS provider and an out-of-range OTP length', () => {
-      expect(() => validateEnvironment({ ...production, SMS_PROVIDER: 'twilio' })).toThrow(
+      expect(() => validateEnvironment({ ...production, SMS_PROVIDER: 'carrier-pigeon' })).toThrow(
         'SMS_PROVIDER',
       );
       expect(() => validateEnvironment({ ...production, OTP_LENGTH: '2' })).toThrow('OTP_LENGTH');

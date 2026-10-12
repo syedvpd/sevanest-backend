@@ -18,6 +18,7 @@ import type { Page } from '../../common/pagination/pagination';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import {
+  AdminMessageView,
   AdminSupportCategoryView,
   AdminTicketDetailView,
   AdminTicketListQuery,
@@ -27,8 +28,12 @@ import {
   CreateSupportCategoryDto,
   CreateTicketDto,
   EscalateTicketDto,
+  MessageListQuery,
+  MessageView,
   MyTicketListQuery,
+  PostMessageDto,
   SetPriorityDto,
+  StaffMessageDto,
   SupportCategoryView,
   TicketDetailView,
   TicketView,
@@ -86,6 +91,35 @@ export class SupportController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<TicketDetailView> {
     return this.support.getMine(user.userId, ticketId);
+  }
+
+  @Post('tickets/:ticketId/messages')
+  @ApiOperation({
+    summary: 'Write on one of my open tickets',
+    description: "404 for anyone else's ticket; 409 TICKET_CLOSED once it is closed. No HTML.",
+  })
+  postMessage(
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Body() dto: PostMessageDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MessageView> {
+    return this.support.postMessage(
+      { userId: user.userId, kind: user.type === 'WORKER' ? 'WORKER' : 'CUSTOMER' },
+      ticketId,
+      dto.body,
+    );
+  }
+
+  @Get('tickets/:ticketId/messages')
+  @ApiOperation({
+    summary: 'The conversation on one of my tickets (staff internal notes are never included)',
+  })
+  messages(
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Query() query: MessageListQuery,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Page<MessageView>> {
+    return this.support.listMessagesMine(user.userId, ticketId, query);
   }
 }
 
@@ -166,6 +200,36 @@ export class AdminSupportController {
     @CurrentUser() admin: AuthenticatedUser,
   ): Promise<AdminTicketDetailView> {
     return this.support.close(ticketId, dto.resolution, await this.actor(admin));
+  }
+
+  @Post('tickets/:ticketId/messages')
+  @Permissions(PermissionCode.SUPPORT_MANAGE)
+  @ApiOperation({
+    summary: 'Reply to the ticket creator, or leave an internal note (`internal: true`)',
+    description:
+      'A reply notifies the creator; an internal note is staff-only. 409 TICKET_CLOSED. Audited.',
+  })
+  async staffMessage(
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Body() dto: StaffMessageDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminMessageView> {
+    return this.support.staffMessage(
+      ticketId,
+      dto.body,
+      dto.internal === true,
+      await this.actor(admin),
+    );
+  }
+
+  @Get('tickets/:ticketId/messages')
+  @Permissions(PermissionCode.SUPPORT_VIEW)
+  @ApiOperation({ summary: 'The full conversation including internal notes' })
+  adminMessages(
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Query() query: MessageListQuery,
+  ): Promise<Page<AdminMessageView>> {
+    return this.support.adminListMessages(ticketId, query);
   }
 
   @Get('categories')

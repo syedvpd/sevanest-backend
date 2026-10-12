@@ -36,6 +36,18 @@ export class DisabledPaymentProvider implements PaymentProvider {
     return Promise.resolve().then(() => this.fail());
   }
 
+  findPaymentsForOrder(): Promise<ProviderPayment[]> {
+    return Promise.resolve().then(() => this.fail());
+  }
+
+  findRefundsForPayment(): Promise<ProviderRefund[]> {
+    return Promise.resolve().then(() => this.fail());
+  }
+
+  getRefund(): Promise<ProviderRefund> {
+    return Promise.resolve().then(() => this.fail());
+  }
+
   refund(): Promise<ProviderRefund> {
     return Promise.resolve().then(() => this.fail());
   }

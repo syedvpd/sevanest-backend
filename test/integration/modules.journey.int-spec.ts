@@ -102,7 +102,7 @@ describe('Auth -> Users -> Customers journey and OpenAPI contract (integration)'
       .set('Authorization', bearer(admin))
       .send({ status: 'SUSPENDED', reason: 'journey test' })
       .expect(200);
-    await api.http().get('/api/v1/customers/me').set('Authorization', withNewToken).expect(401);
+    await api.http().get('/api/v1/customers/me').set('Authorization', withNewToken).expect(403);
     await api.redis.client.del(`auth:otp:cooldown:${otpKeyId(session.mobile!)}`);
     const relogin = await api
       .http()

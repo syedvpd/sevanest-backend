@@ -263,7 +263,7 @@ describe('Users API (integration)', () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('SUSPENDED');
 
-      await api.http().get('/api/v1/users/me').set('Authorization', bearer(customer)).expect(401); // immediately, via the guard
+      await api.http().get('/api/v1/users/me').set('Authorization', bearer(customer)).expect(403); // immediately, via the guard (and it says why)
       await eventually(async () => {
         const session = await api.prisma.session.findUniqueOrThrow({
           where: { id: customer.sessionId },
@@ -343,7 +343,7 @@ describe('Users API (integration)', () => {
 
       await patch(statusOnly, customer.userId, { status: 'SUSPENDED' }).expect(200);
       await patch(superAdmin, otherAdmin.userId, { status: 'SUSPENDED' }).expect(200);
-      await api.http().get('/api/v1/users/me').set('Authorization', bearer(otherAdmin)).expect(401);
+      await api.http().get('/api/v1/users/me').set('Authorization', bearer(otherAdmin)).expect(403);
     });
 
     it('answers 404 for unknown users, 400 for bad bodies, 403 without the permission, 403 for non-admins', async () => {
@@ -367,7 +367,7 @@ describe('Users API (integration)', () => {
         .http()
         .get(`/api/v1/admin/users/${UNKNOWN_ID}`)
         .set('Authorization', bearer(admin));
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(403);
     });
 
     it('keeps customers and workers out of every admin endpoint', async () => {

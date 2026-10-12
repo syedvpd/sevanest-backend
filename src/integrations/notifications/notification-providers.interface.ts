@@ -11,9 +11,23 @@ export interface SendResult {
   providerMessageId: string;
 }
 
+/**
+ * A pre-registered message template (India: DLT). Free-text providers (Twilio) ignore it and send `body`; template providers
+ * (MSG91) ignore `body` and send the registered template with these variables.
+ */
+export interface SmsTemplate {
+  key: 'OTP';
+  variables: Record<string, string>;
+}
+
 export interface SmsProvider {
   /** Used for OTP and transactional SMS. `to` is an E.164 number. */
-  sendSms(input: { to: string; body: string; idempotencyKey?: string }): Promise<SendResult>;
+  sendSms(input: {
+    to: string;
+    body: string;
+    template?: SmsTemplate;
+    idempotencyKey?: string;
+  }): Promise<SendResult>;
 }
 
 /** Optional channel in V1 (FR-NOT-003). */

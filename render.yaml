@@ -1,0 +1,71 @@
+# Render Blueprint for the SevaNest backend: an API web service plus the background worker that the API alone does NOT replace.
+# Without the worker nothing runs in the background: notifications are never delivered, lost payment callbacks are never recovered,
+# KYC clean-up and re-check reminders never happen. (Alternative for a single paid web service: set EMBEDDED_WORKERS=true there.)
+#
+# Secrets are declared `sync: false`: Render asks for them in the dashboard; they are never stored in this file.
+# NOTE: this file is a template. Review the plan/region and the database/redis references before applying it.
+services:
+  - type: web
+    name: sevanest-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/ready
+    envVars: &common-env
+      - { key: NODE_ENV, value: production }
+      - { key: DATABASE_URL, sync: false }
+      - { key: REDIS_URL, sync: false }
+      - { key: JWT_ACCESS_SECRET, sync: false }
+      - { key: OTP_HMAC_SECRET, sync: false }
+      - { key: JWT_ACCESS_TTL_SECONDS, value: '900' }
+      - { key: REFRESH_TOKEN_TTL_SECONDS, value: '2592000' }
+      - { key: THROTTLE_TTL_SECONDS, value: '60' }
+      - { key: THROTTLE_LIMIT, value: '120' }
+      - { key: THROTTLE_STORAGE, value: redis }
+      # One proxy hop in front of the API on Render. Change it if you put a CDN (e.g. Cloudflare) in front.
+      - { key: TRUST_PROXY_HOPS, value: '1' }
+      - { key: SMS_PROVIDER, sync: false }
+      - { key: PAYMENT_PROVIDER, sync: false }
+      - { key: PUSH_PROVIDER, value: disabled }
+      - { key: WHATSAPP_PROVIDER, value: disabled }
+      - { key: STORAGE_PROVIDER, value: s3 }
+      - { key: STORAGE_S3_ENDPOINT, sync: false }
+      - { key: STORAGE_S3_REGION, sync: false }
+      - { key: STORAGE_S3_BUCKET, sync: false }
+      - { key: STORAGE_S3_ACCESS_KEY_ID, sync: false }
+      - { key: STORAGE_S3_SECRET_ACCESS_KEY, sync: false }
+      - { key: VERIFICATION_DOCUMENT_MAX_BYTES, sync: false }
+      - { key: VERIFICATION_DOCUMENT_CONTENT_TYPES, value: 'application/pdf,image/jpeg,image/png' }
+      - { key: SIGNED_URL_TTL_SECONDS, value: '120' }
+      - { key: RATING_SCALE_MAX, sync: false }
+      - { key: OTP_LENGTH, value: '6' }
+      - { key: OTP_TTL_SECONDS, sync: false }
+      - { key: OTP_MAX_VERIFY_ATTEMPTS, sync: false }
+      - { key: OTP_RESEND_COOLDOWN_SECONDS, sync: false }
+      - { key: OTP_SEND_WINDOW_SECONDS, sync: false }
+      - { key: OTP_MAX_SENDS_PER_MOBILE_PER_WINDOW, sync: false }
+      - { key: OTP_MAX_REQUESTS_PER_IP_PER_WINDOW, sync: false }
+      - { key: OTP_LOCKOUT_SECONDS, sync: false }
+      - { key: ADMIN_LOGIN_MAX_FAILURES, sync: false }
+      - { key: ADMIN_LOGIN_FAILURE_WINDOW_SECONDS, sync: false }
+      - { key: ADMIN_LOGIN_LOCKOUT_SECONDS, sync: false }
+      - { key: ADMIN_PASSWORD_MIN_LENGTH, value: '12' }
+      # Provider credentials (set the ones for the providers you selected above).
+      - { key: TWILIO_ACCOUNT_SID, sync: false }
+      - { key: TWILIO_AUTH_TOKEN, sync: false }
+      - { key: TWILIO_MESSAGING_SERVICE_SID, sync: false }
+      - { key: MSG91_AUTH_KEY, sync: false }
+      - { key: MSG91_OTP_TEMPLATE_ID, sync: false }
+      - { key: RAZORPAY_KEY_ID, sync: false }
+      - { key: RAZORPAY_KEY_SECRET, sync: false }
+      - { key: RAZORPAY_WEBHOOK_SECRET, sync: false }
+      # Optional rules are NOT listed here (an empty value would fail validation): add PROFILE_PHOTO_MAX_BYTES, WORKER_RESPONSE_HOURS,
+      # PENDING_PAYMENT_ALERT_HOURS, PENDING_PAYMENT_AUTO_CANCEL_HOURS, SUPPORT_SLA_HOURS_*, FCM_SERVICE_ACCOUNT_JSON, LEGAL_* in the
+      # dashboard only when you decide the value. See .env.example.
+
+  - type: worker
+    name: sevanest-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node dist/worker
+    # Same environment as the API (the worker uses the database, Redis and every provider).
+    envVars: *common-env

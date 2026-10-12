@@ -150,3 +150,59 @@ export class AdminPaymentView extends PaymentView {
 export class WebhookAck {
   @ApiProperty() received!: boolean;
 }
+
+export const EXCEPTION_KINDS = [
+  'PAID_BOOKING_CANCELLED',
+  'LATE_PAYMENT_BOOKING_NOT_PENDING',
+  'AMOUNT_MISMATCH',
+  'CURRENCY_MISMATCH',
+  'DUPLICATE_PAYMENT',
+  'UNKNOWN_ORDER_EVENT',
+  'RECONCILIATION_EXHAUSTED',
+  'REFUND_STUCK',
+  'REFUND_NOT_REQUESTED',
+] as const;
+
+export class PaymentExceptionListQuery extends PageQueryDto {
+  @ApiPropertyOptional({ enum: ['OPEN', 'RESOLVED'] })
+  @IsOptional()
+  @IsEnum(['OPEN', 'RESOLVED'])
+  status?: 'OPEN' | 'RESOLVED';
+
+  @ApiPropertyOptional({ enum: EXCEPTION_KINDS })
+  @IsOptional()
+  @IsEnum(EXCEPTION_KINDS)
+  kind?: (typeof EXCEPTION_KINDS)[number];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  paymentId?: string;
+}
+
+export class ResolveExceptionDto {
+  @ApiProperty({
+    maxLength: 1000,
+    description: 'What was done (e.g. refunded at the gateway, confirmed no action needed).',
+  })
+  @Transform(trim)
+  @IsString()
+  @Length(1, 1000)
+  note!: string;
+}
+
+/** A date range for an export: both ends required, at most one year (a technical cap, not a reporting rule). */
+export class PaymentExportQuery {
+  @ApiProperty({ example: '2026-10-01', description: 'First day (India date), inclusive.' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'from must be a date in YYYY-MM-DD form' })
+  from!: string;
+
+  @ApiProperty({
+    example: '2026-10-31',
+    description: 'Last day (India date), inclusive; at most 366 days after from.',
+  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'to must be a date in YYYY-MM-DD form' })
+  to!: string;
+}
+
+export const FEE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,49}$/;

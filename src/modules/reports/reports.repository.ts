@@ -379,6 +379,28 @@ export class ReportsRepository {
     });
   }
 
+  /** Unresolved staff alerts visible to a caller holding `permissions`, by severity. */
+  openAlerts(
+    permissions: readonly string[],
+  ): Promise<{ open: number; critical: number; warning: number }> {
+    return this.readOnly(async (db) => {
+      const rows = await db.$queryRaw<Array<{ open: number; critical: number; warning: number }>>(
+        Prisma.sql`
+        SELECT count(*)::int AS open,
+               (count(*) FILTER (WHERE severity = 'CRITICAL'))::int AS critical,
+               (count(*) FILTER (WHERE severity = 'WARNING'))::int AS warning
+        FROM admin_alerts
+        WHERE status <> 'RESOLVED'
+          AND (required_permission IS NULL OR required_permission = ANY(${[...permissions]}::text[]))`,
+      );
+      return {
+        open: rows[0]?.open ?? 0,
+        critical: rows[0]?.critical ?? 0,
+        warning: rows[0]?.warning ?? 0,
+      };
+    });
+  }
+
   collectionsSince(
     todayStart: string,
     monthStart: string,

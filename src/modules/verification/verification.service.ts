@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -9,6 +9,7 @@ import { OutboxService } from '../../common/outbox/outbox.service';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { AppConfigService } from '../../config/app-config.service';
 import { ProviderError } from '../../integrations/provider-error';
+import { validateContent } from '../../integrations/storage/file-signature';
 import {
   STORAGE_PROVIDER,
   type StorageProvider,
@@ -48,6 +49,8 @@ export const VerificationErrorCode = {
   DOCUMENT_NOT_FOUND: 'DOCUMENT_NOT_FOUND',
   DOCUMENT_TYPE_NOT_ALLOWED: 'DOCUMENT_TYPE_NOT_ALLOWED',
   DOCUMENT_NOT_UPLOADED: 'DOCUMENT_NOT_UPLOADED',
+  DOCUMENT_CONTENT_MISMATCH: 'DOCUMENT_CONTENT_MISMATCH',
+  DOCUMENT_INTEGRITY_FAILED: 'DOCUMENT_INTEGRITY_FAILED',
   TOO_MANY_DOCUMENTS: 'TOO_MANY_DOCUMENTS',
   CHECK_NOT_EDITABLE: 'CHECK_NOT_EDITABLE',
   CHECK_INCOMPLETE: 'CHECK_INCOMPLETE',
@@ -98,6 +101,8 @@ export function effectiveStatus(
  */
 @Injectable()
 export class VerificationService {
+  private readonly logger = new Logger(VerificationService.name);
+
   constructor(
     private readonly repository: VerificationRepository,
     private readonly workers: WorkersService,
@@ -111,6 +116,33 @@ export class VerificationService {
 
   isFullyVerified(workerId: string): Promise<boolean> {
     return this.repository.isVerified(workerId);
+  }
+
+  /**
+   * Scheduler entry (worker process): reminds each worker once per due date that an approved check is due for re-check
+   * (FRD section 6 "Recheck due"). Purely a notification: it never changes a check, so it can neither mark a worker verified
+   * nor touch searchability, which already excludes a check once its date is reached (verifiedWorkerCondition). The admin
+   * recipient of the FRD matrix has no defined routing (Q-57) and is not notified. Idempotent: safe to run concurrently.
+   */
+  async notifyRecheckDue(limit = 100): Promise<number> {
+    return this.repository.transaction(async (tx) => {
+      const due = await this.repository.claimRecheckDue(limit, tx);
+      for (const row of due) {
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.RECHECK_DUE,
+            recipients: [row.userId],
+            params: { checkType: row.checkType },
+          },
+          tx,
+        );
+      }
+      await this.repository.markRecheckNotified(
+        due.map((d) => d.checkId),
+        tx,
+      );
+      return due.length;
+    });
   }
 
   // --- the worker's own verification ----------------------------------------------------------------------------
@@ -206,15 +238,42 @@ export class VerificationService {
       throw this.documentNotFound();
     }
     if (document.status === 'PENDING_UPLOAD') {
+      if (document.purgedAt) {
+        // The upload was rejected and discarded earlier: a fresh upload slot must be requested.
+        throw this.notUploaded();
+      }
       const info = await this.storageCall(() => this.storage.getObjectInfo(document.objectKey));
+      if (!info) throw this.notUploaded();
       const maxBytes = Math.min(document.sizeBytes, this.config.verificationDocuments.maxBytes);
-      if (!info || info.sizeBytes <= 0 || info.sizeBytes > maxBytes) {
+      // The signed PUT cannot cap the size, so the cap is enforced here: an oversized, empty or differently-sized object is
+      // discarded instead of being left in the bucket.
+      if (
+        info.sizeBytes <= 0 ||
+        info.sizeBytes > maxBytes ||
+        info.sizeBytes !== document.sizeBytes
+      ) {
+        await this.rejectUpload(document, check, ref.workerId, userId, 'SIZE_MISMATCH');
+        throw this.notUploaded();
+      }
+      const object = await this.storageCall(() =>
+        this.storage.readObject(document.objectKey, maxBytes),
+      );
+      if (!object) throw this.notUploaded();
+      if (object.truncated || object.bytes.length !== info.sizeBytes) {
+        await this.rejectUpload(document, check, ref.workerId, userId, 'SIZE_MISMATCH');
+        throw this.notUploaded();
+      }
+      // The client-declared type is never trusted: the real bytes must be a complete file of that type.
+      const verdict = validateContent(document.contentType, object.bytes);
+      if (!verdict.ok) {
+        await this.rejectUpload(document, check, ref.workerId, userId, `CONTENT_${verdict.reason}`);
         throw new DomainException(
-          VerificationErrorCode.DOCUMENT_NOT_UPLOADED,
-          'The document has not been uploaded, or its size does not match',
+          VerificationErrorCode.DOCUMENT_CONTENT_MISMATCH,
+          'The uploaded file is not of the declared type',
           HttpStatus.UNPROCESSABLE_ENTITY,
         );
       }
+      const contentSha256 = createHash('sha256').update(object.bytes).digest('hex');
       await this.repository.transaction(async (tx) => {
         const locked = (await this.repository.lockCheck(check.id, tx))!;
         if (!EDITABLE.has(effectiveStatus(locked))) {
@@ -222,14 +281,19 @@ export class VerificationService {
         }
         const current = (await this.repository.findDocument(document.id, tx))!;
         if (current.status === 'PENDING_UPLOAD') {
-          await this.repository.markUploaded(document.id, new Date(), tx);
+          await this.repository.markUploaded(
+            document.id,
+            new Date(),
+            { contentSha256, storageEtag: info.etag ?? null },
+            tx,
+          );
           await this.audit.record(
             {
               action: 'verification.document_confirm',
               entityType: 'verification_document',
               entityId: document.id,
               actorId: userId,
-              metadata: { workerId: ref.workerId, checkType: check.checkType },
+              metadata: { workerId: ref.workerId, checkType: check.checkType, contentSha256 },
             },
             tx,
           );
@@ -425,6 +489,34 @@ export class VerificationService {
     if (!document || !check || document.status !== 'UPLOADED') {
       throw this.documentNotFound();
     }
+    // Integrity at review time: the bytes the reviewer is about to see must be the bytes that were validated at confirmation.
+    // Documents confirmed before hashes were recorded have none to compare (recorded in the audit entry below).
+    let integrityChecked = false;
+    if (document.contentSha256) {
+      const object = await this.storageCall(() =>
+        this.storage.readObject(document.objectKey, document.sizeBytes),
+      );
+      const intact =
+        object !== null &&
+        !object.truncated &&
+        createHash('sha256').update(object.bytes).digest('hex') === document.contentSha256;
+      if (!intact) {
+        await this.audit.record({
+          action: 'verification.document_integrity_failed',
+          entityType: 'verification_document',
+          entityId: document.id,
+          actorId: admin.userId,
+          actorRole: admin.roles.join(',') || null,
+          metadata: { workerId: check.workerId, checkType: check.checkType, checkId: check.id },
+        });
+        throw new DomainException(
+          VerificationErrorCode.DOCUMENT_INTEGRITY_FAILED,
+          'The stored document no longer matches what was uploaded; it cannot be shown',
+          HttpStatus.CONFLICT,
+        );
+      }
+      integrityChecked = true;
+    }
     const link = await this.storageCall(() =>
       this.storage.createDownloadUrl({
         objectKey: document.objectKey,
@@ -438,9 +530,82 @@ export class VerificationService {
       entityId: document.id,
       actorId: admin.userId,
       actorRole: admin.roles.join(',') || null,
-      metadata: { workerId: check.workerId, checkType: check.checkType, checkId: check.id },
+      metadata: {
+        workerId: check.workerId,
+        checkType: check.checkType,
+        checkId: check.id,
+        integrityChecked,
+      },
     });
     return { url: link.url, expiresAt: link.expiresAt };
+  }
+
+  /**
+   * Discards an upload that failed validation: the object is deleted from storage and the document is marked purged and audited.
+   * Only an UNCONFIRMED document is ever touched. If the delete itself fails the document is NOT marked, so the abandoned-upload
+   * sweeper retries it; the confirmation still fails either way.
+   */
+  private async rejectUpload(
+    document: { id: string; objectKey: string },
+    check: { workerId: string; checkType: string },
+    workerId: string,
+    actorId: string | null,
+    code: string,
+  ): Promise<void> {
+    try {
+      await this.storage.deleteObject(document.objectKey);
+      await this.repository.markPurged(document.id, code, new Date());
+    } catch (error) {
+      this.logger.warn(
+        `Rejected upload could not be discarded now (${code}): ${(error as Error).message}`,
+      );
+    }
+    await this.audit.record({
+      action: 'verification.document_content_rejected',
+      entityType: 'verification_document',
+      entityId: document.id,
+      actorId,
+      metadata: { workerId, checkType: check.checkType, reason: code },
+    });
+  }
+
+  /**
+   * Sweeper for uploads that were never confirmed (the client skipped confirmation, or uploaded something it never confirmed):
+   * their objects are deleted so the private bucket does not accumulate unreviewed files. Confirmed documents are never touched.
+   * `olderThanMs` is an engineering default, not a retention rule.
+   */
+  async purgeAbandonedUploads(olderThanMs: number, limit = 50): Promise<number> {
+    const documents = await this.repository.findAbandonedUploads(
+      new Date(Date.now() - olderThanMs),
+      limit,
+    );
+    let purged = 0;
+    for (const document of documents) {
+      try {
+        await this.storage.deleteObject(document.objectKey);
+        if (await this.repository.markPurged(document.id, 'ABANDONED', new Date())) {
+          await this.audit.record({
+            action: 'verification.document_abandoned_purged',
+            entityType: 'verification_document',
+            entityId: document.id,
+            actorId: null,
+            metadata: { reason: 'ABANDONED' },
+          });
+          purged++;
+        }
+      } catch (error) {
+        this.logger.warn(`Abandoned upload not discarded: ${(error as Error).message}`);
+      }
+    }
+    return purged;
+  }
+
+  private notUploaded(): DomainException {
+    return new DomainException(
+      VerificationErrorCode.DOCUMENT_NOT_UPLOADED,
+      'The document has not been uploaded, or its size does not match',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
   }
 
   // --- configuration ----------------------------------------------------------------------------------------------

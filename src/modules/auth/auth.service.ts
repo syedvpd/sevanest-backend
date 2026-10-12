@@ -126,6 +126,72 @@ export class AuthService {
   }
 
   /**
+   * Self-service password change for the signed-in admin. The current password is re-verified (a stolen access token alone is not
+   * enough; wrong attempts count towards the same lockout as login). On success every OTHER session is revoked in the same
+   * transaction as the new hash, and the change is audited without any secret. Password RESET for a forgotten password is not
+   * provided: it needs a delivery channel and a decision (Q-29).
+   */
+  async changeAdminPassword(
+    userId: string,
+    currentSessionId: string,
+    input: { currentPassword: string; newPassword: string },
+    clientIp: string,
+  ): Promise<{ revokedSessions: number }> {
+    const user = await this.users.findCredentialsById(userId);
+    if (!user || user.type !== 'ADMIN' || user.passwordHash === null || user.email === null) {
+      throw new DomainException(
+        AuthErrorCode.INVALID_CREDENTIALS,
+        'Invalid credentials',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    const accountKey = AdminLoginThrottle.accountKey(user.email);
+    await this.throttle.assertNotLocked(accountKey, clientIp);
+    this.users.assertPasswordMeetsPolicy(input.newPassword, 'newPassword');
+    if (!(await this.hasher.verify(input.currentPassword, user.passwordHash))) {
+      const lockedOut = await this.throttle.recordFailure(accountKey, clientIp);
+      await this.audit.record({
+        action: 'auth.admin_password_change_failed',
+        entityType: 'user',
+        entityId: userId,
+        actorId: userId,
+        metadata: { reason: 'bad_current_password', lockedOut },
+      });
+      throw new DomainException(
+        AuthErrorCode.CURRENT_PASSWORD_INCORRECT,
+        'The current password is incorrect',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    if (input.newPassword === input.currentPassword) {
+      throw new DomainException(
+        AuthErrorCode.PASSWORD_UNCHANGED,
+        'The new password must differ from the current password',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const newHash = await this.users.hashPassword(input.newPassword);
+    const revokedSessions = await this.sessions.revokeOthersWith(
+      userId,
+      currentSessionId,
+      async (tx) => {
+        await this.users.setPasswordHash(userId, newHash, tx);
+        await this.audit.record(
+          {
+            action: 'auth.admin_password_change',
+            entityType: 'user',
+            entityId: userId,
+            actorId: userId,
+          },
+          tx,
+        );
+      },
+    );
+    await this.throttle.reset(accountKey);
+    return { revokedSessions };
+  }
+
+  /**
    * Wrong-OTP attempts and the lockout they trigger are security events. Only the failure kind and the app are recorded: no
    * mobile number, no code. Repeat attempts while already locked and expiry are not recorded (they add volume, not signal).
    */

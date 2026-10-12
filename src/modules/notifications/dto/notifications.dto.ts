@@ -7,7 +7,7 @@ import { LANGUAGE_CODE } from '../../../common/validation/language';
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-export const CHANNELS = ['PUSH', 'SMS', 'WHATSAPP'] as const;
+export const CHANNELS = ['PUSH', 'SMS', 'WHATSAPP', 'IN_APP'] as const;
 export const DELIVERY_STATUSES = ['QUEUED', 'SENT', 'FAILED', 'SKIPPED'] as const;
 
 export class CreateTemplateDto {
@@ -42,6 +42,16 @@ export class CreateTemplateDto {
   @Length(1, 1000)
   body!: string;
 
+  @ApiPropertyOptional({
+    maxLength: 64,
+    description: 'India DLT: the registered template id this wording belongs to (SMS).',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
+  dltTemplateId?: string;
+
   @ApiPropertyOptional({ default: true })
   @IsOptional()
   @IsBoolean()
@@ -49,6 +59,13 @@ export class CreateTemplateDto {
 }
 
 export class UpdateTemplateDto {
+  @ApiPropertyOptional({ maxLength: 64 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
+  dltTemplateId?: string;
+
   @ApiPropertyOptional({ maxLength: 120 })
   @IsOptional()
   @Transform(trim)
@@ -100,8 +117,29 @@ export class TemplateView {
   @ApiProperty() language!: string;
   @ApiProperty({ nullable: true }) title!: string | null;
   @ApiProperty() body!: string;
+  @ApiProperty({ nullable: true }) dltTemplateId!: string | null;
   @ApiProperty() isActive!: boolean;
   @ApiProperty() updatedAt!: Date;
+}
+
+export class InboxQuery extends PageQueryDto {
+  @ApiPropertyOptional({ description: 'Only unread items.' })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => value === 'true' || value === true)
+  @IsBoolean()
+  unreadOnly?: boolean;
+}
+
+/** One in-app message. `route` tells the app where a tap should go (deep link); `params` are ids only. */
+export class InboxItemView {
+  @ApiProperty() id!: string;
+  @ApiProperty() event!: string;
+  @ApiProperty({ nullable: true }) title!: string | null;
+  @ApiProperty() body!: string;
+  @ApiProperty({ nullable: true, example: { type: 'booking', id: 'uuid' } })
+  route!: { type: string; id: string } | null;
+  @ApiProperty({ nullable: true }) readAt!: Date | null;
+  @ApiProperty() createdAt!: Date;
 }
 
 export class EventView {

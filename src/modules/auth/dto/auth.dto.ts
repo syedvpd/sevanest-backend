@@ -72,6 +72,21 @@ export class AdminLoginDto {
   deviceName?: string;
 }
 
+export class ChangeAdminPasswordDto {
+  @ApiProperty({ writeOnly: true })
+  @IsString()
+  @Length(1, 256)
+  currentPassword!: string;
+
+  @ApiProperty({
+    writeOnly: true,
+    description: 'Minimum length is configuration (ADMIN_PASSWORD_MIN_LENGTH).',
+  })
+  @IsString()
+  @Length(1, 256)
+  newPassword!: string;
+}
+
 export class RefreshTokenDto {
   @ApiProperty({
     description: 'The current refresh token. It is single-use: a new one is returned.',

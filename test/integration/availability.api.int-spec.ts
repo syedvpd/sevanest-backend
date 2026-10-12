@@ -367,7 +367,7 @@ describe('Availability API (integration)', () => {
     });
 
     it.each([
-      ['unknown preference', { engagementPreference: 'DAILY' }],
+      ['unknown preference', { engagementPreference: 'FORTNIGHTLY' }],
       ['lower-case preference', { engagementPreference: 'full_time' }],
       ['empty area list', { areaIds: [] }],
       ['duplicate areas', { areaIds: [UNKNOWN_ID, UNKNOWN_ID] }],
@@ -635,7 +635,7 @@ describe('Availability API (integration)', () => {
       await as(superAdmin)
         .patch(`/api/v1/admin/users/${worker.userId}/status`, { status: 'SUSPENDED' })
         .expect(200);
-      expect((await as(worker).patch(url, { engagementPreference: 'FULL_TIME' })).status).toBe(401);
+      expect((await as(worker).patch(url, { engagementPreference: 'FULL_TIME' })).status).toBe(403);
       expect(
         await api.prisma.workerWorkPreference.count({ where: { workerId: worker.workerId } }),
       ).toBe(0);
