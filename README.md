@@ -15,14 +15,14 @@ Customers find and book verified workers, workers manage their profile and jobs,
 ![BullMQ](https://img.shields.io/badge/BullMQ-queues-F5A623)
 ![Jest](https://img.shields.io/badge/Jest-30-C21325?logo=jest&logoColor=white)
 
-[Quick start](#quick-start) · [API](#api) · [Architecture](#architecture) · [Docs](docs/DEVELOPMENT.md) · [Customer app handoff](docs/qa/customer-app-integration-handoff.md) · [Issues](https://github.com/syedvpd/sevanest-backend/issues)
+[Getting started](#getting-started) · [API](#api) · [Architecture](#architecture) · [Docs](docs/DEVELOPMENT.md) · [Customer app handoff](docs/qa/customer-app-integration-handoff.md) · [Issues](https://github.com/syedvpd/sevanest-backend/issues)
 
 </div>
 
 ---
 
 ## Contents
-[Overview](#overview) · [Quick start](#quick-start) · [API](#api) · [Architecture](#architecture) · [Capabilities](#capabilities) · [Testing and quality](#testing-and-quality) · [Production and security](#production-and-security) · [Repository map](#repository-map) · [Contributing](#contributing) · [License](#license)
+[Overview](#overview) · [Getting started](#getting-started) · [API](#api) · [Architecture](#architecture) · [Capabilities](#capabilities) · [Testing and quality](#testing-and-quality) · [Production and security](#production-and-security) · [Repository map](#repository-map) · [Contributing](#contributing) · [License](#license)
 
 ## Overview
 SevaNest connects households with vetted domestic workers (maids, cooks, drivers, caregivers and similar roles).
@@ -37,71 +37,10 @@ It is a **NestJS modular monolith**: one deployable API plus one background work
 
 > **Status.** Backend implementation and automated tests are complete for the approved scope. Real SMS, payment, push and storage providers, mobile-app integration, staging and production operations are **not yet verified** (see [Production and security](#production-and-security)).
 
-## Quick start
+## Getting started
+The backend runs as one API process plus one background worker, with PostgreSQL and Redis. Developers set it up with Docker or directly on the host following the internal guide: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md). Configuration is read from environment variables; [`.env.example`](.env.example) lists every setting.
 
-### Docker only (recommended)
-Requires Docker. No `.env` file and no Node.js needed.
-```bash
-git clone https://github.com/syedvpd/sevanest-backend.git
-cd sevanest-backend
-```
-```bash
-docker compose --profile app up -d --build
-```
-This launches, in order: PostgreSQL 17 and Redis 7 → `migrate` (`prisma migrate deploy`) → `seed` (roles, permissions, categories, pilot areas, starter templates and demo customers and workers) → `api` and `worker`. Settings come from [`docker.env`](docker.env), which holds local, non-secret values only.
-
-Check readiness, then open the API:
-```bash
-curl http://localhost:3000/health/ready
-```
-| What | Where |
-|---|---|
-| API | `http://localhost:3000/api/v1` |
-| Swagger UI | `http://localhost:3000/docs` |
-| OpenAPI JSON | `http://localhost:3000/docs/openapi.json` |
-
-Everyday commands:
-```bash
-docker compose --profile app logs -f api worker
-```
-```bash
-docker compose --profile app stop
-```
-After a `git pull`, apply new migrations and rebuild:
-```bash
-docker compose --profile app run --rm migrate
-```
-```bash
-docker compose --profile app up -d --build api worker
-```
-Reset disposable local data (deletes the local database volume, never anything remote):
-```bash
-docker compose --profile app down -v
-```
-Port in use? Set `API_PORT`, `POSTGRES_PORT` or `REDIS_PORT`. Skip demo data with `SEED_DEMO=false`.
-
-**Local-development logins** (from `docker.env`; never use elsewhere):
-* Admin `admin@sevanest.local` with the password in `docker.env`, via `POST /api/v1/auth/admin/login`.
-* Demo customers `+919000000201` to `+919000000203` and demo workers `+919000000101` to `+919000000103` log in with the fixed OTP `123456` (`ALLOW_TEST_OTP`). The server forces this flag off when `NODE_ENV=production`, and the demo seed refuses production and hosted databases.
-
-### Host-based development
-```bash
-cp .env.example .env
-npm ci
-```
-```bash
-npm run infra:up
-```
-```bash
-npm run prisma:migrate:deploy
-npm run build
-npm run seed
-npm run seed:launch
-```
-```bash
-npm run start:dev
-```
-`.env.example` lists every setting. A host `.env` must point `DATABASE_URL` at your local database, never at a shared one.
+Once a deployment is running, readiness is at `/health/ready`, interactive API docs at `/docs` and the OpenAPI document at `/docs/openapi.json` (enabled by `SWAGGER_ENABLED`).
 
 ## API
 | | |
@@ -201,7 +140,7 @@ Integration tests need a **disposable database whose name ends in `_test` or `_c
 | Unit | 29 suites, 270 tests |
 | End to end | 2 suites, 27 tests |
 | Integration | 47 suites, 818 tests |
-| Docker | image builds; compose stack verified from scratch (migrate, seed, API, worker, demo login) |
+| Docker | image builds; the compose stack starts and passes its readiness check |
 
 These are local automated results. They are not evidence of real-provider, staging or production behaviour, mobile-app integration, or any capacity target. A local load experiment found worker search to be the first bottleneck; no capacity figure is promised.
 
@@ -228,9 +167,9 @@ Production readiness is **not claimed**. What exists, and what still needs the o
 | [`src/`](src) | `modules/` (business domains), `common/`, `infrastructure/`, `integrations/` (provider adapters), `main.ts` (API), `worker.ts` (background worker) |
 | [`prisma/`](prisma) | schema and reviewed SQL migrations |
 | [`test/`](test) | integration and e2e tests, shared helpers |
-| [`scripts/`](scripts) | database backup, restore and rebuild; demo seed; local load-test tools |
-| [`docs/`](docs) | [developer reference](docs/DEVELOPMENT.md), [database guide](docs/DATABASE_MIGRATION.md), [specifications](docs/project-specifications), [QA evidence and handoffs](docs/qa), [decisions and open questions](docs/project-intelligence) |
-| `docker-compose.yml`, `docker.env`, `Dockerfile`, `render.yaml` | local stack, image, deployment blueprint |
+| [`scripts/`](scripts) | database backup, restore and rebuild; local tooling |
+| [`docs/`](docs) | [developer reference](docs/DEVELOPMENT.md), [local development](docs/LOCAL_DEVELOPMENT.md), [database guide](docs/DATABASE_MIGRATION.md), [specifications](docs/project-specifications), [QA evidence and handoffs](docs/qa), [decisions and open questions](docs/project-intelligence) |
+| `docker-compose.yml`, `Dockerfile`, `render.yaml` | local stack definition, container image, deployment blueprint |
 
 ## Contributing
 This is a private project. Changes follow the repository's existing workflow:

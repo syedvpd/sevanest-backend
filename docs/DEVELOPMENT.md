@@ -203,27 +203,8 @@ Schema changes only via `prisma migrate dev` (reviewed SQL in `prisma/migrations
 Never `migrate reset`, `db push --force-reset`, `DROP`, or `TRUNCATE` on a shared database.
 `docker compose down -v` deletes the local data volumes — avoid it unless you intend to erase local data.
 
-## Docker: run the whole backend with one command
-After `git clone` nothing else is needed (no `.env`): PostgreSQL 17, Redis 7 (BullMQ queues), migrations, seed, API and worker all start from `docker.env` (local, non-secret values).
-```bash
-docker compose --profile app up -d --build
-```
-Order: postgres + redis -> `migrate` (`prisma migrate deploy`) -> `seed` (roles, permissions, categories, pilot areas, starter templates, demo customers/workers) -> `api` + `worker`.
-```bash
-curl http://localhost:3000/health/ready      # API on http://localhost:3000, Swagger on /docs, OpenAPI on /docs/openapi.json
-docker compose --profile app logs -f api worker
-docker compose --profile app run --rm migrate    # apply new migrations after a git pull (never resets or drops)
-docker compose --profile app run --rm seed       # re-run the idempotent seed
-docker compose --profile app up -d --build api worker   # rebuild after code changes
-docker compose --profile app down                # stop; keeps the data volumes
-```
-Local logins (from `docker.env`; development only, never use on real data):
-* Admin: `admin@sevanest.local` / `Local-Docker-Admin-2026!` via `POST /api/v1/auth/admin/login`.
-* Demo customers `+919000000201`..`+919000000203`, demo workers `+919000000101`..`+919000000103`: `POST /api/v1/auth/otp/request` then `POST /api/v1/auth/otp/verify` with `{ "mobile", "appType": "CUSTOMER", "otp": "123456" }` (fixed test code; refused in production).
-Ports in use already? Set `API_PORT`, `POSTGRES_PORT`, `REDIS_PORT` in your shell or `.env`. Skip demo data with `SEED_DEMO=false`. Wipe everything and start fresh (local only): `docker compose --profile app down -v`.
-Infrastructure only (host-based development): `npm run infra:up`. Real SMS, storage and payment providers are configured through your own environment, not `docker.env`.
-
-Images: `docker build --target runtime -t sevanest-backend .` (API/worker) and `--target migrate` (applies migrations).
+## Docker and local stack
+Start, stop, migrate, seed, local accounts, reset and troubleshooting: [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md).
 
 ## CI
 `.github/workflows/ci.yml` runs, in order: `npm ci`, `npx prisma validate`, `npx prisma migrate deploy`, `npm run lint`,
