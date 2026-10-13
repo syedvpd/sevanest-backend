@@ -15,14 +15,14 @@ Customers find and book verified workers, workers manage their profile and jobs,
 ![BullMQ](https://img.shields.io/badge/BullMQ-queues-F5A623)
 ![Jest](https://img.shields.io/badge/Jest-30-C21325?logo=jest&logoColor=white)
 
-[Getting started](#getting-started) · [API](#api) · [Architecture](#architecture) · [Docs](docs/DEVELOPMENT.md) · [Customer app handoff](docs/qa/customer-app-integration-handoff.md) · [Issues](https://github.com/syedvpd/sevanest-backend/issues)
+[Quick start](#quick-start) · [API](#api) · [Architecture](#architecture) · [Docs](docs/DEVELOPMENT.md) · [Customer app handoff](docs/qa/customer-app-integration-handoff.md) · [Issues](https://github.com/syedvpd/sevanest-backend/issues)
 
 </div>
 
 ---
 
 ## Contents
-[Overview](#overview) · [Getting started](#getting-started) · [API](#api) · [Architecture](#architecture) · [Capabilities](#capabilities) · [Testing and quality](#testing-and-quality) · [Production and security](#production-and-security) · [Repository map](#repository-map) · [Contributing](#contributing) · [License](#license)
+[Overview](#overview) · [Quick start](#quick-start) · [API](#api) · [Architecture](#architecture) · [Modules](#modules) · [Capabilities](#capabilities) · [Testing and quality](#testing-and-quality) · [Production and security](#production-and-security) · [Project structure](#project-structure) · [Contributing](#contributing) · [License](#license)
 
 ## Overview
 SevaNest connects households with vetted domestic workers (maids, cooks, drivers, caregivers and similar roles).
@@ -37,10 +37,15 @@ It is a **NestJS modular monolith**: one deployable API plus one background work
 
 > **Status.** Backend implementation and automated tests are complete for the approved scope. Real SMS, payment, push and storage providers, mobile-app integration, staging and production operations are **not yet verified** (see [Production and security](#production-and-security)).
 
-## Getting started
-The backend runs as one API process plus one background worker, with PostgreSQL and Redis. Developers set it up with Docker or directly on the host following the internal guide: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md). Configuration is read from environment variables; [`.env.example`](.env.example) lists every setting.
-
-Once a deployment is running, readiness is at `/health/ready`, interactive API docs at `/docs` and the OpenAPI document at `/docs/openapi.json` (enabled by `SWAGGER_ENABLED`).
+## Quick start
+```bash
+git clone https://github.com/syedvpd/sevanest-backend.git
+cd sevanest-backend
+```
+```bash
+docker compose --profile app up -d --build
+```
+Starts PostgreSQL, Redis, applies all migrations, loads data and starts the API and worker. Needs Docker only. Local test accounts, logs, reset and troubleshooting: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
 
 ## API
 | | |
@@ -51,6 +56,12 @@ Once a deployment is running, readiness is at `/health/ready`, interactive API d
 | Lists | `{ "data": [...], "meta": { "page", "limit", "total" } }`, defaults page 1, limit 20, maximum 100 |
 | Errors | `{ "code", "message", "details?", "requestId" }` with stable machine-readable codes (for example `OTP_INVALID`, `WORKER_NOT_FOUND`) |
 | Safe retries | Optional `Idempotency-Key` header on unsafe endpoints; `ETag` / `If-Match` on admin edits |
+
+**Health endpoints**
+| Endpoint | Meaning |
+|---|---|
+| `GET /health/live` | the process is up |
+| `GET /health/ready` | PostgreSQL and Redis are reachable |
 
 Integration guides for the app teams: [customer app handoff](docs/qa/customer-app-integration-handoff.md) · [customer API answers](docs/qa/customer-app-api-gaps.md) · [screen-to-API traceability, customer](docs/qa/customer-screen-api-traceability.md) and [worker](docs/qa/worker-screen-api-traceability.md). Per-module notes live in `src/modules/<name>/README.md`.
 
@@ -99,6 +110,34 @@ stateDiagram-v2
 ```
 Interviews and trials are their own entity (one open session per booking) that moves the booking between the scheduled and completed states. A worker cannot be booked for overlapping hours.
 </details>
+
+## Tech stack
+| Layer | Technology |
+|---|---|
+| Runtime | Node.js 24 |
+| Framework | NestJS 11 (modular monolith), TypeScript 5.9 |
+| Database | PostgreSQL 17 |
+| ORM and migrations | Prisma 7.10 (reviewed SQL migrations) |
+| Cache and queues | Redis 7, BullMQ |
+| Validation | class-validator / class-transformer DTOs |
+| Auth | JWT access tokens with server-side sessions, rotating refresh tokens, OTP login, role and permission based admin access |
+| API docs | Swagger UI and OpenAPI (`@nestjs/swagger`) |
+| Logging | pino (JSON), request ids on every response |
+| Testing | Jest 30, Supertest |
+| Quality | ESLint, Prettier, TypeScript strict checks |
+| Containers | Docker, Docker Compose |
+| CI | GitHub Actions |
+
+## Request flow
+```
+Client -> Controller -> Service -> Repository -> Prisma -> PostgreSQL
+```
+* **Controllers** authenticate, authorise, validate DTOs and return responses.
+* **Services** own business behaviour and state transitions.
+* **Repositories** are the only code that touches a module's tables.
+* **Common and infrastructure** hold cross-cutting concerns: configuration, audit, outbox, idempotency, pagination, error handling, cache, queue and logging.
+
+Modules depend on each other only through exported services, and a test enforces the allowed dependency direction.
 
 ## Capabilities
 Each item is implemented and covered by automated tests. Items marked *needs credentials* run against fakes locally and have not been exercised with the real vendor.
@@ -161,15 +200,90 @@ Production readiness is **not claimed**. What exists, and what still needs the o
 
 **Reporting a vulnerability.** No public security contact or policy file is published yet. Do not open a public issue; contact the repository owner privately.
 
-## Repository map
-| Path | Contents |
+## Modules
+| # | Module | Covers |
+|---|---|---|
+| 1 | `auth` | OTP and admin login, token sessions, refresh rotation, lockout |
+| 2 | `users` | accounts and status, admin roles and permissions, admin provisioning |
+| 3 | `customers` | customer profile, addresses, admin customer management |
+| 4 | `workers` | worker profile, onboarding steps, submission, assisted onboarding |
+| 5 | `worker-photo` | worker profile photo upload with private storage |
+| 6 | `service-categories` | service category master, engagement types, price guidance |
+| 7 | `availability` | engagement preference, preferred areas, time windows, service areas |
+| 8 | `verification` | KYC checks and documents, review queue, history, re-checks |
+| 9 | `search` | worker discovery for customers, worker cards, reviews, free slots |
+| 10 | `shortlist` | customer shortlist of workers |
+| 11 | `matching` | staff-side candidate selection for a requirement |
+| 12 | `booking` | booking lifecycle, interviews and trials, confirmation, cancellation, timeline |
+| 13 | `payment` | booking fee, webhook, reconciliation, refunds |
+| 14 | `notifications` | outbox, templates, inbox, push, SMS and WhatsApp delivery |
+| 15 | `attendance` | per-day attendance and monthly summary |
+| 16 | `replacement` | replacement requests, review, selection, linked booking |
+| 17 | `ratings` | ratings of completed bookings, totals, moderation |
+| 18 | `support` | tickets and complaints, staff handling |
+| 19 | `safety` | reports and blocks between customers and workers |
+| 20 | `legal` | terms and privacy versions and acceptance |
+| 21 | `alerts` | admin alerts for payment and operations exceptions |
+| 22 | `reports` | 12 read-only reports, CSV export, operations dashboard |
+| 23 | `home` | customer Home aggregate |
+| 24 | `meta`, `system` | public app config and reference data; admin readiness and checks |
+
+## Project structure
+```
+sevanest-backend/
+├── .github/workflows/     # CI pipeline
+├── docs/                  # developer reference, specifications, QA evidence, decisions
+├── prisma/                # schema and reviewed SQL migrations
+├── scripts/               # database backup, restore and rebuild; local tooling
+├── src/
+│   ├── modules/           # 25 modules: auth, users, customers, workers, availability,
+│   │                      #   verification, search, matching, booking, payment, notifications,
+│   │                      #   attendance, replacement, ratings, support, reports, ...
+│   ├── common/            # audit, outbox, idempotency, guards, errors, pagination
+│   ├── config/            # validated environment configuration
+│   ├── infrastructure/    # database, cache, queue, logging
+│   ├── integrations/      # provider adapters (SMS, push, payments, storage, malware scan)
+│   ├── main.ts            # API entry point
+│   └── worker.ts          # background worker entry point
+├── test/                  # integration and e2e tests, shared helpers
+├── docker-compose.yml     # local PostgreSQL, Redis, migrate, seed, API, worker
+├── docker.env             # development defaults for the local stack (not for shared use)
+├── Dockerfile             # runtime and migrate images
+├── render.yaml            # deployment blueprint (API + worker)
+└── README.md
+```
+
+## Database
+Schema changes are reviewed SQL migrations in [`prisma/migrations`](prisma/migrations).
+```bash
+npm run prisma:migrate:deploy      # apply pending migrations (never resets or drops)
+npm run prisma:migrate:status      # show applied and pending migrations
+npm run prisma:migrate:dev         # create a new migration while developing
+```
+Reference data (roles, permissions, service categories, pilot areas, starter templates) is loaded by `npm run seed` and `npm run seed:launch`. Backup, restore, rebuild and moving to another database (for example AWS RDS): [docs/DATABASE_MIGRATION.md](docs/DATABASE_MIGRATION.md).
+
+## Background worker
+```bash
+npm run start:worker
+```
+The worker delivers notifications, recovers lost payment callbacks, runs booking sweeps and verification re-checks. It can also run embedded in the API (`EMBEDDED_WORKERS=true`). Without a worker, nothing background runs.
+
+## Deployment
+* **Docker:** `docker build --target runtime -t sevanest-backend .` builds the API and worker image; `--target migrate` builds the migration image.
+* **Render:** [`render.yaml`](render.yaml) declares the API web service and the worker. Secrets are set in the dashboard and are never stored in the repository.
+* **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to `main` and on pull requests: Prisma validation, migrations on an empty database, format, lint, type check, build, unit, e2e and integration tests, and Docker image builds.
+
+## Documentation
+| Topic | Location |
 |---|---|
-| [`src/`](src) | `modules/` (business domains), `common/`, `infrastructure/`, `integrations/` (provider adapters), `main.ts` (API), `worker.ts` (background worker) |
-| [`prisma/`](prisma) | schema and reviewed SQL migrations |
-| [`test/`](test) | integration and e2e tests, shared helpers |
-| [`scripts/`](scripts) | database backup, restore and rebuild; local tooling |
-| [`docs/`](docs) | [developer reference](docs/DEVELOPMENT.md), [local development](docs/LOCAL_DEVELOPMENT.md), [database guide](docs/DATABASE_MIGRATION.md), [specifications](docs/project-specifications), [QA evidence and handoffs](docs/qa), [decisions and open questions](docs/project-intelligence) |
-| `docker-compose.yml`, `Dockerfile`, `render.yaml` | local stack definition, container image, deployment blueprint |
+| Developer reference (toolchain, providers, jobs, safety) | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Local development | [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) |
+| Database, backup and migration | [docs/DATABASE_MIGRATION.md](docs/DATABASE_MIGRATION.md) |
+| Specifications (PRD, SRS, FRD, TRD) | [docs/project-specifications](docs/project-specifications) |
+| QA evidence, traceability, app-team handoffs | [docs/qa](docs/qa) |
+| Decisions, open questions, project state | [docs/project-intelligence](docs/project-intelligence) |
+| Module test results | [docs/testing](docs/testing) |
+Each module also has a README in `src/modules/<module>/README.md`.
 
 ## Contributing
 This is a private project. Changes follow the repository's existing workflow:
