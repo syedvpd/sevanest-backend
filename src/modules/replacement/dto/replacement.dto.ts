@@ -74,22 +74,23 @@ export class ReplacementView {
   @ApiProperty() bookingId!: string;
   @ApiProperty({ enum: REPLACEMENT_STATUSES }) status!: ReplacementStatusValue;
   @ApiProperty() reason!: string;
-  @ApiProperty({ nullable: true }) notes!: string | null;
-  @ApiProperty({ nullable: true, description: 'Staff remarks on the decision.' }) decisionRemarks!:
-    string | null;
+  @ApiProperty({ nullable: true, type: String }) notes!: string | null;
+  @ApiProperty({ nullable: true, description: 'Staff remarks on the decision.', type: String })
+  decisionRemarks!: string | null;
   @ApiProperty({
     nullable: true,
     description: 'The new booking once a replacement worker is confirmed.',
+    type: String,
   })
   replacementBookingId!: string | null;
   @ApiProperty() createdAt!: Date;
-  @ApiProperty({ nullable: true }) decidedAt!: Date | null;
-  @ApiProperty({ nullable: true }) completedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) decidedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) completedAt!: Date | null;
 }
 
 export class AdminReplacementView extends ReplacementView {
   @ApiProperty() requestedByUserId!: string;
-  @ApiProperty({ nullable: true }) decidedByUserId!: string | null;
-  @ApiProperty({ nullable: true, description: 'The worker being replaced.' }) currentWorkerId!:
-    string | null;
+  @ApiProperty({ nullable: true, type: String }) decidedByUserId!: string | null;
+  @ApiProperty({ nullable: true, description: 'The worker being replaced.', type: String })
+  currentWorkerId!: string | null;
 }

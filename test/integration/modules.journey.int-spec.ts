@@ -80,7 +80,8 @@ describe('Auth -> Users -> Customers journey and OpenAPI contract (integration)'
     expect(found.body.data).toHaveLength(1);
     expect(found.body.data[0]).toMatchObject({
       id: profile.body.id,
-      verificationStatus: 'PENDING',
+      // the customer saved an address, so the automatic rule has verified them (D-59)
+      verificationStatus: 'VERIFIED',
       accountStatus: 'ACTIVE',
     });
     expect(found.body.data[0].mobile).not.toBe(session.mobile);
@@ -88,12 +89,12 @@ describe('Auth -> Users -> Customers journey and OpenAPI contract (integration)'
       .http()
       .patch(`/api/v1/admin/customers/${profile.body.id}/verification-status`)
       .set('Authorization', bearer(admin))
-      .send({ status: 'VERIFIED' })
+      .send({ status: 'PENDING' }) // staff put the (automatically verified) customer back under review
       .expect(200);
     expect(
       (await api.http().get('/api/v1/customers/me').set('Authorization', withNewToken)).body
         .verificationStatus,
-    ).toBe('VERIFIED');
+    ).toBe('PENDING');
 
     // 6. Suspension (Users) ends access everywhere, including OTP login (Auth), and leaves the data intact.
     await api

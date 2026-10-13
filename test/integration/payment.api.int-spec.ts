@@ -82,9 +82,12 @@ describe('Payment API (integration)', () => {
       await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 70000 }).expect(200);
       await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 50000 }).expect(200);
       const fees = await as(api, viewer).get(`${A}/fees`).expect(200);
-      expect(fees.body).toEqual([
-        { code: 'BOOKING_FEE', amountMinor: 50000, currency: 'INR', isActive: true },
-      ]);
+      // other fee codes may exist (another suite creates one in the shared test database)
+      expect(fees.body).toEqual(
+        expect.arrayContaining([
+          { code: 'BOOKING_FEE', amountMinor: 50000, currency: 'INR', isActive: true },
+        ]),
+      );
       const audit = await api.prisma.auditLog.findFirstOrThrow({
         where: { action: 'payment.fee_set', actorId: manager.userId },
         orderBy: { createdAt: 'desc' },

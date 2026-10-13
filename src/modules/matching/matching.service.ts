@@ -22,7 +22,11 @@ export class MatchingService {
   async candidatesFor(
     requirement: MatchRequirementDto,
     admin: Actor & { userId: string },
-    options: { excludeWorkerId?: string; forCustomerUserId?: string } = {},
+    options: {
+      excludeWorkerId?: string;
+      forCustomerUserId?: string;
+      excludeBookingId?: string;
+    } = {},
   ): Promise<MatchCandidatesResponse> {
     const { items, total } = await this.search.findEligible(
       { ...requirement, ...options },

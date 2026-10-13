@@ -1,3 +1,4 @@
+import { csvCell } from '../../common/csv/csv';
 import { randomBytes } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
@@ -59,13 +60,7 @@ export const PaymentErrorCode = {
 /** Technical cap on one export (not a reporting rule). */
 export const EXPORT_MAX_ROWS = 5000;
 
-/** One CSV cell: quoted when needed, and prefixed so a spreadsheet never evaluates it as a formula. */
-export function csvCell(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return '';
-  let text = String(value);
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
+export { csvCell };
 
 export interface PaymentActor {
   userId: string;

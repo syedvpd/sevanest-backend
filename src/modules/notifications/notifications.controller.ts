@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -9,7 +10,11 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
+import type { Response } from 'express';
+import { etagOf } from '../../common/concurrency/if-match';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -42,6 +47,7 @@ export class AdminNotificationsController {
   ) {}
 
   @Get('notification-events')
+  @ApiPageResponse(TemplateView)
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
   @ApiOperation({ summary: 'The events that can notify, with the placeholders a template may use' })
   events(): EventView[] {
@@ -49,6 +55,7 @@ export class AdminNotificationsController {
   }
 
   @Get('notification-templates')
+  @ApiPageResponse(TemplateView)
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
   @ApiOperation({ summary: 'Templates (paginated)' })
   list(@Query() query: TemplateListQuery): Promise<Page<TemplateView>> {
@@ -56,13 +63,20 @@ export class AdminNotificationsController {
   }
 
   @Get('notification-templates/:templateId')
+  @ApiModelResponse(TemplateView)
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
-  @ApiOperation({ summary: 'One template' })
-  get(@Param('templateId', ParseUUIDPipe) templateId: string): Promise<TemplateView> {
-    return this.notifications.getTemplate(templateId);
+  @ApiOperation({ summary: 'One template (ETag for If-Match)' })
+  async get(
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<TemplateView> {
+    const template = await this.notifications.getTemplate(templateId);
+    res.setHeader('ETag', etagOf(template.updatedAt));
+    return template;
   }
 
   @Post('notification-templates')
+  @ApiModelResponse(TemplateView, { status: 201 })
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
   @ApiOperation({
     summary: 'Create a template (wording + channel for an event)',
@@ -77,17 +91,20 @@ export class AdminNotificationsController {
   }
 
   @Patch('notification-templates/:templateId')
+  @ApiModelResponse(TemplateView)
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
   @ApiOperation({ summary: 'Change wording or switch a template on or off' })
   async update(
     @Param('templateId', ParseUUIDPipe) templateId: string,
     @Body() dto: UpdateTemplateDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<TemplateView> {
-    return this.notifications.updateTemplate(templateId, dto, await this.actor(admin));
+    return this.notifications.updateTemplate(templateId, dto, await this.actor(admin), ifMatch);
   }
 
   @Get('notifications')
+  @ApiPageResponse(DeliveryView)
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
   @ApiOperation({
     summary: 'Delivery log, newest first (paginated)',
@@ -153,6 +170,7 @@ export class InboxController {
   constructor(private readonly notifications: NotificationsService) {}
 
   @Get()
+  @ApiPageResponse(InboxItemView)
   @ApiOperation({
     summary: 'My in-app notifications, newest first',
     description:

@@ -10,7 +10,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -50,12 +52,15 @@ export class SupportController {
   constructor(private readonly support: SupportService) {}
 
   @Get('categories')
+  @ApiModelResponse(SupportCategoryView, { isArray: true })
   @ApiOperation({ summary: 'The configured ticket categories that can be chosen' })
   categories(): Promise<SupportCategoryView[]> {
     return this.support.listCategories();
   }
 
+  @Idempotent()
   @Post('tickets')
+  @ApiModelResponse(TicketDetailView, { status: 201 })
   @ApiOperation({
     summary: 'Raise a support request or complaint',
     description:
@@ -72,6 +77,7 @@ export class SupportController {
   }
 
   @Get('tickets')
+  @ApiPageResponse(TicketView)
   @ApiOperation({ summary: 'My tickets, newest first (paginated)' })
   list(
     @Query() query: MyTicketListQuery,
@@ -81,6 +87,7 @@ export class SupportController {
   }
 
   @Get('tickets/:ticketId')
+  @ApiModelResponse(TicketDetailView)
   @ApiOperation({
     summary: 'One of my tickets with its progress (404 for anyone else)',
     description:
@@ -93,7 +100,9 @@ export class SupportController {
     return this.support.getMine(user.userId, ticketId);
   }
 
+  @Idempotent()
   @Post('tickets/:ticketId/messages')
+  @ApiModelResponse(MessageView, { status: 201 })
   @ApiOperation({
     summary: 'Write on one of my open tickets',
     description: "404 for anyone else's ticket; 409 TICKET_CLOSED once it is closed. No HTML.",
@@ -111,6 +120,7 @@ export class SupportController {
   }
 
   @Get('tickets/:ticketId/messages')
+  @ApiPageResponse(MessageView)
   @ApiOperation({
     summary: 'The conversation on one of my tickets (staff internal notes are never included)',
   })
@@ -135,6 +145,7 @@ export class AdminSupportController {
   ) {}
 
   @Get('tickets')
+  @ApiPageResponse(AdminTicketView)
   @Permissions(PermissionCode.SUPPORT_VIEW)
   @ApiOperation({
     summary: 'All tickets (paginated; filter by status, priority, owner, category, booking)',
@@ -144,6 +155,7 @@ export class AdminSupportController {
   }
 
   @Get('tickets/:ticketId')
+  @ApiModelResponse(AdminTicketDetailView)
   @Permissions(PermissionCode.SUPPORT_VIEW)
   @ApiOperation({ summary: 'One ticket with the full history including internal notes' })
   get(@Param('ticketId', ParseUUIDPipe) ticketId: string): Promise<AdminTicketDetailView> {
@@ -151,6 +163,7 @@ export class AdminSupportController {
   }
 
   @Post('tickets/:ticketId/assign')
+  @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
   @ApiOperation({
@@ -165,6 +178,7 @@ export class AdminSupportController {
   }
 
   @Post('tickets/:ticketId/priority')
+  @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
   @ApiOperation({ summary: 'Set the priority (staff only)' })
@@ -177,6 +191,7 @@ export class AdminSupportController {
   }
 
   @Post('tickets/:ticketId/escalate')
+  @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
   @ApiOperation({ summary: 'Escalate the ticket (reason required, internal)' })
@@ -189,6 +204,7 @@ export class AdminSupportController {
   }
 
   @Post('tickets/:ticketId/close')
+  @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
   @ApiOperation({
@@ -202,7 +218,9 @@ export class AdminSupportController {
     return this.support.close(ticketId, dto.resolution, await this.actor(admin));
   }
 
+  @Idempotent()
   @Post('tickets/:ticketId/messages')
+  @ApiModelResponse(AdminMessageView, { status: 201 })
   @Permissions(PermissionCode.SUPPORT_MANAGE)
   @ApiOperation({
     summary: 'Reply to the ticket creator, or leave an internal note (`internal: true`)',
@@ -223,6 +241,7 @@ export class AdminSupportController {
   }
 
   @Get('tickets/:ticketId/messages')
+  @ApiPageResponse(AdminMessageView)
   @Permissions(PermissionCode.SUPPORT_VIEW)
   @ApiOperation({ summary: 'The full conversation including internal notes' })
   adminMessages(
@@ -233,6 +252,7 @@ export class AdminSupportController {
   }
 
   @Get('categories')
+  @ApiModelResponse(AdminSupportCategoryView, { isArray: true })
   @Permissions(PermissionCode.SUPPORT_VIEW)
   @ApiOperation({ summary: 'All ticket categories including disabled ones' })
   categories(): Promise<AdminSupportCategoryView[]> {
@@ -240,6 +260,7 @@ export class AdminSupportController {
   }
 
   @Post('categories')
+  @ApiModelResponse(AdminSupportCategoryView, { status: 201 })
   @Permissions(PermissionCode.SUPPORT_CATEGORY_MANAGE)
   @ApiOperation({ summary: 'Add a ticket category (audited)' })
   async createCategory(
@@ -250,6 +271,7 @@ export class AdminSupportController {
   }
 
   @Patch('categories/:categoryId')
+  @ApiModelResponse(AdminSupportCategoryView)
   @Permissions(PermissionCode.SUPPORT_CATEGORY_MANAGE)
   @ApiOperation({ summary: 'Rename or enable/disable a ticket category (audited)' })
   async updateCategory(

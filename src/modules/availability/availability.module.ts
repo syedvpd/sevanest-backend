@@ -3,6 +3,7 @@ import { UsersModule } from '../users/users.module';
 import { WorkersModule } from '../workers/workers.module';
 import {
   AdminServiceAreasController,
+  LocationsController,
   AdminWorkerAvailabilityController,
   ServiceAreasController,
   WorkerAvailabilityController,
@@ -21,6 +22,7 @@ import { ServiceAreasService } from './service-areas.service';
   controllers: [
     ServiceAreasController,
     AdminServiceAreasController,
+    LocationsController,
     WorkerAvailabilityController,
     AdminWorkerAvailabilityController,
   ],

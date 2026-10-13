@@ -106,12 +106,14 @@ export class AppConfigService {
     workerResponseHours?: number;
     pendingPaymentAlertHours?: number;
     pendingPaymentAutoCancelHours?: number;
+    bookingStartEarlyDays: number;
     supportSlaHours: { default?: number; LOW?: number; MEDIUM?: number; HIGH?: number };
   } {
     return {
       workerResponseHours: this.get('WORKER_RESPONSE_HOURS'),
       pendingPaymentAlertHours: this.get('PENDING_PAYMENT_ALERT_HOURS'),
       pendingPaymentAutoCancelHours: this.get('PENDING_PAYMENT_AUTO_CANCEL_HOURS'),
+      bookingStartEarlyDays: this.get('BOOKING_START_EARLY_DAYS') ?? 0,
       supportSlaHours: {
         default: this.get('SUPPORT_SLA_HOURS_DEFAULT'),
         LOW: this.get('SUPPORT_SLA_HOURS_LOW'),
@@ -153,6 +155,25 @@ export class AppConfigService {
   get fcmServiceAccountJson(): string {
     return this.get('FCM_SERVICE_ACCOUNT_JSON') ?? '';
   }
+  get searchCacheTtlSeconds(): number {
+    return this.get('SEARCH_CACHE_TTL_SECONDS');
+  }
+  get travelBufferMinutes(): number {
+    return this.get('BOOKING_TRAVEL_BUFFER_MINUTES');
+  }
+
+  get customerAutoVerify(): boolean {
+    return this.get('CUSTOMER_AUTO_VERIFY');
+  }
+
+  /** The ClamAV daemon to scan uploaded documents with; null = no scanning. */
+  get clamav(): { host: string; port: number; timeoutMs: number } | null {
+    const host = this.get('CLAMAV_HOST');
+    return host
+      ? { host, port: this.get('CLAMAV_PORT'), timeoutMs: this.get('CLAMAV_TIMEOUT_MS') }
+      : null;
+  }
+
   get providerHttpTimeoutMs(): number {
     return this.get('PROVIDER_HTTP_TIMEOUT_MS');
   }

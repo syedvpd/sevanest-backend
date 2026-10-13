@@ -9,27 +9,34 @@ import {
   ParseEnumPipe,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { PageQueryDto } from '../../common/pagination/pagination';
 import type { Page } from '../../common/pagination/pagination';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import { WorkersService } from '../workers/workers.service';
 import {
   AdminBookingListQuery,
+  AdminCreateBookingDto,
   AdminBookingView,
   BOOKING_ACTIONS,
   BookingActionDto,
   BookingDetailView,
-  BookingListQuery,
+  BookingFilterQuery,
+  ChainEntryView,
+  ProposeSlotDto,
   BookingView,
   CreateBookingDto,
   WorkerBookingView,
@@ -37,8 +44,46 @@ import {
 import type { BookingAction } from './dto/booking.dto';
 import { BookingService } from './booking.service';
 
+function assertIdempotencyKey(key: string | undefined): void {
+  if (key !== undefined && !/^[A-Za-z0-9_.:-]{8,100}$/.test(key)) {
+    throw new DomainException(
+      ErrorCode.VALIDATION_FAILED,
+      'Request validation failed',
+      HttpStatus.BAD_REQUEST,
+      [{ field: 'Idempotency-Key', messages: ['must be 8-100 letters, digits or _ . : -'] }],
+    );
+  }
+}
+
 const ACTION_DOC =
   'Actions: match (admin), schedule, decline (worker/admin), reopen-matching, interview-complete, confirm-worker, start, complete, cancel. Each is one permitted transition of the booking state model; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating an action whose result already holds changes nothing.';
+
+/** The worker's feed of jobs waiting for an answer (PRD 6.3). */
+@ApiTags('Worker bookings')
+@ApiBearerAuth()
+@RequireUserType('WORKER')
+@Controller({ path: 'workers/me/opportunities', version: '1' })
+export class WorkerOpportunitiesController {
+  constructor(
+    private readonly bookings: BookingService,
+    private readonly workers: WorkersService,
+  ) {}
+
+  @Get()
+  @ApiPageResponse(WorkerBookingView)
+  @ApiOperation({
+    summary: 'Jobs matched to me that wait for my accept or decline (newest first, paginated)',
+    description:
+      'Each item is the privacy-safe requirement summary with respondBy (when staff configured a deadline). Accept or decline through POST /workers/me/bookings/{id}/accept|decline.',
+  })
+  async list(
+    @Query() query: PageQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Page<WorkerBookingView>> {
+    const ref = await this.workers.requireRefByUserId(user.userId);
+    return this.bookings.opportunitiesForWorker(ref.workerId, query);
+  }
+}
 
 /** A customer's own bookings (FRD FM-06). Every lookup is scoped to the signed-in customer. */
 @ApiTags('Bookings')
@@ -49,6 +94,7 @@ export class BookingsController {
   constructor(private readonly bookings: BookingService) {}
 
   @Post()
+  @ApiModelResponse(BookingDetailView, { status: 201 })
   @ApiHeader({
     name: 'Idempotency-Key',
     required: false,
@@ -66,29 +112,24 @@ export class BookingsController {
     @Headers('idempotency-key') key: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ): Promise<BookingDetailView> {
-    if (key !== undefined && !/^[A-Za-z0-9_.:-]{8,100}$/.test(key)) {
-      throw new DomainException(
-        ErrorCode.VALIDATION_FAILED,
-        'Request validation failed',
-        HttpStatus.BAD_REQUEST,
-        [{ field: 'Idempotency-Key', messages: ['must be 8-100 letters, digits or _ . : -'] }],
-      );
-    }
+    assertIdempotencyKey(key);
     const { booking, created } = await this.bookings.create(user.userId, dto, key);
     res.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return booking;
   }
 
   @Get()
+  @ApiPageResponse(BookingView)
   @ApiOperation({ summary: 'My bookings, newest first (paginated)' })
   list(
-    @Query() query: BookingListQuery,
+    @Query() query: BookingFilterQuery,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Page<BookingView>> {
     return this.bookings.listMine(user.userId, query);
   }
 
   @Get(':bookingId')
+  @ApiModelResponse(BookingDetailView)
   @ApiOperation({ summary: "One of my bookings with its status timeline (404 for anyone else's)" })
   get(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -97,7 +138,42 @@ export class BookingsController {
     return this.bookings.getMine(user.userId, bookingId);
   }
 
+  @Get(':bookingId/replacement-chain')
+  @ApiModelResponse(ChainEntryView, { isArray: true })
+  @ApiOperation({
+    summary: 'The replacement chain this booking belongs to, oldest first (404 for anyone else)',
+  })
+  chain(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ChainEntryView[]> {
+    return this.bookings.chain(bookingId, { kind: 'CUSTOMER', userId: user.userId });
+  }
+
+  @Idempotent()
+  @Post(':bookingId/slot-proposal/:answer')
+  @ApiModelResponse(BookingDetailView)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Accept (answer = accept) or keep the original time (answer = reject) for the time the worker proposed',
+    description:
+      '409 NO_SLOT_PROPOSAL when nothing is proposed; 404 for any booking that is not mine.',
+  })
+  answerSlot(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Param('answer', new ParseEnumPipe(['accept', 'reject'])) answer: 'accept' | 'reject',
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BookingDetailView> {
+    return this.bookings.answerSlotProposal(bookingId, answer === 'accept', {
+      kind: 'CUSTOMER',
+      userId: user.userId,
+    });
+  }
+
+  @Idempotent()
   @Post(':bookingId/:action')
+  @ApiModelResponse(BookingDetailView)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Perform a booking action as the customer', description: ACTION_DOC })
   act(
@@ -122,9 +198,10 @@ export class WorkerBookingsController {
   ) {}
 
   @Get()
+  @ApiPageResponse(WorkerBookingView)
   @ApiOperation({ summary: 'Bookings offered to or held by me (paginated)' })
   async list(
-    @Query() query: BookingListQuery,
+    @Query() query: BookingFilterQuery,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Page<WorkerBookingView>> {
     const ref = await this.workers.requireRefByUserId(user.userId);
@@ -132,6 +209,7 @@ export class WorkerBookingsController {
   }
 
   @Get(':bookingId')
+  @ApiModelResponse(WorkerBookingView)
   @ApiOperation({ summary: 'One booking offered to or held by me (404 for any other)' })
   async get(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -141,7 +219,27 @@ export class WorkerBookingsController {
     return this.bookings.getForWorker(ref.workerId, bookingId);
   }
 
+  @Idempotent()
+  @Put(':bookingId/slot-proposal')
+  @ApiModelResponse(WorkerBookingView)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Propose a different interview/trial time (the customer answers)',
+    description:
+      'Only while the interview/trial is scheduled and the booking is mine. The scheduled time stays until the customer accepts. 409 INVALID_TRANSITION otherwise; 400 for a time in the past or the time already scheduled.',
+  })
+  async proposeSlot(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Body() dto: ProposeSlotDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WorkerBookingView> {
+    const ref = await this.workers.requireRefByUserId(user.userId);
+    return this.bookings.proposeSlot(ref.workerId, bookingId, dto);
+  }
+
+  @Idempotent()
   @Post(':bookingId/:action')
+  @ApiModelResponse(WorkerBookingView)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Perform a booking action as the worker', description: ACTION_DOC })
   async act(
@@ -182,7 +280,36 @@ export class AdminBookingsController {
     private readonly users: UsersService,
   ) {}
 
+  @Post()
+  @ApiModelResponse(BookingDetailView, { status: 201 })
+  @Permissions(PermissionCode.BOOKING_MANAGE)
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @ApiOperation({
+    summary: 'Create a booking request on behalf of a customer (audited as an admin action)',
+    description:
+      'Same rules as the customer request, plus customerId. 404 CUSTOMER_NOT_FOUND, 409 CUSTOMER_NOT_ACTIVE.',
+  })
+  async create(
+    @Body() dto: AdminCreateBookingDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<BookingDetailView> {
+    assertIdempotencyKey(key);
+    const access = await this.users.getAccess(admin.userId);
+    const { customerId, ...request } = dto;
+    const { booking, created } = await this.bookings.createForCustomer(
+      customerId,
+      request,
+      { userId: admin.userId, roles: access.roles },
+      key,
+    );
+    res.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    return booking;
+  }
+
   @Get()
+  @ApiPageResponse(BookingView)
   @Permissions(PermissionCode.BOOKING_VIEW)
   @ApiOperation({
     summary: 'All bookings, newest first (paginated, filter by status/customer/worker)',
@@ -192,13 +319,43 @@ export class AdminBookingsController {
   }
 
   @Get(':bookingId')
+  @ApiModelResponse(AdminBookingView)
   @Permissions(PermissionCode.BOOKING_VIEW)
   @ApiOperation({ summary: 'A booking with its full timeline and actors' })
   get(@Param('bookingId', ParseUUIDPipe) bookingId: string): Promise<AdminBookingView> {
     return this.bookings.adminGet(bookingId);
   }
 
+  @Get(':bookingId/replacement-chain')
+  @ApiModelResponse(ChainEntryView, { isArray: true })
+  @Permissions(PermissionCode.BOOKING_VIEW)
+  @ApiOperation({ summary: 'The replacement chain of a booking with the worker of each link' })
+  chain(@Param('bookingId', ParseUUIDPipe) bookingId: string): Promise<ChainEntryView[]> {
+    return this.bookings.chain(bookingId, { kind: 'ADMIN' });
+  }
+
+  @Idempotent()
+  @Post(':bookingId/slot-proposal/:answer')
+  @ApiModelResponse(BookingDetailView)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.BOOKING_MANAGE)
+  @ApiOperation({ summary: 'Answer the time a worker proposed, on the customer behalf (audited)' })
+  async answerSlot(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Param('answer', new ParseEnumPipe(['accept', 'reject'])) answer: 'accept' | 'reject',
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<BookingDetailView> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.bookings.answerSlotProposal(bookingId, answer === 'accept', {
+      kind: 'ADMIN',
+      userId: admin.userId,
+      roles: access.roles,
+    });
+  }
+
+  @Idempotent()
   @Post(':bookingId/:action')
+  @ApiModelResponse(AdminBookingView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.BOOKING_MANAGE)
   @ApiOperation({ summary: 'Perform a booking action as staff (audited)', description: ACTION_DOC })

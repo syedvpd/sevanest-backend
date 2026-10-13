@@ -42,8 +42,8 @@ export class MyIdentityResponse {
   @ApiProperty() id!: string;
   @ApiProperty({ enum: ['CUSTOMER', 'WORKER', 'ADMIN'] }) type!: string;
   @ApiProperty({ enum: ['ACTIVE', 'SUSPENDED'] }) status!: string;
-  @ApiProperty({ nullable: true }) mobile!: string | null;
-  @ApiProperty({ nullable: true }) email!: string | null;
+  @ApiProperty({ nullable: true, type: String }) mobile!: string | null;
+  @ApiProperty({ nullable: true, type: String }) email!: string | null;
   @ApiProperty({ type: [String], description: 'Role codes (admins only).' }) roles!: string[];
   @ApiProperty({ type: [String], description: 'Permission codes granted through the roles.' })
   permissions!: string[];
@@ -55,8 +55,8 @@ export class AdminUserResponse {
   @ApiProperty() id!: string;
   @ApiProperty({ enum: ['CUSTOMER', 'WORKER', 'ADMIN'] }) type!: string;
   @ApiProperty({ enum: ['ACTIVE', 'SUSPENDED'] }) status!: string;
-  @ApiProperty({ nullable: true }) mobile!: string | null;
-  @ApiProperty({ nullable: true }) email!: string | null;
+  @ApiProperty({ nullable: true, type: String }) mobile!: string | null;
+  @ApiProperty({ nullable: true, type: String }) email!: string | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

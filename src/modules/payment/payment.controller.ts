@@ -14,10 +14,12 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
+import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -52,7 +54,9 @@ import { ExceptionView, PaymentActor, PaymentService } from './payment.service';
 export class PaymentsController {
   constructor(private readonly payments: PaymentService) {}
 
+  @Idempotent()
   @Post('payments')
+  @ApiModelResponse(CreatePaymentResponse, { status: 201 })
   @ApiOperation({
     summary: 'Start (or resume) payment of my booking that is waiting for payment',
     description:
@@ -65,7 +69,9 @@ export class PaymentsController {
     return this.payments.createForBooking(user.userId, dto.bookingId);
   }
 
+  @Idempotent()
   @Post('payments/:paymentId/verify')
+  @ApiModelResponse(PaymentView)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Report a finished checkout; the server verifies it with the gateway',
@@ -81,6 +87,7 @@ export class PaymentsController {
   }
 
   @Get('payments')
+  @ApiPageResponse(PaymentView)
   @ApiOperation({ summary: 'My transaction history, newest first (paginated)' })
   list(
     @Query() query: PaymentListQuery,
@@ -90,6 +97,7 @@ export class PaymentsController {
   }
 
   @Get('payments/:paymentId')
+  @ApiModelResponse(PaymentView)
   @ApiOperation({
     summary: 'One of my payments with its receipt and refund status (404 for anyone else)',
   })
@@ -111,6 +119,7 @@ export class PaymentWebhookController {
   constructor(private readonly payments: PaymentService) {}
 
   @Post()
+  @ApiModelResponse(WebhookAck)
   @Public()
   @SkipThrottle()
   @HttpCode(HttpStatus.OK)
@@ -135,6 +144,7 @@ export class AdminPaymentsController {
   ) {}
 
   @Get('payments')
+  @ApiPageResponse(AdminPaymentView)
   @Permissions(PermissionCode.PAYMENT_VIEW)
   @ApiOperation({
     summary: 'All payments, newest first (paginated, filter by status/booking/customer)',
@@ -161,13 +171,16 @@ export class AdminPaymentsController {
   }
 
   @Get('payments/:paymentId')
+  @ApiModelResponse(AdminPaymentView)
   @Permissions(PermissionCode.PAYMENT_VIEW)
   @ApiOperation({ summary: 'A payment with the gateway references kept for reconciliation' })
   get(@Param('paymentId', ParseUUIDPipe) paymentId: string): Promise<AdminPaymentView> {
     return this.payments.adminGet(paymentId);
   }
 
+  @Idempotent()
   @Post('payments/:paymentId/reconcile')
+  @ApiModelResponse(AdminPaymentView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.PAYMENT_MANAGE)
   @ApiOperation({ summary: 'Ask the gateway for the real outcome and apply it (idempotent)' })
@@ -178,7 +191,9 @@ export class AdminPaymentsController {
     return this.payments.reconcile(paymentId, await this.actor(admin));
   }
 
+  @Idempotent()
   @Post('payments/:paymentId/refund')
+  @ApiModelResponse(AdminPaymentView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.PAYMENT_REFUND)
   @ApiOperation({
@@ -223,6 +238,7 @@ export class AdminPaymentsController {
   }
 
   @Get('payment-recovery/summary')
+  @ApiModelResponse(FeeView, { isArray: true })
   @Permissions(PermissionCode.PAYMENT_VIEW)
   @ApiOperation({
     summary: 'Recovery queue health: checks due, open money problems, webhooks without an order',
@@ -234,6 +250,7 @@ export class AdminPaymentsController {
   }
 
   @Get('fees')
+  @ApiModelResponse(FeeView, { isArray: true })
   @Permissions(PermissionCode.PAYMENT_VIEW)
   @ApiOperation({ summary: 'Configured fees (empty until an administrator sets them, Q-01)' })
   fees(): Promise<FeeView[]> {
@@ -241,6 +258,7 @@ export class AdminPaymentsController {
   }
 
   @Put('fees/booking-fee')
+  @ApiModelResponse(FeeView)
   @Permissions(PermissionCode.PAYMENT_MANAGE)
   @ApiOperation({
     summary: `Set the booking/platform fee (${BOOKING_FEE_CODE}); audited with before and after`,
@@ -253,6 +271,7 @@ export class AdminPaymentsController {
   }
 
   @Put('fees/:code')
+  @ApiModelResponse(FeeView)
   @Permissions(PermissionCode.PAYMENT_MANAGE)
   @ApiOperation({
     summary:

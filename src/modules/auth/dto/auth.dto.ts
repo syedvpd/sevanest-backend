@@ -133,9 +133,9 @@ export class TokenResponse {
 
 export class SessionResponse {
   @ApiProperty() id!: string;
-  @ApiProperty({ nullable: true }) deviceName!: string | null;
+  @ApiProperty({ nullable: true, type: String }) deviceName!: string | null;
   @ApiProperty() createdAt!: Date;
-  @ApiProperty({ nullable: true }) lastUsedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) lastUsedAt!: Date | null;
   @ApiProperty() expiresAt!: Date;
   @ApiProperty({ description: 'True for the session making this request.' }) current!: boolean;
 }

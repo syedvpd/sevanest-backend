@@ -115,9 +115,9 @@ export class TemplateView {
   @ApiProperty() eventCode!: string;
   @ApiProperty({ enum: CHANNELS }) channel!: string;
   @ApiProperty() language!: string;
-  @ApiProperty({ nullable: true }) title!: string | null;
+  @ApiProperty({ nullable: true, type: String }) title!: string | null;
   @ApiProperty() body!: string;
-  @ApiProperty({ nullable: true }) dltTemplateId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) dltTemplateId!: string | null;
   @ApiProperty() isActive!: boolean;
   @ApiProperty() updatedAt!: Date;
 }
@@ -134,11 +134,11 @@ export class InboxQuery extends PageQueryDto {
 export class InboxItemView {
   @ApiProperty() id!: string;
   @ApiProperty() event!: string;
-  @ApiProperty({ nullable: true }) title!: string | null;
+  @ApiProperty({ nullable: true, type: String }) title!: string | null;
   @ApiProperty() body!: string;
   @ApiProperty({ nullable: true, example: { type: 'booking', id: 'uuid' } })
   route!: { type: string; id: string } | null;
-  @ApiProperty({ nullable: true }) readAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) readAt!: Date | null;
   @ApiProperty() createdAt!: Date;
 }
 
@@ -156,8 +156,12 @@ export class DeliveryView {
   @ApiProperty({ enum: DELIVERY_STATUSES }) status!: string;
   @ApiProperty() recipientUserId!: string;
   @ApiProperty() attempts!: number;
-  @ApiProperty({ nullable: true, description: 'A stable reason code, never provider text.' })
+  @ApiProperty({
+    nullable: true,
+    description: 'A stable reason code, never provider text.',
+    type: String,
+  })
   lastError!: string | null;
-  @ApiProperty({ nullable: true }) sentAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) sentAt!: Date | null;
   @ApiProperty() createdAt!: Date;
 }

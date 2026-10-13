@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma, WorkerOnboardingStatus } from '../../generated/prisma/client';
+import { Prisma, type WorkerOnboardingStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 
 type Db = Prisma.TransactionClient | PrismaService;
@@ -88,6 +88,12 @@ export interface WorkerListFilter {
   onboardingStatus?: WorkerOnboardingStatus;
   categoryId?: string;
   userId?: string;
+  name?: string;
+  accountStatus?: 'ACTIVE' | 'SUSPENDED';
+  createdFrom?: Date;
+  createdTo?: Date;
+  areaId?: string;
+  minRating?: number;
 }
 
 export type ProfileScalarUpdate = Partial<
@@ -152,6 +158,36 @@ export class WorkersRepository {
     }
   }
 
+  async listReferences(
+    workerId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Array<{ id: string; name: string; mobile: string; relationship: string | null }>> {
+    return db.workerReference.findMany({
+      where: { workerId },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      select: { id: true, name: true, mobile: true, relationship: true },
+    });
+  }
+
+  async replaceReferences(
+    workerId: string,
+    references: Array<{ name: string; mobile: string; relationship?: string }>,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.workerReference.deleteMany({ where: { workerId } });
+    if (references.length > 0) {
+      await tx.workerReference.createMany({
+        data: references.map((r, position) => ({
+          workerId,
+          position,
+          name: r.name,
+          mobile: r.mobile,
+          relationship: r.relationship ?? null,
+        })),
+      });
+    }
+  }
+
   async replaceLanguages(
     workerId: string,
     codes: string[],
@@ -203,10 +239,29 @@ export class WorkersRepository {
     skip: number,
     take: number,
   ): Promise<{ items: WorkerRecord[]; total: number }> {
+    let ratedIds: string[] | undefined;
+    if (filter.minRating !== undefined) {
+      const rated = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT worker_id AS id FROM worker_rating_summaries
+        WHERE rating_count > 0 AND rating_sum::float8 / rating_count >= ${filter.minRating}`);
+      ratedIds = rated.map((r) => r.id);
+    }
     const where: Prisma.WorkerProfileWhereInput = {
+      ...(ratedIds ? { id: { in: ratedIds } } : {}),
+      ...(filter.areaId ? { preferredAreas: { some: { areaId: filter.areaId } } } : {}),
       ...(filter.onboardingStatus ? { onboardingStatus: filter.onboardingStatus } : {}),
       ...(filter.userId ? { userId: filter.userId } : {}),
       ...(filter.categoryId ? { skills: { some: { categoryId: filter.categoryId } } } : {}),
+      ...(filter.name ? { name: { contains: filter.name, mode: 'insensitive' as const } } : {}),
+      ...(filter.accountStatus ? { user: { is: { status: filter.accountStatus } } } : {}),
+      ...(filter.createdFrom || filter.createdTo
+        ? {
+            createdAt: {
+              ...(filter.createdFrom ? { gte: filter.createdFrom } : {}),
+              ...(filter.createdTo ? { lte: filter.createdTo } : {}),
+            },
+          }
+        : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.workerProfile.findMany({

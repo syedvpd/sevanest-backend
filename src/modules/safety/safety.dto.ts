@@ -88,6 +88,7 @@ export class BlockView {
   @ApiProperty({
     nullable: true,
     description: 'Customers see the worker reference they blocked; workers see none.',
+    type: String,
   })
   workerId!: string | null;
   @ApiProperty() createdAt!: Date;
@@ -103,7 +104,7 @@ export class AdminBlockView {
   @ApiProperty() id!: string;
   @ApiProperty() blockerUserId!: string;
   @ApiProperty() blockedUserId!: string;
-  @ApiProperty({ nullable: true }) reason!: string | null;
+  @ApiProperty({ nullable: true, type: String }) reason!: string | null;
   @ApiProperty() createdByAdmin!: boolean;
   @ApiProperty() createdAt!: Date;
 }
@@ -111,6 +112,6 @@ export class AdminBlockView {
 export class AdminReportView extends ReportView {
   @ApiProperty() reporterUserId!: string;
   @ApiProperty() targetUserId!: string;
-  @ApiProperty({ nullable: true }) bookingId!: string | null;
-  @ApiProperty({ nullable: true }) note!: string | null;
+  @ApiProperty({ nullable: true, type: String }) bookingId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) note!: string | null;
 }

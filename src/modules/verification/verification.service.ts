@@ -9,6 +9,7 @@ import { OutboxService } from '../../common/outbox/outbox.service';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { AppConfigService } from '../../config/app-config.service';
 import { ProviderError } from '../../integrations/provider-error';
+import { MALWARE_SCANNER, type MalwareScanner } from '../../integrations/malware/malware-scanner';
 import { validateContent } from '../../integrations/storage/file-signature';
 import {
   STORAGE_PROVIDER,
@@ -50,6 +51,7 @@ export const VerificationErrorCode = {
   DOCUMENT_TYPE_NOT_ALLOWED: 'DOCUMENT_TYPE_NOT_ALLOWED',
   DOCUMENT_NOT_UPLOADED: 'DOCUMENT_NOT_UPLOADED',
   DOCUMENT_CONTENT_MISMATCH: 'DOCUMENT_CONTENT_MISMATCH',
+  DOCUMENT_MALWARE_DETECTED: 'DOCUMENT_MALWARE_DETECTED',
   DOCUMENT_INTEGRITY_FAILED: 'DOCUMENT_INTEGRITY_FAILED',
   TOO_MANY_DOCUMENTS: 'TOO_MANY_DOCUMENTS',
   CHECK_NOT_EDITABLE: 'CHECK_NOT_EDITABLE',
@@ -110,6 +112,7 @@ export class VerificationService {
     private readonly config: AppConfigService,
     private readonly outbox: OutboxService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    @Inject(MALWARE_SCANNER) private readonly scanner: MalwareScanner,
   ) {}
 
   // --- contract for other modules -------------------------------------------------------------------------------
@@ -272,6 +275,25 @@ export class VerificationService {
           'The uploaded file is not of the declared type',
           HttpStatus.UNPROCESSABLE_ENTITY,
         );
+      }
+      if (this.scanner.enabled) {
+        // A scanner that cannot answer leaves the document unconfirmed (never accepted unscanned) and the object in place for a retry.
+        const scan = await this.scanner.scan(object.bytes).catch((error: unknown) => {
+          this.logger.error(`Malware scan unavailable: ${(error as Error).message}`);
+          throw new DomainException(
+            ErrorCode.SERVICE_UNAVAILABLE,
+            'The document could not be checked right now: try confirming again shortly',
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        });
+        if (!scan.clean) {
+          await this.rejectUpload(document, check, ref.workerId, userId, 'MALWARE_DETECTED');
+          throw new DomainException(
+            VerificationErrorCode.DOCUMENT_MALWARE_DETECTED,
+            'The uploaded file was rejected by the security check',
+            HttpStatus.UNPROCESSABLE_ENTITY,
+          );
+        }
       }
       const contentSha256 = createHash('sha256').update(object.bytes).digest('hex');
       await this.repository.transaction(async (tx) => {

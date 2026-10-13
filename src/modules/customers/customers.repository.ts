@@ -22,6 +22,9 @@ export interface AddressRecord {
   area: string;
   city: string;
   pincode: string;
+  label: string | null;
+  line2: string | null;
+  state: string | null;
   latitude: number | null;
   longitude: number | null;
   isDefault: boolean;
@@ -56,6 +59,9 @@ const ADDRESS_SELECT = {
   area: true,
   city: true,
   pincode: true,
+  label: true,
+  line2: true,
+  state: true,
   latitude: true,
   longitude: true,
   isDefault: true,
@@ -77,6 +83,12 @@ function toAddress(row: AddressRow): AddressRecord {
 export interface ProfileListFilter {
   verificationStatus?: CustomerVerificationStatus;
   userId?: string;
+  name?: string;
+  accountStatus?: 'ACTIVE' | 'SUSPENDED';
+  city?: string;
+  /** Inclusive UTC instants. */
+  createdFrom?: Date;
+  createdTo?: Date;
 }
 
 /** The only place that reads or writes `customer_profiles`, `customer_addresses` and `customer_notes`. */
@@ -117,10 +129,11 @@ export class CustomersRepository {
     id: string,
     verificationStatus: CustomerVerificationStatus,
     tx: Prisma.TransactionClient,
+    byAdmin = false,
   ): Promise<ProfileRecord> {
     return tx.customerProfile.update({
       where: { id },
-      data: { verificationStatus },
+      data: { verificationStatus, ...(byAdmin ? { verificationAdminSet: true } : {}) },
       select: PROFILE_SELECT,
     });
   }
@@ -136,6 +149,32 @@ export class CustomersRepository {
     return rows.length === 1;
   }
 
+  /** Automatic verification input: the current status, whether staff set it by hand, and how many active addresses exist. */
+  async verificationState(
+    customerId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<{
+    status: CustomerVerificationStatus;
+    adminSet: boolean;
+    activeAddresses: number;
+  } | null> {
+    const row = await tx.customerProfile.findUnique({
+      where: { id: customerId },
+      select: {
+        verificationStatus: true,
+        verificationAdminSet: true,
+        _count: { select: { addresses: { where: { isActive: true } } } },
+      },
+    });
+    return row
+      ? {
+          status: row.verificationStatus,
+          adminSet: row.verificationAdminSet,
+          activeAddresses: row._count.addresses,
+        }
+      : null;
+  }
+
   async listProfiles(
     filter: ProfileListFilter,
     skip: number,
@@ -144,6 +183,23 @@ export class CustomersRepository {
     const where: Prisma.CustomerProfileWhereInput = {
       ...(filter.verificationStatus ? { verificationStatus: filter.verificationStatus } : {}),
       ...(filter.userId ? { userId: filter.userId } : {}),
+      ...(filter.name ? { name: { contains: filter.name, mode: 'insensitive' as const } } : {}),
+      ...(filter.accountStatus ? { user: { is: { status: filter.accountStatus } } } : {}),
+      ...(filter.city
+        ? {
+            addresses: {
+              some: { isActive: true, city: { equals: filter.city, mode: 'insensitive' as const } },
+            },
+          }
+        : {}),
+      ...(filter.createdFrom || filter.createdTo
+        ? {
+            createdAt: {
+              ...(filter.createdFrom ? { gte: filter.createdFrom } : {}),
+              ...(filter.createdTo ? { lte: filter.createdTo } : {}),
+            },
+          }
+        : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.customerProfile.findMany({
@@ -167,6 +223,9 @@ export class CustomersRepository {
       area: string;
       city: string;
       pincode: string;
+      label: string | null;
+      line2: string | null;
+      state: string | null;
       latitude: number | null;
       longitude: number | null;
       isDefault: boolean;
@@ -210,7 +269,18 @@ export class CustomersRepository {
   async updateAddress(
     id: string,
     data: Partial<
-      Pick<AddressRecord, 'line' | 'area' | 'city' | 'pincode' | 'latitude' | 'longitude'>
+      Pick<
+        AddressRecord,
+        | 'line'
+        | 'area'
+        | 'city'
+        | 'pincode'
+        | 'latitude'
+        | 'longitude'
+        | 'label'
+        | 'line2'
+        | 'state'
+      >
     >,
     tx: Prisma.TransactionClient,
   ): Promise<AddressRecord> {

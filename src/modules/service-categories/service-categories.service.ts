@@ -1,3 +1,4 @@
+import { assertIfMatch } from '../../common/concurrency/if-match';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
@@ -19,10 +20,12 @@ export const CategoryErrorCode = {
   CATEGORY_NOT_FOUND: 'CATEGORY_NOT_FOUND',
   CATEGORY_DUPLICATE: 'CATEGORY_DUPLICATE',
   CATEGORY_NOT_AVAILABLE: 'CATEGORY_NOT_AVAILABLE',
+  ENGAGEMENT_NOT_OFFERED: 'ENGAGEMENT_NOT_OFFERED',
 } as const;
 
-function toPublic(category: CategoryRecord): ServiceCategoryResponse {
+function toPublic(category: CategoryRecord, allowed: string[] = []): ServiceCategoryResponse {
   return {
+    allowedEngagements: allowed,
     id: category.id,
     code: category.code,
     name: category.name,
@@ -30,9 +33,9 @@ function toPublic(category: CategoryRecord): ServiceCategoryResponse {
   };
 }
 
-function toAdmin(category: CategoryRecord): AdminServiceCategoryResponse {
+function toAdmin(category: CategoryRecord, allowed: string[] = []): AdminServiceCategoryResponse {
   return {
-    ...toPublic(category),
+    ...toPublic(category, allowed),
     isEnabled: category.isEnabled,
     createdAt: category.createdAt,
     updatedAt: category.updatedAt,
@@ -59,7 +62,11 @@ export class ServiceCategoriesService {
       skipFor(query),
       query.limit,
     );
-    return { data: items.map(toPublic), meta: { page: query.page, limit: query.limit, total } };
+    const allowed = await this.repository.engagementsOf(items.map((c) => c.id));
+    return {
+      data: items.map((c) => toPublic(c, allowed.get(c.id))),
+      meta: { page: query.page, limit: query.limit, total },
+    };
   }
 
   async getEnabled(id: string): Promise<ServiceCategoryResponse> {
@@ -67,13 +74,62 @@ export class ServiceCategoriesService {
     if (!category || !category.isEnabled) {
       throw this.notFound();
     }
-    return toPublic(category);
+    return toPublic(category, (await this.repository.engagementsOf([id])).get(id));
   }
 
   // --- contract for other modules ---------------------------------------------------------------------------
 
   findByIds(ids: string[]): Promise<CategoryRecord[]> {
     return ids.length === 0 ? Promise.resolve([]) : this.repository.findByIds(ids);
+  }
+
+  /**
+   * PRD 4: a category offers only some engagement types. When the administrator has configured the list, any other engagement is
+   * refused (422); a category with no list is unrestricted. One check for booking, search and matching.
+   */
+  async assertEngagementOffered(
+    categoryId: string,
+    engagement: string,
+    field = 'engagement',
+  ): Promise<void> {
+    const allowed = (await this.repository.engagementsOf([categoryId])).get(categoryId);
+    if (allowed && !allowed.includes(engagement)) {
+      throw new DomainException(
+        CategoryErrorCode.ENGAGEMENT_NOT_OFFERED,
+        'This category is not offered with that engagement type',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        [{ field, messages: [`allowed for this category: ${allowed.join(', ')}`] }],
+      );
+    }
+  }
+
+  /** Replaces the allowed engagement types of a category (empty = unrestricted). Audited with before and after. */
+  async adminSetEngagements(
+    id: string,
+    engagements: string[],
+    actor: Actor & { userId: string },
+  ): Promise<AdminServiceCategoryResponse> {
+    const unique = [...new Set(engagements)].sort();
+    await this.repository.transaction(async (tx) => {
+      const category = await this.repository.lockById(id, tx);
+      if (!category) throw this.notFound();
+      const before = (await this.repository.engagementsOf([id], tx)).get(id) ?? [];
+      await this.repository.replaceEngagements(id, unique, tx);
+      if (JSON.stringify(before) !== JSON.stringify(unique)) {
+        await this.audit.record(
+          {
+            action: 'service_category.engagements_set',
+            entityType: 'service_category',
+            entityId: id,
+            actorId: actor.userId,
+            actorRole: actor.roles.join(',') || null,
+            metadata: { code: category.code, from: before, to: unique },
+          },
+          tx,
+        );
+      }
+    });
+    return this.adminGet(id);
   }
 
   /** A search criterion names a category by its stable code; unknown and disabled answer the same (422). */
@@ -132,7 +188,11 @@ export class ServiceCategoriesService {
       skipFor(query),
       query.limit,
     );
-    return { data: items.map(toAdmin), meta: { page: query.page, limit: query.limit, total } };
+    const allowed = await this.repository.engagementsOf(items.map((c) => c.id));
+    return {
+      data: items.map((c) => toAdmin(c, allowed.get(c.id))),
+      meta: { page: query.page, limit: query.limit, total },
+    };
   }
 
   async adminGet(id: string): Promise<AdminServiceCategoryResponse> {
@@ -140,7 +200,7 @@ export class ServiceCategoriesService {
     if (!category) {
       throw this.notFound();
     }
-    return toAdmin(category);
+    return toAdmin(category, (await this.repository.engagementsOf([id])).get(id));
   }
 
   async adminCreate(
@@ -179,6 +239,7 @@ export class ServiceCategoriesService {
     id: string,
     dto: UpdateServiceCategoryDto,
     actor: Actor & { userId: string },
+    ifMatch?: string,
   ): Promise<AdminServiceCategoryResponse> {
     const fields = changedFieldNames(dto);
     if (fields.length === 0) {
@@ -195,6 +256,7 @@ export class ServiceCategoriesService {
         if (!before) {
           throw this.notFound();
         }
+        assertIfMatch(ifMatch, before.updatedAt);
         const after = await this.repository.update(id, dto, tx);
         // Configuration data (not personal data): the audit keeps before and after of the fields that changed.
         const changes: Record<string, { from: unknown; to: unknown }> = {};

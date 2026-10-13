@@ -37,6 +37,15 @@ export class MatchRequirementDto extends PageQueryDto {
   @Matches(TIME_OF_DAY, { message: 'availableTo must be HH:mm' })
   availableTo!: string;
 
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description:
+      'The date the work starts (India). With the timings, workers already booked for an overlapping time on those dates are left out. Defaults to today.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startDate must be YYYY-MM-DD' })
+  startDate?: string;
+
   @ApiPropertyOptional({ example: 'hi' })
   @IsOptional()
   @Matches(LANGUAGE_CODE, { message: 'language must be a language code such as "hi"' })
@@ -58,7 +67,7 @@ export class CandidateView {
   })
   userId!: string;
   @ApiProperty() name!: string;
-  @ApiProperty({ nullable: true }) experienceMonths!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) experienceMonths!: number | null;
   @ApiProperty({ type: [CategoryRefView] }) categories!: CategoryRefView[];
   @ApiProperty({ type: [String] }) languages!: string[];
   @ApiProperty({ type: [AreaRefView] }) serviceAreas!: AreaRefView[];

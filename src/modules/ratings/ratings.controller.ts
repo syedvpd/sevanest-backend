@@ -9,7 +9,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -37,7 +39,9 @@ import { RatingsService } from './ratings.service';
 export class RatingsController {
   constructor(private readonly ratings: RatingsService) {}
 
+  @Idempotent()
   @Post()
+  @ApiModelResponse(RatingView, { status: 201 })
   @ApiOperation({
     summary: 'Rate the worker of my completed booking (once per booking)',
     description:
@@ -51,6 +55,7 @@ export class RatingsController {
   }
 
   @Get()
+  @ApiPageResponse(RatingView)
   @ApiOperation({ summary: 'My ratings, newest first (paginated)' })
   list(
     @Query() query: RatingListQuery,
@@ -60,6 +65,7 @@ export class RatingsController {
   }
 
   @Get('bookings/:bookingId')
+  @ApiModelResponse(RatingView)
   @ApiOperation({ summary: 'My rating for one of my bookings (404 when none or not mine)' })
   forBooking(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -69,6 +75,7 @@ export class RatingsController {
   }
 
   @Get(':ratingId')
+  @ApiModelResponse(RatingView)
   @ApiOperation({ summary: 'One of my ratings (404 for anyone else)' })
   get(
     @Param('ratingId', ParseUUIDPipe) ratingId: string,
@@ -90,6 +97,7 @@ export class WorkerRatingsController {
   ) {}
 
   @Get()
+  @ApiPageResponse(WorkerRatingView)
   @ApiOperation({ summary: 'Ratings I received, newest first (paginated, hidden ones excluded)' })
   async list(
     @Query() query: RatingListQuery,
@@ -100,6 +108,7 @@ export class WorkerRatingsController {
   }
 
   @Get('summary')
+  @ApiModelResponse(RatingSummaryView)
   @ApiOperation({ summary: 'My rating count and average (FR-RAT-003)' })
   async summary(@CurrentUser() user: AuthenticatedUser): Promise<RatingSummaryView> {
     const ref = await this.workers.requireRefByUserId(user.userId);
@@ -119,6 +128,7 @@ export class AdminRatingsController {
   ) {}
 
   @Get()
+  @ApiPageResponse(AdminRatingView)
   @Permissions(PermissionCode.RATING_VIEW)
   @ApiOperation({ summary: 'All ratings (paginated, filter by status/worker/booking)' })
   list(@Query() query: AdminRatingListQuery): Promise<Page<AdminRatingView>> {
@@ -126,6 +136,7 @@ export class AdminRatingsController {
   }
 
   @Get('workers/:workerId/summary')
+  @ApiModelResponse(RatingSummaryView)
   @Permissions(PermissionCode.RATING_VIEW)
   @ApiOperation({ summary: 'A worker rating count and average' })
   summary(@Param('workerId', ParseUUIDPipe) workerId: string): Promise<RatingSummaryView> {
@@ -133,6 +144,7 @@ export class AdminRatingsController {
   }
 
   @Get(':ratingId')
+  @ApiModelResponse(AdminRatingView)
   @Permissions(PermissionCode.RATING_VIEW)
   @ApiOperation({ summary: 'One rating with moderation details' })
   get(@Param('ratingId', ParseUUIDPipe) ratingId: string): Promise<AdminRatingView> {
@@ -140,6 +152,7 @@ export class AdminRatingsController {
   }
 
   @Post(':ratingId/hide')
+  @ApiModelResponse(AdminRatingView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.RATING_MODERATE)
   @ApiOperation({
@@ -154,6 +167,7 @@ export class AdminRatingsController {
   }
 
   @Post(':ratingId/unhide')
+  @ApiModelResponse(AdminRatingView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.RATING_MODERATE)
   @ApiOperation({ summary: 'Restore a hidden rating (reason required, audited)' })

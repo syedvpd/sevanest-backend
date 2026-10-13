@@ -127,6 +127,7 @@ async function main(): Promise<void> {
 
     // ---- workers ----
     const maid = (await api.prisma.serviceCategory.findUniqueOrThrow({ where: { code: 'HOUSE_MAID' } })).id;
+    const cook = (await api.prisma.serviceCategory.findUniqueOrThrow({ where: { code: 'COOK' } })).id;
     const workers: Array<Caller & { userId: string; workerId: string }> = [];
     for (let i = 0; i < WORKERS.length; i++) {
       const [name, months] = WORKERS[i];
@@ -153,7 +154,7 @@ async function main(): Promise<void> {
           expectedSalary: 12000 + (i % 6) * 1500,
         })
         .expect(200);
-      await w.put('/api/v1/workers/me/categories', { categoryIds: [maid] }).expect(200);
+      await w.put('/api/v1/workers/me/categories', { categoryIds: i % 3 === 2 ? [maid, cook] : [maid] }).expect(200); // every third worker also cooks
       await w
         .patch('/api/v1/workers/me/availability', {
           engagementPreference: (['PART_TIME', 'FULL_TIME', 'LIVE_IN'] as const)[i % 3],
@@ -211,14 +212,35 @@ async function main(): Promise<void> {
           area,
           city: CITY,
           pincode: '5000' + String(81 + i),
+          label: 'Home',
+          ...(i === 0 ? { isDefault: true } : {}),
         })
         .expect(201);
+      if (i === 0) {
+        await c
+          .post('/api/v1/customers/me/addresses', {
+            line: '5 Office Park',
+            line2: 'Block B, 3rd floor',
+            area: 'Kondapur',
+            city: CITY,
+            state: 'Telangana',
+            pincode: '500084',
+            label: 'Office',
+          })
+          .expect(201);
+      }
       customers.push({ accessToken: s.accessToken, userId: s.userId });
     }
     for (const p of await api.prisma.customerProfile.findMany({ take: 4, orderBy: { createdAt: 'asc' }, select: { id: true } })) {
       await a.patch(`/api/v1/admin/customers/${p.id}/verification-status`, { status: 'VERIFIED' }).expect(200);
     }
     log(`customers: ${CUSTOMERS.length} with addresses (4 verified)`);
+
+    // ---- shortlists (customer 0: two verified workers, customer 1: one) ----
+    for (const [ci, wi] of [[0, 0], [0, 1], [1, 2]] as const) {
+      await as(api, customers[ci]).put(`/api/v1/shortlist/${workers[wi].workerId}`).expect(204);
+    }
+    log('shortlists: customer 0 has 2 entries, customer 1 has 1');
 
     // ---- bookings across the lifecycle ----
     const book = async (ci: number, wi: number): Promise<string> => {

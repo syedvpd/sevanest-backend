@@ -1,12 +1,21 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { AppConfigService } from '../../config/app-config.service';
 import { Page, skipFor } from '../../common/pagination/pagination';
+import { indiaToday, isRealDate } from '../../common/time/india';
 import { toMinutes, toText } from '../availability/domain/time-windows';
 import { ServiceAreasService } from '../availability/service-areas.service';
 import { ServiceCategoriesService } from '../service-categories/service-categories.service';
 import { WorkerPhotoService } from '../worker-photo/worker-photo.service';
-import { SearchWorkersQuery, WorkerCard } from './dto/search.dto';
+import { PageQueryDto } from '../../common/pagination/pagination';
+import {
+  SearchWorkersQuery,
+  SlotsQuery,
+  WorkerCard,
+  WorkerReviewView,
+  WorkerSlotsView,
+} from './dto/search.dto';
 import { SearchRepository } from './search.repository';
 import type {
   Engagement,
@@ -15,6 +24,9 @@ import type {
   EligibleWorkerCriteria,
 } from './search.types';
 
+export const INTERVIEW_SLOT_MINUTES = 60;
+export const SLOT_HORIZON_DAYS = 14;
+
 /** A requirement as received from a caller, before names are resolved to ids. */
 export interface RequirementInput {
   category: string;
@@ -22,12 +34,14 @@ export interface RequirementInput {
   engagement?: Engagement;
   availableFrom?: string;
   availableTo?: string;
+  startDate?: string;
   language?: string;
   minExperienceMonths?: number;
   minRating?: number;
   /** Internal: the customer the search is for (block exclusion). Never taken from a client. */
   forCustomerUserId?: string;
   excludeWorkerId?: string;
+  excludeBookingId?: string;
 }
 
 /**
@@ -42,23 +56,63 @@ export class SearchService {
     private readonly categories: ServiceCategoriesService,
     private readonly areas: ServiceAreasService,
     private readonly photos: WorkerPhotoService,
+    private readonly config: AppConfigService,
   ) {}
+
+  /** Per-instance, short-lived, bounded cache of eligible-worker pages (see SEARCH_CACHE_TTL_SECONDS). */
+  private readonly pageCache = new Map<
+    string,
+    { expires: number; value: { items: EligibleWorker[]; total: number } }
+  >();
 
   async searchForCustomer(
     query: SearchWorkersQuery,
     customerUserId?: string,
   ): Promise<Page<WorkerCard>> {
-    const criteria = { ...(await this.resolve(query)), forCustomerUserId: customerUserId };
-    const { items, total } = await this.repository.findEligible(
-      criteria,
+    const resolved = await this.resolve(query);
+    const { items, total } = await this.eligiblePage(
+      resolved,
       query.sort,
       skipFor(query),
       query.limit,
+      customerUserId,
     );
     return {
       data: await this.decorate(items),
       meta: { page: query.page, limit: query.limit, total },
     };
+  }
+
+  /**
+   * The eligible page for a customer. With the cache enabled, customers who have no blocks share one cached page per distinct
+   * search (block filtering is the only per-customer part of the query); anyone with a block always reads the database.
+   */
+  private async eligiblePage(
+    resolved: EligibleWorkerCriteria,
+    sort: EligibleOrder,
+    skip: number,
+    take: number,
+    customerUserId: string | undefined,
+  ): Promise<{ items: EligibleWorker[]; total: number }> {
+    const ttl = this.config.searchCacheTtlSeconds * 1000;
+    if (ttl > 0 && customerUserId && !(await this.repository.hasBlocks(customerUserId))) {
+      const key = JSON.stringify([resolved, sort, skip, take, indiaToday()]);
+      const hit = this.pageCache.get(key);
+      if (hit && hit.expires > Date.now()) return hit.value;
+      const value = await this.repository.findEligible(resolved, sort, skip, take);
+      if (this.pageCache.size >= 500) {
+        const oldest = this.pageCache.keys().next();
+        if (!oldest.done) this.pageCache.delete(oldest.value);
+      }
+      this.pageCache.set(key, { expires: Date.now() + ttl, value });
+      return value;
+    }
+    return this.repository.findEligible(
+      { ...resolved, forCustomerUserId: customerUserId },
+      sort,
+      skip,
+      take,
+    );
   }
 
   /**
@@ -72,12 +126,77 @@ export class SearchService {
     return new Map(cards.map((c) => [c.workerId, c]));
   }
 
+  /** Free interview/trial start times of a visible worker on one date (same 404 as the profile for anyone not visible). */
+  async listSlots(
+    workerId: string,
+    query: SlotsQuery,
+    customerUserId?: string,
+  ): Promise<WorkerSlotsView> {
+    const slotMinutes = INTERVIEW_SLOT_MINUTES;
+    const today = indiaToday();
+    const last = new Date(`${today}T00:00:00.000Z`);
+    last.setUTCDate(last.getUTCDate() + SLOT_HORIZON_DAYS - 1);
+    if (
+      !isRealDate(query.date) ||
+      query.date < today ||
+      query.date > last.toISOString().slice(0, 10)
+    ) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [
+          {
+            field: 'date',
+            messages: [`date must be from ${today} to ${last.toISOString().slice(0, 10)}`],
+          },
+        ],
+      );
+    }
+    const card = await this.getProfile(workerId, customerUserId);
+    const nowIst = new Date(Date.now() + 330 * 60_000);
+    const earliest =
+      query.date === today ? nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes() + 60 : 0;
+    const starts: number[] = [];
+    for (const window of card.availability) {
+      for (
+        let m = toMinutes(window.start);
+        m + slotMinutes <= toMinutes(window.end);
+        m += slotMinutes
+      ) {
+        if (m >= earliest && !starts.includes(m)) starts.push(m);
+      }
+    }
+    starts.sort((a, b) => a - b);
+    const taken = await this.repository.takenStarts(workerId, query.date, starts, slotMinutes);
+    return {
+      date: query.date,
+      slotMinutes,
+      horizonDays: SLOT_HORIZON_DAYS,
+      slots: starts.filter((m) => !taken.has(m)).map(toText),
+    };
+  }
+
   async getProfile(workerId: string, customerUserId?: string): Promise<WorkerCard> {
     const card = (await this.getVisibleCards([workerId], customerUserId)).get(workerId);
     if (!card) {
       throw new DomainException('WORKER_NOT_FOUND', 'Worker not found', HttpStatus.NOT_FOUND);
     }
     return card;
+  }
+
+  /**
+   * Reviews a customer may read about a visible worker (FR-WD-003): score, text, date and the reviewer's first name only.
+   * Same visibility rule as the profile: an unknown or invisible worker answers 404 exactly like any other.
+   */
+  async listReviews(workerId: string, query: PageQueryDto): Promise<Page<WorkerReviewView>> {
+    await this.getProfile(workerId);
+    const { items, total } = await this.repository.listVisibleReviews(
+      workerId,
+      skipFor(query),
+      query.limit,
+    );
+    return { data: items, meta: { page: query.page, limit: query.limit, total } };
   }
 
   /** Adds the rating aggregate and a short-lived photo link in two batched look-ups (no per-worker queries). */
@@ -126,6 +245,9 @@ export class SearchService {
     if (hasFrom !== hasTo) {
       throw this.invalid('availableFrom', 'availableFrom and availableTo must be given together');
     }
+    if (input.startDate !== undefined && !isRealDate(input.startDate)) {
+      throw this.invalid('startDate', 'startDate is not a real date');
+    }
     let window: EligibleWorkerCriteria['window'];
     if (hasFrom && hasTo) {
       const fromMinute = toMinutes(input.availableFrom!);
@@ -139,11 +261,16 @@ export class SearchService {
       this.categories.requireEnabledByCode(input.category),
       this.areas.requireEnabled(input.areaId),
     ]);
+    if (input.engagement) {
+      await this.categories.assertEngagementOffered(category.id, input.engagement);
+    }
     return {
       categoryId: category.id,
       areaId: area.id,
       engagement: input.engagement,
       window,
+      startDate: input.startDate,
+      excludeBookingId: input.excludeBookingId,
       language: input.language,
       minExperienceMonths: input.minExperienceMonths,
       minRating: input.minRating,

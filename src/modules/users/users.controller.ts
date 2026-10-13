@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -11,6 +12,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -55,6 +57,7 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Get('me')
+  @ApiModelResponse(MyIdentityResponse)
   @ApiOperation({ summary: 'Who am I: identity, type, status, roles and permissions' })
   async me(@CurrentUser() user: AuthenticatedUser): Promise<MyIdentityResponse> {
     const identity = await this.users.getIdentity(user.userId);
@@ -82,6 +85,7 @@ export class AdminUsersController {
   ) {}
 
   @Get()
+  @ApiPageResponse(AdminUserListItem)
   @Permissions(PermissionCode.USER_VIEW)
   @ApiOperation({
     summary:
@@ -92,6 +96,7 @@ export class AdminUsersController {
   }
 
   @Post()
+  @ApiModelResponse(AdminUserResponse, { status: 201 })
   @Permissions(PermissionCode.ADMIN_MANAGE_USERS)
   @ApiOperation({ summary: 'Create an admin account with one role (Super Admin)' })
   async createAdmin(
@@ -107,6 +112,7 @@ export class AdminUsersController {
   }
 
   @Get(':userId')
+  @ApiModelResponse(AdminUserResponse)
   @Permissions(PermissionCode.USER_VIEW)
   @ApiOperation({ summary: 'View an account (mobile masked)' })
   async getUser(@Param('userId', ParseUUIDPipe) userId: string): Promise<AdminUserResponse> {
@@ -114,6 +120,7 @@ export class AdminUsersController {
   }
 
   @Put(':userId/role')
+  @ApiModelResponse(AdminUserListItem)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.ADMIN_MANAGE_USERS)
   @ApiOperation({
@@ -133,7 +140,25 @@ export class AdminUsersController {
     });
   }
 
+  @Post(':userId/password-reset')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @Permissions(PermissionCode.ADMIN_MANAGE_USERS)
+  @ApiOperation({
+    summary: 'Set a new temporary password for another admin (Super Admin; shown once)',
+    description:
+      'For an admin who is locked out or forgot the password. The new password is returned ONCE in this response and never stored in clear; every session of that admin is revoked; the admin must change it with POST /admin/account/password. 422 for a non-admin account or your own account.',
+  })
+  async resetPassword(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<{ temporaryPassword: string }> {
+    const access = await this.users.getAccess(actor.userId);
+    return this.users.resetAdminPassword(userId, { userId: actor.userId, roles: access.roles });
+  }
+
   @Patch(':userId/status')
+  @ApiModelResponse(AdminUserResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.USER_STATUS_MANAGE)
   @ApiOperation({
@@ -170,6 +195,7 @@ export class AdminRolesController {
   ) {}
 
   @Get('roles')
+  @ApiModelResponse(RoleView, { isArray: true })
   @Permissions(PermissionCode.ROLE_MANAGE)
   @ApiOperation({
     summary: 'The admin roles with their permissions and how many accounts hold each',
@@ -179,6 +205,7 @@ export class AdminRolesController {
   }
 
   @Get('permissions')
+  @ApiModelResponse(PermissionView, { isArray: true })
   @Permissions(PermissionCode.ROLE_MANAGE)
   @ApiOperation({ summary: 'The permission catalog' })
   permissions(): Promise<PermissionView[]> {
@@ -186,6 +213,7 @@ export class AdminRolesController {
   }
 
   @Get('roles/:roleCode')
+  @ApiModelResponse(RoleView)
   @Permissions(PermissionCode.ROLE_MANAGE)
   @ApiOperation({ summary: 'One role with its permissions' })
   role(@Param('roleCode') roleCode: string): Promise<RoleView> {
@@ -193,6 +221,7 @@ export class AdminRolesController {
   }
 
   @Put('roles/:roleCode/permissions')
+  @ApiModelResponse(RoleView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.ROLE_MANAGE)
   @ApiOperation({

@@ -8,6 +8,7 @@ import { DatabaseModule } from './infrastructure/database/database.module';
 import { ObservabilityLoggerModule } from './infrastructure/observability/logger.module';
 import { QueueModule } from './infrastructure/queue/queue.module';
 import { NotificationsWorkerModule } from './modules/notifications/notifications.worker';
+import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
 import { BookingWorkerModule } from './modules/booking/booking.worker';
 import { PaymentWorkerModule } from './modules/payment/payment.worker';
@@ -27,6 +28,7 @@ import { VerificationWorkerModule } from './modules/verification/verification.wo
     QueueModule,
     AuditModule,
     OutboxModule,
+    IdempotencyModule,
     AlertsModule,
     LegalModule,
     NotificationsWorkerModule,

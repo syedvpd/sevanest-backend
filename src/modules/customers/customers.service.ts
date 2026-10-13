@@ -1,3 +1,5 @@
+import { assertIfMatch } from '../../common/concurrency/if-match';
+import { createdRange } from '../../common/time/india';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
@@ -17,6 +19,7 @@ import {
   AdminCustomerSummary,
   CreateCustomerProfileDto,
   CustomerNoteResponse,
+  CustomerOnboardingResponse,
   CustomerProfileResponse,
   UpdateCustomerProfileDto,
 } from './dto/customers.dto';
@@ -28,6 +31,7 @@ export const CustomersErrorCode = {
   CUSTOMER_PROFILE_NOT_FOUND: 'CUSTOMER_PROFILE_NOT_FOUND',
   CUSTOMER_PROFILE_REQUIRED: 'CUSTOMER_PROFILE_REQUIRED',
   CUSTOMER_NOT_FOUND: 'CUSTOMER_NOT_FOUND',
+  CUSTOMER_NOT_ACTIVE: 'CUSTOMER_NOT_ACTIVE',
 } as const;
 
 function toProfileView(profile: ProfileRecord, user: UserRecord | null): CustomerProfileResponse {
@@ -106,6 +110,73 @@ export class CustomersService {
     return address ? { id: address.id, city: address.city } : null;
   }
 
+  /**
+   * Contract for Booking (staff creating a booking for a customer): the user id behind a customer id. 404 when there is no such customer,
+   * 409 CUSTOMER_NOT_ACTIVE for a suspended account.
+   */
+  async activeUserIdOf(customerId: string): Promise<string> {
+    const profile = await this.requireCustomer(customerId);
+    const user = await this.users.findById(profile.userId);
+    if (!user || user.status !== 'ACTIVE') {
+      throw new DomainException(
+        CustomersErrorCode.CUSTOMER_NOT_ACTIVE,
+        'The customer account is not active',
+        HttpStatus.CONFLICT,
+      );
+    }
+    return profile.userId;
+  }
+
+  /**
+   * Where the customer is in onboarding, for the app to decide the next screen after a restart or a new sign-in. A customer with no
+   * profile yet is a normal answer (not a 404): the first screen is the profile.
+   */
+  async onboarding(userId: string): Promise<CustomerOnboardingResponse> {
+    const profile = await this.repository.findProfileByUserId(userId);
+    if (!profile) {
+      return {
+        profileCreated: false,
+        steps: [
+          {
+            key: 'PROFILE',
+            label: 'Your details',
+            done: false,
+            missing: ['name', 'email', 'preferredLanguage'],
+          },
+          { key: 'ADDRESS', label: 'Your address', done: false, missing: ['address'] },
+          { key: 'VERIFICATION', label: 'Verification', done: false, missing: [] },
+        ],
+        nextStep: 'PROFILE',
+        verificationStatus: null,
+        canBook: false,
+      };
+    }
+    const addresses = await this.repository.listActiveAddresses(profile.id);
+    const steps = [
+      { key: 'PROFILE', label: 'Your details', done: true, missing: [] as string[] },
+      {
+        key: 'ADDRESS',
+        label: 'Your address',
+        done: addresses.length > 0,
+        missing: addresses.length > 0 ? [] : ['address'],
+      },
+      {
+        key: 'VERIFICATION',
+        label: 'Verification',
+        done: profile.verificationStatus === 'VERIFIED',
+        missing: [],
+      },
+    ];
+    const next = steps.find((x) => !x.done);
+    return {
+      profileCreated: true,
+      steps,
+      nextStep: next ? next.key : null,
+      verificationStatus: profile.verificationStatus,
+      canBook: addresses.length > 0,
+    };
+  }
+
   async getMyProfile(userId: string): Promise<CustomerProfileResponse> {
     const [profile, user] = await Promise.all([
       this.repository.findProfileByUserId(userId),
@@ -120,6 +191,7 @@ export class CustomersService {
   async updateMyProfile(
     userId: string,
     dto: UpdateCustomerProfileDto,
+    ifMatch?: string,
   ): Promise<CustomerProfileResponse> {
     const fields = changedFieldNames(dto);
     if (fields.length === 0) {
@@ -135,9 +207,11 @@ export class CustomersService {
     }
     const profile = await this.repository.transaction(async (tx) => {
       const existing = await this.repository.findProfileByUserId(userId, tx);
-      if (!existing) {
+      if (!existing || !(await this.repository.lockProfile(existing.id, tx))) {
         throw this.profileNotFound();
       }
+      // Optimistic concurrency: the edit is applied only if the profile is still the version the app showed (412 STALE_VERSION).
+      assertIfMatch(ifMatch, (await this.repository.findProfileById(existing.id, tx))!.updatedAt);
       const updated = await this.repository.updateProfile(
         existing.id,
         { name: dto.name, email: dto.email, preferredLanguage: dto.preferredLanguage },
@@ -172,7 +246,14 @@ export class CustomersService {
       userId = user.id;
     }
     const { items, total } = await this.repository.listProfiles(
-      { verificationStatus: query.verificationStatus, userId },
+      {
+        verificationStatus: query.verificationStatus,
+        userId,
+        name: query.name,
+        accountStatus: query.accountStatus,
+        city: query.city,
+        ...createdRange(query.createdFrom, query.createdTo),
+      },
       skipFor(query),
       query.limit,
     );
@@ -206,16 +287,19 @@ export class CustomersService {
     status: CustomerVerificationStatus,
     note: string | undefined,
     actor: Actor & { userId: string },
+    ifMatch?: string,
   ): Promise<AdminCustomerSummary> {
     const profile = await this.repository.transaction(async (tx) => {
       if (!(await this.repository.lockProfile(customerId, tx))) {
         throw this.customerNotFound();
       }
       const before = (await this.repository.findProfileById(customerId, tx))!;
+      assertIfMatch(ifMatch, before.updatedAt);
+      // Staff have decided: from now on automatic verification leaves this customer alone, even when the status itself is unchanged.
+      const updated = await this.repository.setVerificationStatus(customerId, status, tx, true);
       if (before.verificationStatus === status) {
-        return before;
+        return updated;
       }
-      const updated = await this.repository.setVerificationStatus(customerId, status, tx);
       await this.audit.record(
         {
           action: 'customer.verification_status_change',

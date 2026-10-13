@@ -36,6 +36,21 @@ export const BOOKING_STATUSES = [
 ] as const;
 export type BookingStatusValue = (typeof BOOKING_STATUSES)[number];
 
+/** Short, plain labels for the apps (PRD 6: simple status labels). The enum values are the stable contract; wording and translations are content. */
+export const BOOKING_STATUS_LABELS: Record<BookingStatusValue, string> = {
+  NEW_REQUEST: 'Request received',
+  MATCHED: 'Worker matched',
+  INTERVIEW_TRIAL_SCHEDULED: 'Interview scheduled',
+  INTERVIEW_TRIAL_COMPLETED: 'Interview done',
+  PENDING_PAYMENT: 'Payment due',
+  CONFIRMED: 'Confirmed',
+  ACTIVE: 'In service',
+  REPLACEMENT_REQUESTED: 'Replacement requested',
+  REPLACED: 'Replaced',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+};
+
 export const SCHEDULE_TYPES = ['INTERVIEW', 'TRIAL'] as const;
 export type ScheduleTypeValue = (typeof SCHEDULE_TYPES)[number];
 
@@ -185,6 +200,15 @@ export class BookingActionDto {
   reason?: string;
 }
 
+/** Staff creating a booking on behalf of a customer (phone-in request): the same fields as the customer's own request. */
+export class AdminCreateBookingDto extends CreateBookingDto {
+  @ApiProperty({
+    description: 'The customer (customer profile id, as listed under /admin/customers).',
+  })
+  @IsUUID()
+  customerId!: string;
+}
+
 export class BookingListQuery extends PageQueryDto {
   @ApiPropertyOptional({ enum: BOOKING_STATUSES })
   @IsOptional()
@@ -192,7 +216,40 @@ export class BookingListQuery extends PageQueryDto {
   status?: BookingStatusValue;
 }
 
-export class AdminBookingListQuery extends BookingListQuery {
+export class BookingFilterQuery extends BookingListQuery {
+  @ApiPropertyOptional({ description: 'Service category id.' })
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ description: 'Service area id.' })
+  @IsOptional()
+  @IsUUID()
+  areaId?: string;
+
+  @ApiPropertyOptional({ enum: ENGAGEMENTS })
+  @IsOptional()
+  @IsIn(ENGAGEMENTS)
+  engagement?: Engagement;
+
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description: 'Requested on or after (India date).',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'createdFrom must be YYYY-MM-DD' })
+  createdFrom?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description: 'Requested on or before (India date).',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'createdTo must be YYYY-MM-DD' })
+  createdTo?: string;
+}
+
+export class AdminBookingListQuery extends BookingFilterQuery {
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
@@ -219,9 +276,9 @@ export class TimelineEntry {
   @ApiProperty({ nullable: true, enum: BOOKING_STATUSES }) from!: BookingStatusValue | null;
   @ApiProperty({ enum: BOOKING_STATUSES }) to!: BookingStatusValue;
   @ApiProperty({ enum: ['CUSTOMER', 'WORKER', 'ADMIN', 'SYSTEM'] }) by!: string;
-  @ApiProperty({ nullable: true }) note!: string | null;
+  @ApiProperty({ nullable: true, type: String }) note!: string | null;
   @ApiProperty() at!: Date;
-  @ApiPropertyOptional({ nullable: true, description: 'Administrator view only.' })
+  @ApiPropertyOptional({ nullable: true, description: 'Administrator view only.', type: String })
   actorUserId?: string | null;
 }
 
@@ -233,39 +290,83 @@ export class BookingView {
   @ApiProperty({ enum: ENGAGEMENTS }) engagement!: Engagement;
   @ApiProperty({ example: '09:00' }) availableFrom!: string;
   @ApiProperty({ example: '13:00' }) availableTo!: string;
-  @ApiProperty({ nullable: true, description: 'Opaque worker reference once a worker is matched.' })
+  @ApiProperty({
+    nullable: true,
+    description: 'Opaque worker reference once a worker is matched.',
+    type: String,
+  })
   workerId!: string | null;
   @ApiProperty({ nullable: true, enum: SCHEDULE_TYPES }) scheduleType!: ScheduleTypeValue | null;
-  @ApiProperty({ nullable: true }) scheduledAt!: Date | null;
-  @ApiProperty({ nullable: true }) outcomeNote!: string | null;
-  @ApiProperty({ nullable: true, example: '2026-11-01' }) startDate!: string | null;
-  @ApiProperty({ nullable: true }) cancelReason!: string | null;
-  @ApiProperty({ nullable: true, description: 'The booking this one replaces, if any.' })
+  @ApiProperty({ nullable: true, type: Date }) scheduledAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) outcomeNote!: string | null;
+  @ApiProperty({ nullable: true, example: '2026-11-01', type: String }) startDate!: string | null;
+  @ApiProperty({ nullable: true, type: String }) cancelReason!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'The booking this one replaces, if any.',
+    type: String,
+  })
   replacesBookingId!: string | null;
   @ApiProperty({
     nullable: true,
     description: 'The saved address of the job (customer and staff only).',
+    type: String,
   })
   addressId!: string | null;
   @ApiProperty({
     nullable: true,
     example: '2026-11-01',
     description: 'When the customer asked the service to begin.',
+    type: String,
   })
   requestedStartDate!: string | null;
-  @ApiProperty({ nullable: true }) budgetMinMinor!: number | null;
-  @ApiProperty({ nullable: true }) budgetMaxMinor!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) budgetMinMinor!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) budgetMaxMinor!: number | null;
   @ApiProperty({ nullable: true, enum: BUDGET_PERIODS }) budgetPeriod!: string | null;
-  @ApiProperty({ nullable: true }) requirementNote!: string | null;
-  @ApiProperty({ nullable: true, description: 'When the matched worker accepted.' })
+  @ApiProperty({ nullable: true, type: String }) requirementNote!: string | null;
+  @ApiProperty({ nullable: true, description: 'When the matched worker accepted.', type: Date })
   workerRespondedAt!: Date | null;
   @ApiProperty({
     nullable: true,
     description: 'Deadline for the worker to respond, if one is configured.',
+    type: Date,
   })
   respondBy!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'A different interview/trial time the worker proposed; waits for the customer.',
+    type: Date,
+  })
+  proposedSlotAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) proposedSlotNote!: string | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
+}
+
+export class ProposeSlotDto {
+  @ApiProperty({ example: '2026-11-03T10:00:00.000Z', description: 'ISO 8601, in the future.' })
+  @IsISO8601()
+  proposedAt!: string;
+
+  @ApiPropertyOptional({ maxLength: 300 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 300)
+  note?: string;
+}
+
+/** One booking of a replacement chain. */
+export class ChainEntryView {
+  @ApiProperty() bookingId!: string;
+  @ApiProperty({ description: '1 = the original booking.' }) position!: number;
+  @ApiProperty({ enum: BOOKING_STATUSES }) status!: BookingStatusValue;
+  @ApiProperty({ nullable: true, type: String }) replacesBookingId!: string | null;
+  @ApiProperty({ nullable: true, example: '2026-11-01', type: String }) startDate!: string | null;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty({ description: 'The booking the caller asked about.' }) current!: boolean;
+  @ApiPropertyOptional({ nullable: true, description: 'Administrator view only.', type: String })
+  workerId?: string | null;
 }
 
 export class BookingDetailView extends BookingView {
@@ -283,19 +384,22 @@ export class WorkerBookingView {
   @ApiProperty() availableFrom!: string;
   @ApiProperty() availableTo!: string;
   @ApiProperty({ nullable: true, enum: SCHEDULE_TYPES }) scheduleType!: ScheduleTypeValue | null;
-  @ApiProperty({ nullable: true }) scheduledAt!: Date | null;
-  @ApiProperty({ nullable: true, example: '2026-11-01' }) startDate!: string | null;
-  @ApiProperty({ nullable: true, example: '2026-11-01' }) requestedStartDate!: string | null;
-  @ApiProperty({ nullable: true }) budgetMinMinor!: number | null;
-  @ApiProperty({ nullable: true }) budgetMaxMinor!: number | null;
+  @ApiProperty({ nullable: true, type: Date }) scheduledAt!: Date | null;
+  @ApiProperty({ nullable: true, example: '2026-11-01', type: String }) startDate!: string | null;
+  @ApiProperty({ nullable: true, example: '2026-11-01', type: String }) requestedStartDate!:
+    string | null;
+  @ApiProperty({ nullable: true, type: Number }) budgetMinMinor!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) budgetMaxMinor!: number | null;
   @ApiProperty({ nullable: true, enum: BUDGET_PERIODS }) budgetPeriod!: string | null;
-  @ApiProperty({ nullable: true }) requirementNote!: string | null;
-  @ApiProperty({ nullable: true }) workerRespondedAt!: Date | null;
-  @ApiProperty({ nullable: true }) respondBy!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) requirementNote!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) workerRespondedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) respondBy!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) proposedSlotAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) proposedSlotNote!: string | null;
   @ApiProperty() updatedAt!: Date;
 }
 
 export class AdminBookingView extends BookingDetailView {
   @ApiProperty() customerUserId!: string;
-  @ApiProperty({ nullable: true }) cancelledByUserId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) cancelledByUserId!: string | null;
 }

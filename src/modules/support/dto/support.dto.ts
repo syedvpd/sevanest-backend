@@ -61,6 +61,13 @@ export class AdminTicketListQuery extends MyTicketListQuery {
   @IsUUID()
   assignedToUserId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Only tickets raised by this user (complaint history of a customer or worker).',
+  })
+  @IsOptional()
+  @IsUUID()
+  creatorUserId?: string;
+
   @ApiPropertyOptional({ description: 'true = only tickets nobody owns yet.' })
   @IsOptional()
   @Transform(toBool)
@@ -172,23 +179,24 @@ export class TicketEventView {
 
 export class AdminTicketEventView extends TicketEventView {
   @ApiProperty() actorUserId!: string;
-  @ApiProperty({ nullable: true }) internalNote!: string | null;
+  @ApiProperty({ nullable: true, type: String }) internalNote!: string | null;
 }
 
 export class TicketView {
   @ApiProperty() id!: string;
   @ApiProperty({ type: SupportCategoryView }) category!: SupportCategoryView;
-  @ApiProperty({ nullable: true }) bookingId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) bookingId!: string | null;
   @ApiProperty() description!: string;
   @ApiProperty({ enum: TICKET_STATUSES }) status!: TicketStatusValue;
-  @ApiProperty({ nullable: true }) resolution!: string | null;
+  @ApiProperty({ nullable: true, type: String }) resolution!: string | null;
   @ApiProperty({
     nullable: true,
     description: 'Resolution target, when the business configured one.',
+    type: Date,
   })
   dueAt!: Date | null;
   @ApiProperty() createdAt!: Date;
-  @ApiProperty({ nullable: true }) closedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) closedAt!: Date | null;
 }
 
 export class TicketDetailView extends TicketView {
@@ -200,20 +208,21 @@ export class AdminTicketView {
   @ApiProperty({ type: SupportCategoryView }) category!: SupportCategoryView;
   @ApiProperty() creatorUserId!: string;
   @ApiProperty({ enum: ['CUSTOMER', 'WORKER'] }) creatorKind!: string;
-  @ApiProperty({ nullable: true }) bookingId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) bookingId!: string | null;
   @ApiProperty() description!: string;
   @ApiProperty({ enum: TICKET_STATUSES }) status!: TicketStatusValue;
   @ApiProperty({ enum: TICKET_PRIORITIES, nullable: true }) priority!: TicketPriorityValue | null;
-  @ApiProperty({ nullable: true }) assignedToUserId!: string | null;
-  @ApiProperty({ nullable: true }) assignedAt!: Date | null;
-  @ApiProperty({ nullable: true }) escalatedAt!: Date | null;
-  @ApiProperty({ nullable: true }) resolution!: string | null;
-  @ApiProperty({ nullable: true }) closedAt!: Date | null;
-  @ApiProperty({ nullable: true }) closedByUserId!: string | null;
-  @ApiProperty({ nullable: true }) dueAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) assignedToUserId!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) assignedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) escalatedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) resolution!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) closedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) closedByUserId!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) dueAt!: Date | null;
   @ApiProperty({
     nullable: true,
     description: 'Set once when the resolution target passed while the ticket was open.',
+    type: Date,
   })
   slaBreachedAt!: Date | null;
   @ApiProperty() createdAt!: Date;

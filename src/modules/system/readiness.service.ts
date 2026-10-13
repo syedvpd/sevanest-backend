@@ -111,7 +111,11 @@ export class ReadinessService {
     );
 
     const eventsWithTemplate = new Set(templates.map((t) => t.eventCode));
-    const without = Object.keys(EVENT_PARAMS).filter((e) => !eventsWithTemplate.has(e));
+    // Staff alerts are shown in the admin alert inbox, which needs no template.
+    const staffOnly = new Set(['PAYMENT_EXCEPTION_ALERT']);
+    const without = Object.keys(EVENT_PARAMS).filter(
+      (e) => !staffOnly.has(e) && !eventsWithTemplate.has(e),
+    );
     add(
       'notification_templates',
       'WARNING',
@@ -140,6 +144,14 @@ export class ReadinessService {
       'Payment gateway',
     );
     real(this.config.storageProvider === StorageProviderKind.S3, 'storage', 'KYC document storage');
+    add(
+      'malware_scanning',
+      'WARNING',
+      this.config.clamav !== null,
+      this.config.clamav !== null
+        ? 'Uploaded documents are scanned (ClamAV)'
+        : 'Uploaded documents are checked for type, size and content but NOT scanned for malware (set CLAMAV_HOST)',
+    );
     add(
       'provider_push',
       'WARNING',

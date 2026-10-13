@@ -234,6 +234,12 @@ describe('RazorpayPaymentProvider', () => {
       ).toBe(false);
     });
 
+    it('refuses every webhook when no webhook secret is configured (never an empty-key HMAC)', () => {
+      const open = new RazorpayPaymentProvider({ ...settings, webhookSecret: '' });
+      const forged = hmac('', body.toString());
+      expect(open.verifyWebhookSignature(body, { 'x-razorpay-signature': forged })).toBe(false);
+    });
+
     it('parses payment events and uses the event-id header for duplicate protection', () => {
       expect(provider.parseWebhookEvent(body, { 'x-razorpay-event-id': 'evt_1' })).toEqual({
         kind: 'PAYMENT',

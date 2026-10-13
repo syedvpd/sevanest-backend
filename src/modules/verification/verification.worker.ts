@@ -37,7 +37,7 @@ export class RecheckDueLoop implements OnApplicationBootstrap, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     try {
-      await this.heartbeat.beat('recheck-reminders');
+      await this.heartbeat.beat('recheck-reminders', INTERVAL_MS);
       const reminded = await this.verification.notifyRecheckDue();
       if (reminded > 0) this.logger.log(`Re-check reminders queued: ${reminded}`);
     } catch (error) {
@@ -77,7 +77,7 @@ export class AbandonedUploadLoop implements OnApplicationBootstrap, OnModuleDest
     if (this.running) return;
     this.running = true;
     try {
-      await this.heartbeat.beat('abandoned-uploads');
+      await this.heartbeat.beat('abandoned-uploads', SWEEP_INTERVAL_MS);
       const purged = await this.verification.purgeAbandonedUploads(ABANDONED_AFTER_MS);
       if (purged > 0) this.logger.log(`Abandoned uploads discarded: ${purged}`);
     } catch (error) {

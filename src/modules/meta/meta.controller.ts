@@ -1,8 +1,11 @@
 import { Controller, Get, Header } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import { ApiModelResponse } from '../../common/swagger/api-responses';
+import { LegalCurrentView } from '../legal/legal.dto';
 import { Public } from '../../common/decorators/auth.decorators';
 import { AppConfigService } from '../../config/app-config.service';
-import { BUDGET_PERIODS } from '../booking/dto/booking.dto';
+import { BOOKING_STATUS_LABELS, BUDGET_PERIODS } from '../booking/dto/booking.dto';
+import { INTERVIEW_STATUS_LABELS } from '../booking/dto/interview.dto';
 import { LegalService } from '../legal/legal.service';
 import { ENGAGEMENTS } from '../search/search.types';
 import { REPORT_REASONS } from '../safety/safety.dto';
@@ -16,6 +19,50 @@ const DEFAULT_LANGUAGES = ['en'];
  * reference lists their forms need. Public, cacheable (Express adds an ETag, so `If-None-Match` answers 304) and free of personal
  * data and secrets. Categories and areas are admin data and stay on their own endpoints.
  */
+class MinVersionView {
+  @ApiProperty({ nullable: true, type: String, example: '1.2.0' }) minVersion!: string | null;
+}
+
+class SupportContactView {
+  @ApiProperty({ nullable: true, type: String }) phone!: string | null;
+  @ApiProperty({ nullable: true, type: String }) email!: string | null;
+}
+
+export class AppConfigView {
+  @ApiProperty({
+    type: MinVersionView,
+    description: 'An app older than this must force an update.',
+  })
+  customer!: MinVersionView;
+  @ApiProperty({ type: MinVersionView }) worker!: MinVersionView;
+  @ApiProperty({ description: 'true = show the maintenance screen.' }) maintenance!: boolean;
+  @ApiProperty({ type: SupportContactView }) support!: SupportContactView;
+  @ApiProperty({ type: LegalCurrentView }) legal!: LegalCurrentView;
+  @ApiProperty({ type: [String], example: ['en'] }) languages!: string[];
+}
+
+class StatusLabelsView {
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'string' } })
+  booking!: Record<string, string>;
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'string' } })
+  interview!: Record<string, string>;
+}
+
+export class ReferenceDataView {
+  @ApiProperty({ type: [String] }) engagements!: string[];
+  @ApiProperty({ type: [String] }) budgetPeriods!: string[];
+  @ApiProperty({ type: [String] }) reportReasons!: string[];
+  @ApiProperty({ type: [String] }) ticketPriorities!: string[];
+  @ApiProperty({
+    example: 10,
+    description:
+      'Reviews are whole numbers from 1 to this value (RATING_SCALE_MAX). `rating.average` is on the same scale.',
+  })
+  ratingScaleMax!: number;
+  @ApiProperty({ type: [String] }) languages!: string[];
+  @ApiProperty({ type: StatusLabelsView }) statusLabels!: StatusLabelsView;
+}
+
 @ApiTags('App')
 @Controller({ version: '1' })
 export class MetaController {
@@ -25,6 +72,7 @@ export class MetaController {
   ) {}
 
   @Get('app-config')
+  @ApiModelResponse(AppConfigView)
   @Public()
   @Header('Cache-Control', 'public, max-age=60')
   @ApiOperation({
@@ -52,6 +100,7 @@ export class MetaController {
   }
 
   @Get('reference-data')
+  @ApiModelResponse(ReferenceDataView)
   @Public()
   @Header('Cache-Control', 'public, max-age=300')
   @ApiOperation({
@@ -63,14 +112,19 @@ export class MetaController {
     budgetPeriods: readonly string[];
     reportReasons: readonly string[];
     ticketPriorities: readonly string[];
+    /** Reviews are whole numbers from 1 to this value (RATING_SCALE_MAX). `rating.average` is on the same scale. */
+    ratingScaleMax: number;
     languages: string[];
+    statusLabels: { booking: Record<string, string>; interview: Record<string, string> };
   } {
     return {
       engagements: ENGAGEMENTS,
       budgetPeriods: BUDGET_PERIODS,
       reportReasons: REPORT_REASONS,
       ticketPriorities: TICKET_PRIORITIES,
+      ratingScaleMax: this.config.ratingScaleMax,
       languages: this.languages(),
+      statusLabels: { booking: BOOKING_STATUS_LABELS, interview: INTERVIEW_STATUS_LABELS },
     };
   }
 

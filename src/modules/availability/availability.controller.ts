@@ -1,4 +1,18 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
+import type { Response } from 'express';
+import { etagOf } from '../../common/concurrency/if-match';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -11,6 +25,7 @@ import {
   AdminServiceAreaListQuery,
   AdminServiceAreaResponse,
   CreateServiceAreaDto,
+  ResolveAreaQuery,
   ServiceAreaListQuery,
   ServiceAreaResponse,
   UpdateAvailabilityDto,
@@ -27,15 +42,36 @@ export class ServiceAreasController {
   constructor(private readonly areas: ServiceAreasService) {}
 
   @Get()
+  @ApiPageResponse(ServiceAreaResponse)
   @ApiOperation({ summary: 'List enabled service areas (paginated; optional city filter)' })
   list(@Query() query: ServiceAreaListQuery): Promise<Page<ServiceAreaResponse>> {
     return this.areas.listEnabled(query);
   }
 
   @Get(':areaId')
+  @ApiModelResponse(ServiceAreaResponse)
   @ApiOperation({ summary: 'One enabled service area (404 if unknown or disabled)' })
   get(@Param('areaId', ParseUUIDPipe) areaId: string): Promise<ServiceAreaResponse> {
     return this.areas.getEnabled(areaId);
+  }
+}
+
+/** Customer helper: where is this position? (the "Use my current location" button). */
+@ApiTags('Service Areas')
+@ApiBearerAuth()
+@RequireUserType('CUSTOMER')
+@Controller({ path: 'locations', version: '1' })
+export class LocationsController {
+  constructor(private readonly areas: ServiceAreasService) {}
+
+  @Get('service-area')
+  @ApiModelResponse(ServiceAreaResponse)
+  @ApiOperation({
+    summary:
+      'Resolve a device position and/or geocoded area name to an enabled service area (404 AREA_NOT_FOUND when none)',
+  })
+  resolve(@Query() query: ResolveAreaQuery): Promise<ServiceAreaResponse> {
+    return this.areas.resolve(query);
   }
 }
 
@@ -51,18 +87,26 @@ export class AdminServiceAreasController {
   ) {}
 
   @Get()
+  @ApiPageResponse(AdminServiceAreaResponse)
   @ApiOperation({ summary: 'List all service areas including disabled (paginated)' })
   list(@Query() query: AdminServiceAreaListQuery): Promise<Page<AdminServiceAreaResponse>> {
     return this.areas.adminList(query);
   }
 
   @Get(':areaId')
-  @ApiOperation({ summary: 'One service area including disabled' })
-  get(@Param('areaId', ParseUUIDPipe) areaId: string): Promise<AdminServiceAreaResponse> {
-    return this.areas.adminGet(areaId);
+  @ApiModelResponse(AdminServiceAreaResponse)
+  @ApiOperation({ summary: 'One service area including disabled (ETag for If-Match)' })
+  async get(
+    @Param('areaId', ParseUUIDPipe) areaId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AdminServiceAreaResponse> {
+    const area = await this.areas.adminGet(areaId);
+    res.setHeader('ETag', etagOf(area.updatedAt));
+    return area;
   }
 
   @Post()
+  @ApiModelResponse(AdminServiceAreaResponse, { status: 201 })
   @ApiOperation({ summary: 'Add an area (409 AREA_DUPLICATE when the city already has it)' })
   async create(
     @Body() dto: CreateServiceAreaDto,
@@ -73,6 +117,7 @@ export class AdminServiceAreasController {
   }
 
   @Patch(':areaId')
+  @ApiModelResponse(AdminServiceAreaResponse)
   @ApiOperation({
     summary: 'Rename, move, enable or disable an area',
     description:
@@ -82,9 +127,15 @@ export class AdminServiceAreasController {
     @Param('areaId', ParseUUIDPipe) areaId: string,
     @Body() dto: UpdateServiceAreaDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminServiceAreaResponse> {
     const access = await this.users.getAccess(admin.userId);
-    return this.areas.adminUpdate(areaId, dto, { userId: admin.userId, roles: access.roles });
+    return this.areas.adminUpdate(
+      areaId,
+      dto,
+      { userId: admin.userId, roles: access.roles },
+      ifMatch,
+    );
   }
 }
 
@@ -97,12 +148,14 @@ export class WorkerAvailabilityController {
   constructor(private readonly availability: AvailabilityService) {}
 
   @Get()
+  @ApiModelResponse(WorkerAvailabilityResponse)
   @ApiOperation({ summary: 'My engagement preference, preferred areas and available time windows' })
   get(@CurrentUser() user: AuthenticatedUser): Promise<WorkerAvailabilityResponse> {
     return this.availability.getMine(user.userId);
   }
 
   @Patch()
+  @ApiModelResponse(WorkerAvailabilityResponse)
   @ApiOperation({
     summary: 'Save my availability (any subset; each part sent replaces the stored one)',
     description:
@@ -127,6 +180,7 @@ export class AdminWorkerAvailabilityController {
   ) {}
 
   @Get()
+  @ApiModelResponse(WorkerAvailabilityResponse)
   @Permissions(PermissionCode.WORKER_VIEW)
   @ApiOperation({ summary: "A worker's availability" })
   get(@Param('workerId', ParseUUIDPipe) workerId: string): Promise<WorkerAvailabilityResponse> {
@@ -134,6 +188,7 @@ export class AdminWorkerAvailabilityController {
   }
 
   @Patch()
+  @ApiModelResponse(WorkerAvailabilityResponse)
   @Permissions(PermissionCode.WORKER_MANAGE)
   @ApiOperation({ summary: "Edit a worker's availability on their behalf (assisted onboarding)" })
   async update(

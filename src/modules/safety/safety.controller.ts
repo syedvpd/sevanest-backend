@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -38,6 +39,7 @@ export class SafetyController {
   constructor(private readonly safety: SafetyService) {}
 
   @Post('blocks')
+  @ApiModelResponse(BlockView)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Block a worker (customers) or the customer of a booking (workers)',
@@ -49,6 +51,7 @@ export class SafetyController {
   }
 
   @Get('blocks')
+  @ApiModelResponse(BlockView, { isArray: true })
   @ApiOperation({ summary: 'The blocks I made' })
   list(@CurrentUser() user: AuthenticatedUser): Promise<BlockView[]> {
     return this.safety.listMine(this.actor(user));
@@ -68,6 +71,7 @@ export class SafetyController {
   }
 
   @Post('reports')
+  @ApiModelResponse(ReportView, { status: 201 })
   @ApiOperation({
     summary: 'Report a worker or customer (safety, misconduct, fraud ...)',
     description:
@@ -97,6 +101,7 @@ export class AdminSafetyController {
   ) {}
 
   @Get('reports')
+  @ApiPageResponse(AdminReportView)
   @Permissions(PermissionCode.SUPPORT_VIEW)
   @ApiOperation({ summary: 'Safety reports, newest first (filter by a user on either side)' })
   reports(@Query() query: AdminListQuery): Promise<Page<AdminReportView>> {
@@ -104,6 +109,7 @@ export class AdminSafetyController {
   }
 
   @Get('blocks')
+  @ApiPageResponse(AdminBlockView)
   @Permissions(PermissionCode.SUPPORT_VIEW)
   @ApiOperation({ summary: 'Blocks (filter by a user on either side)' })
   blocks(@Query() query: AdminListQuery): Promise<Page<AdminBlockView>> {
@@ -111,6 +117,7 @@ export class AdminSafetyController {
   }
 
   @Post('blocks')
+  @ApiModelResponse(AdminBlockView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
   @ApiOperation({

@@ -85,13 +85,32 @@ export class AttendanceListQuery extends PageQueryDto {
   to?: string;
 }
 
+export class AttendanceSummaryQuery {
+  @ApiProperty({ example: '2026-11', description: 'The calendar month, YYYY-MM.' })
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'month must be YYYY-MM' })
+  month!: string;
+}
+
+/** Counts per status for one calendar month. Days with no entry are simply not counted (nothing is assumed absent). */
+export class AttendanceSummaryView {
+  @ApiProperty() bookingId!: string;
+  @ApiProperty({ example: '2026-11' }) month!: string;
+  @ApiProperty({ example: '2026-11-01' }) from!: string;
+  @ApiProperty({ example: '2026-11-30' }) to!: string;
+  @ApiProperty() daysInMonth!: number;
+  @ApiProperty() present!: number;
+  @ApiProperty() absent!: number;
+  @ApiProperty() exception!: number;
+  @ApiProperty({ description: 'present + absent + exception' }) recorded!: number;
+}
+
 /** The same record for worker and customer (FRD FM-09: "customer and worker see the same recorded status"). */
 export class AttendanceView {
   @ApiProperty() id!: string;
   @ApiProperty() bookingId!: string;
   @ApiProperty({ example: '2026-11-03' }) date!: string;
   @ApiProperty({ enum: ATTENDANCE_STATUSES }) status!: AttendanceStatusValue;
-  @ApiProperty({ nullable: true }) note!: string | null;
+  @ApiProperty({ nullable: true, type: String }) note!: string | null;
   @ApiProperty({ enum: ['WORKER', 'CUSTOMER', 'ADMIN'] }) recordedBy!: ActorKindValue;
   @ApiProperty() updatedAt!: Date;
 }
@@ -99,8 +118,8 @@ export class AttendanceView {
 export class AttendanceHistoryEntry {
   @ApiProperty({ nullable: true, enum: ATTENDANCE_STATUSES }) from!: AttendanceStatusValue | null;
   @ApiProperty({ enum: ATTENDANCE_STATUSES }) to!: AttendanceStatusValue;
-  @ApiProperty({ nullable: true }) note!: string | null;
-  @ApiProperty({ nullable: true }) reason!: string | null;
+  @ApiProperty({ nullable: true, type: String }) note!: string | null;
+  @ApiProperty({ nullable: true, type: String }) reason!: string | null;
   @ApiProperty() actorUserId!: string;
   @ApiProperty({ enum: ['WORKER', 'CUSTOMER', 'ADMIN'] }) actorKind!: ActorKindValue;
   @ApiProperty() at!: Date;

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { EngagementPreference, Prisma } from '../../generated/prisma/client';
+import { Prisma } from '../../generated/prisma/client';
+import type { EngagementPreference } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 import type { TimeWindowMinutes } from './domain/time-windows';
 
@@ -10,6 +11,9 @@ export interface AreaRecord {
   name: string;
   city: string;
   isEnabled: boolean;
+  centerLatitude: number | null;
+  centerLongitude: number | null;
+  radiusMeters: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,6 +23,9 @@ const AREA_SELECT = {
   name: true,
   city: true,
   isEnabled: true,
+  centerLatitude: true,
+  centerLongitude: true,
+  radiusMeters: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ServiceAreaSelect;
@@ -70,8 +77,49 @@ export class AvailabilityRepository {
     return { items, total };
   }
 
-  createArea(data: { name: string; city: string }, db: Db = this.prisma): Promise<AreaRecord> {
+  createArea(
+    data: {
+      name: string;
+      city: string;
+      centerLatitude?: number | null;
+      centerLongitude?: number | null;
+      radiusMeters?: number | null;
+    },
+    db: Db = this.prisma,
+  ): Promise<AreaRecord> {
     return db.serviceArea.create({ data, select: AREA_SELECT });
+  }
+
+  /** Enabled area whose centre is nearest to the point and within its own radius (great-circle distance), or null. */
+  async findAreaCovering(
+    latitude: number,
+    longitude: number,
+    city?: string,
+  ): Promise<AreaRecord | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id FROM (
+        SELECT id, 6371000 * 2 * asin(sqrt(
+                 power(sin(radians(center_latitude - ${latitude}) / 2), 2) +
+                 cos(radians(${latitude})) * cos(radians(center_latitude)) * power(sin(radians(center_longitude - ${longitude}) / 2), 2))) AS metres,
+               radius_meters
+        FROM service_areas
+        WHERE is_enabled AND center_latitude IS NOT NULL ${city ? Prisma.sql`AND lower(city) = lower(${city})` : Prisma.empty}
+      ) d
+      WHERE metres <= radius_meters
+      ORDER BY metres ASC, id ASC LIMIT 1`);
+    return rows[0] ? this.findAreaById(rows[0].id) : null;
+  }
+
+  findEnabledAreaByName(name: string, city?: string): Promise<AreaRecord | null> {
+    return this.prisma.serviceArea.findFirst({
+      where: {
+        isEnabled: true,
+        name: { equals: name, mode: 'insensitive' },
+        ...(city ? { city: { equals: city, mode: 'insensitive' } } : {}),
+      },
+      orderBy: [{ city: 'asc' }, { id: 'asc' }],
+      select: AREA_SELECT,
+    });
   }
 
   async lockArea(id: string, tx: Prisma.TransactionClient): Promise<AreaRecord | null> {
@@ -81,7 +129,14 @@ export class AvailabilityRepository {
 
   updateArea(
     id: string,
-    data: { name?: string; city?: string; isEnabled?: boolean },
+    data: {
+      name?: string;
+      city?: string;
+      isEnabled?: boolean;
+      centerLatitude?: number | null;
+      centerLongitude?: number | null;
+      radiusMeters?: number | null;
+    },
     tx: Prisma.TransactionClient,
   ): Promise<AreaRecord> {
     return tx.serviceArea.update({ where: { id }, data, select: AREA_SELECT });

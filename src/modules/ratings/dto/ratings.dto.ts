@@ -69,7 +69,7 @@ export class RatingView {
   @ApiProperty() id!: string;
   @ApiProperty() bookingId!: string;
   @ApiProperty() score!: number;
-  @ApiProperty({ nullable: true }) review!: string | null;
+  @ApiProperty({ nullable: true, type: String }) review!: string | null;
   @ApiProperty({
     enum: RATING_STATUSES,
     description: 'HIDDEN = removed from the worker profile by an administrator.',
@@ -82,7 +82,7 @@ export class RatingView {
 export class WorkerRatingView {
   @ApiProperty() id!: string;
   @ApiProperty() score!: number;
-  @ApiProperty({ nullable: true }) review!: string | null;
+  @ApiProperty({ nullable: true, type: String }) review!: string | null;
   @ApiProperty() createdAt!: Date;
 }
 
@@ -91,6 +91,7 @@ export class RatingSummaryView {
   @ApiProperty({
     nullable: true,
     description: 'Mean of visible ratings, two decimals; null when there are none.',
+    type: Number,
   })
   average!: number | null;
   @ApiProperty({ description: 'Top of the configured scale.' }) scaleMax!: number;
@@ -102,10 +103,10 @@ export class AdminRatingView {
   @ApiProperty() workerId!: string;
   @ApiProperty() customerUserId!: string;
   @ApiProperty() score!: number;
-  @ApiProperty({ nullable: true }) review!: string | null;
+  @ApiProperty({ nullable: true, type: String }) review!: string | null;
   @ApiProperty({ enum: RATING_STATUSES }) status!: RatingStatusValue;
-  @ApiProperty({ nullable: true }) moderatedByUserId!: string | null;
-  @ApiProperty({ nullable: true }) moderatedAt!: Date | null;
-  @ApiProperty({ nullable: true }) moderationReason!: string | null;
+  @ApiProperty({ nullable: true, type: String }) moderatedByUserId!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) moderatedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) moderationReason!: string | null;
   @ApiProperty() createdAt!: Date;
 }

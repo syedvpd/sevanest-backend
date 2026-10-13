@@ -81,18 +81,18 @@ export class AuditLogQuery extends PageQueryDto {
 
 export class AuditLogView {
   @ApiProperty() id!: string;
-  @ApiProperty({ nullable: true }) actorId!: string | null;
-  @ApiProperty({ nullable: true }) actorRole!: string | null;
+  @ApiProperty({ nullable: true, type: String }) actorId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) actorRole!: string | null;
   @ApiProperty() action!: string;
   @ApiProperty() entityType!: string;
-  @ApiProperty({ nullable: true }) entityId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) entityId!: string | null;
   @ApiProperty({
     nullable: true,
     description:
       'Context recorded with the action; secrets and PII-like keys are already redacted.',
   })
   metadata!: unknown;
-  @ApiProperty({ nullable: true }) requestId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) requestId!: string | null;
   @ApiProperty() createdAt!: Date;
 }
 

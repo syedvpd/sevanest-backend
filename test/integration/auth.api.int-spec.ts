@@ -805,7 +805,8 @@ describe('Auth API (integration)', () => {
       const customer = await loginWithOtp(api);
       const row = await api.prisma.user.findUniqueOrThrow({ where: { id: customer.userId } });
       const res = await adminLogin(api, {
-        email: row.email ?? 'none@example.test',
+        // unique per run: the lockout counters live in Redis and would otherwise carry over between runs
+        email: row.email ?? `none.${Date.now()}.${Math.floor(Math.random() * 1e6)}@example.test`,
         password: 'whatever-whatever',
       });
       expect(res.status).toBe(401);

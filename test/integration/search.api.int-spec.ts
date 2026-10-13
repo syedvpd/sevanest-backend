@@ -364,8 +364,8 @@ describe('Search API (integration)', () => {
         await search(`${base()}&minExperienceMonths=1000`).expect(200);
         const none = spy.mock.calls.length;
         expect(one).toBe(many);
-        expect(one).toBe(8); // page, count, 4 look-ups, rating aggregates, current photos
-        expect(none).toBe(2);
+        expect(one).toBe(7); // page with its total, 4 look-ups, rating aggregates, current photos
+        expect(none).toBe(1); // the page statement carries the total
       } finally {
         spy.mockRestore();
       }

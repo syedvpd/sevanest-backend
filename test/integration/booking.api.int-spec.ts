@@ -1,4 +1,5 @@
 import '../support/env-api-integration';
+import { indiaToday } from '../../src/common/time/india';
 import {
   ApiApp,
   createApiApp,
@@ -53,6 +54,7 @@ describe('Booking API (integration)', () => {
     base = B,
   ) => as(api, caller).post(`${base}/${id}/${action}`, body);
   const future = (hours = 48) => new Date(Date.now() + hours * 3600 * 1000).toISOString();
+  const today = () => indiaToday();
   const tomorrow = () => new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
   const status = async (id: string) =>
     (await as(api, customer).get(`${B}/${id}`)).body.status as string;
@@ -123,6 +125,8 @@ describe('Booking API (integration)', () => {
           'category',
           'engagement',
           'id',
+          'proposedSlotAt',
+          'proposedSlotNote',
           'requestedStartDate',
           'requirementNote',
           'respondBy',
@@ -237,10 +241,10 @@ describe('Booking API (integration)', () => {
       const worker = await verifiedWorker();
       const id = await readyToConfirm(worker);
       expect(await status(id)).toBe('INTERVIEW_TRIAL_COMPLETED');
-      const confirmed = await act(id, 'confirm-worker', { startDate: tomorrow() });
+      const confirmed = await act(id, 'confirm-worker', { startDate: today() });
       expect(confirmed.status).toBe(200);
       expect(confirmed.body.status).toBe('PENDING_PAYMENT');
-      expect(confirmed.body.startDate).toBe(tomorrow());
+      expect(confirmed.body.startDate).toBe(today());
       // Payment (a later module) reports success through the booking contract.
       expect(await paid(id)).toBe(true);
       expect(await paid(id)).toBe(false);
@@ -346,7 +350,7 @@ describe('Booking API (integration)', () => {
     it('does not let an active service be cancelled, and completes only from ACTIVE', async () => {
       const worker = await verifiedWorker();
       const id = await readyToConfirm(worker);
-      await act(id, 'confirm-worker', { startDate: tomorrow() }).expect(200);
+      await act(id, 'confirm-worker', { startDate: today() }).expect(200);
       expect((await act(id, 'complete')).status).toBe(409);
       await paid(id);
       await act(id, 'start').expect(200);

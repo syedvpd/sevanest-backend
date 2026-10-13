@@ -1,5 +1,10 @@
 import { Module } from '@nestjs/common';
 import { UsersModule } from '../users/users.module';
+import {
+  AdminPricingGuidanceController,
+  PricingGuidanceController,
+  PricingGuidanceService,
+} from './pricing-guidance';
 import { CategorySeedService } from './category-seed.service';
 import {
   AdminServiceCategoriesController,
@@ -14,8 +19,18 @@ import { ServiceCategoriesService } from './service-categories.service';
  */
 @Module({
   imports: [UsersModule],
-  controllers: [ServiceCategoriesController, AdminServiceCategoriesController],
-  providers: [ServiceCategoriesRepository, ServiceCategoriesService, CategorySeedService],
+  controllers: [
+    ServiceCategoriesController,
+    AdminServiceCategoriesController,
+    PricingGuidanceController,
+    AdminPricingGuidanceController,
+  ],
+  providers: [
+    ServiceCategoriesRepository,
+    ServiceCategoriesService,
+    CategorySeedService,
+    PricingGuidanceService,
+  ],
   exports: [ServiceCategoriesService, CategorySeedService],
 })
 export class ServiceCategoriesModule {}

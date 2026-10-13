@@ -123,6 +123,20 @@ export class AttendanceRepository {
     });
   }
 
+  async countByStatus(
+    bookingId: string,
+    range: { from: string; to: string },
+  ): Promise<Record<AttendanceStatusValue, number>> {
+    const rows = await this.prisma.attendanceRecord.groupBy({
+      by: ['status'],
+      where: { bookingId, date: { gte: day(range.from), lte: day(range.to) } },
+      _count: { _all: true },
+    });
+    const counts: Record<AttendanceStatusValue, number> = { PRESENT: 0, ABSENT: 0, EXCEPTION: 0 };
+    for (const r of rows) counts[r.status] = r._count._all;
+    return counts;
+  }
+
   async list(
     bookingId: string,
     range: { from?: string; to?: string },

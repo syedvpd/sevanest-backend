@@ -11,6 +11,7 @@ import {
   Put,
   Req,
 } from '@nestjs/common';
+import { ApiModelResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { CurrentUser, Public } from '../../common/decorators/auth.decorators';
@@ -53,6 +54,7 @@ export class AuthController {
 
   @Public()
   @Post('otp/request')
+  @ApiModelResponse(OtpRequestedResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Send a login OTP to a customer or worker mobile number',
@@ -65,6 +67,7 @@ export class AuthController {
 
   @Public()
   @Post('otp/verify')
+  @ApiModelResponse(TokenResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verify the OTP and start a session',
@@ -81,6 +84,7 @@ export class AuthController {
 
   @Public()
   @Post('admin/login')
+  @ApiModelResponse(TokenResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Admin login with email and password',
@@ -97,6 +101,7 @@ export class AuthController {
 
   @Public()
   @Post('token/refresh')
+  @ApiModelResponse(TokenResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Rotate the refresh token and get a new access token',
@@ -124,6 +129,7 @@ export class AuthController {
 
   @ApiBearerAuth()
   @Get('sessions')
+  @ApiModelResponse(SessionResponse, { isArray: true })
   @ApiOperation({ summary: 'List my active sessions (one per device)' })
   async listSessions(@CurrentUser() user: AuthenticatedUser): Promise<SessionResponse[]> {
     const rows = await this.sessions.listActive(user.userId);

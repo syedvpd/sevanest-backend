@@ -72,6 +72,34 @@ export class ServiceCategoriesRepository {
     return db.serviceCategory.create({ data, select: SELECT });
   }
 
+  /** Allowed engagement types per category; a category with no rows is unrestricted and is absent from the map. */
+  async engagementsOf(ids: string[], db: Db = this.prisma): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>();
+    if (ids.length === 0) return map;
+    const rows = await db.categoryEngagement.findMany({
+      where: { categoryId: { in: ids } },
+      orderBy: [{ engagement: 'asc' }],
+    });
+    for (const r of rows) map.set(r.categoryId, [...(map.get(r.categoryId) ?? []), r.engagement]);
+    return map;
+  }
+
+  async replaceEngagements(
+    categoryId: string,
+    engagements: string[],
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.categoryEngagement.deleteMany({ where: { categoryId } });
+    if (engagements.length > 0) {
+      await tx.categoryEngagement.createMany({
+        data: engagements.map((engagement) => ({
+          categoryId,
+          engagement: engagement as never,
+        })),
+      });
+    }
+  }
+
   /** Locks the row for the rest of the transaction so concurrent admin edits serialise. */
   async lockById(id: string, tx: Prisma.TransactionClient): Promise<CategoryRecord | null> {
     await tx.$queryRaw`SELECT id FROM service_categories WHERE id = ${id}::uuid FOR UPDATE`;

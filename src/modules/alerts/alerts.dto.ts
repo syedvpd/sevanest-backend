@@ -40,14 +40,14 @@ export class AlertView {
   @ApiProperty({ enum: ALERT_SEVERITIES }) severity!: string;
   @ApiProperty({ enum: ALERT_STATUSES }) status!: string;
   @ApiProperty() title!: string;
-  @ApiProperty({ nullable: true }) entityType!: string | null;
-  @ApiProperty({ nullable: true }) entityId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) entityType!: string | null;
+  @ApiProperty({ nullable: true, type: String }) entityId!: string | null;
   @ApiProperty({ nullable: true }) detail!: Record<string, unknown> | null;
   @ApiProperty({ description: 'How many times the same problem was detected.' })
   occurrences!: number;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() lastSeenAt!: Date;
-  @ApiProperty({ nullable: true }) acknowledgedAt!: Date | null;
-  @ApiProperty({ nullable: true }) resolvedAt!: Date | null;
-  @ApiProperty({ nullable: true }) resolutionNote!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) acknowledgedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) resolvedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) resolutionNote!: string | null;
 }

@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { AppConfigService } from '../../config/app-config.service';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
+import { indiaToday } from '../../common/time/india';
+import { workerBusyCondition } from '../../common/scheduling/worker-busy';
 import { verifiedWorkerCondition } from '../verification/verification-eligibility';
 import type { EligibleOrder, EligibleWorker, EligibleWorkerCriteria } from './search.types';
 
@@ -28,7 +31,10 @@ const ORDER_BY: Record<EligibleOrder, Prisma.Sql> = {
  */
 @Injectable()
 export class SearchRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: AppConfigService,
+  ) {}
 
   async findEligible(
     criteria: EligibleWorkerCriteria,
@@ -37,24 +43,77 @@ export class SearchRepository {
     take: number,
   ): Promise<{ items: EligibleWorker[]; total: number }> {
     const where = this.where(criteria);
-    const [rows, totals] = await Promise.all([
-      this.prisma.$queryRaw<PageRow[]>(Prisma.sql`
-        SELECT wp.id, wp.user_id AS "userId", wp.name,
-               wp.experience_months AS "experienceMonths",
-               wpref.engagement_preference::text AS "engagementPreference"
-        FROM worker_profiles wp
-        JOIN users u ON u.id = wp.user_id
-        LEFT JOIN worker_work_preferences wpref ON wpref.worker_id = wp.id
-        WHERE ${where}
-        ORDER BY ${ORDER_BY[order]}
-        LIMIT ${take} OFFSET ${skip}`),
-      this.prisma.$queryRaw<Array<{ total: number }>>(Prisma.sql`
+    // One statement answers both the page and the total (count(*) OVER () is computed on the already filtered set), so the
+    // expensive eligibility filter runs once per search instead of twice. A page past the end returns no rows and therefore
+    // no total; only then is a separate count needed.
+    const rows = await this.prisma.$queryRaw<Array<PageRow & { total: number }>>(Prisma.sql`
+      SELECT wp.id, wp.user_id AS "userId", wp.name,
+             wp.experience_months AS "experienceMonths",
+             wpref.engagement_preference::text AS "engagementPreference",
+             (count(*) OVER ())::int AS total
+      FROM worker_profiles wp
+      JOIN users u ON u.id = wp.user_id
+      LEFT JOIN worker_work_preferences wpref ON wpref.worker_id = wp.id
+      WHERE ${where}
+      ORDER BY ${ORDER_BY[order]}
+      LIMIT ${take} OFFSET ${skip}`);
+    let total = rows[0]?.total ?? 0;
+    if (rows.length === 0 && skip > 0) {
+      const totals = await this.prisma.$queryRaw<Array<{ total: number }>>(Prisma.sql`
         SELECT count(*)::int AS total
         FROM worker_profiles wp
         JOIN users u ON u.id = wp.user_id
-        WHERE ${where}`),
+        WHERE ${where}`);
+      total = totals[0]?.total ?? 0;
+    }
+    return { items: await this.hydrate(rows), total };
+  }
+
+  /** Which of the candidate start minutes are taken for this worker on a date (a held booking overlaps, or a confirmed interview/trial). */
+  async takenStarts(
+    workerId: string,
+    date: string,
+    starts: number[],
+    lengthMinutes: number,
+  ): Promise<Set<number>> {
+    if (starts.length === 0) return new Set();
+    const [busy, interviews] = await Promise.all([
+      Promise.all(
+        starts.map(async (from) => {
+          const rows = await this.prisma.$queryRaw<Array<{ busy: boolean }>>(Prisma.sql`
+            SELECT ${workerBusyCondition(Prisma.sql`${workerId}::uuid`, {
+              startDate: date,
+              engagement: 'HOURLY',
+              fromMinute: from,
+              toMinute: from + lengthMinutes,
+              bufferMinutes: this.config.travelBufferMinutes,
+            })} AS busy`);
+          return rows[0]?.busy === true;
+        }),
+      ),
+      this.prisma.$queryRaw<Array<{ minute: number }>>(Prisma.sql`
+        SELECT (extract(hour FROM it.scheduled_at AT TIME ZONE 'Asia/Kolkata') * 60
+              + extract(minute FROM it.scheduled_at AT TIME ZONE 'Asia/Kolkata'))::int AS minute
+        FROM interview_trials it JOIN bookings b ON b.id = it.booking_id
+        WHERE b.worker_id = ${workerId}::uuid AND it.status = 'CONFIRMED'
+          AND (it.scheduled_at AT TIME ZONE 'Asia/Kolkata')::date = ${date}::date`),
     ]);
-    return { items: await this.hydrate(rows), total: totals[0]?.total ?? 0 };
+    const taken = new Set<number>();
+    starts.forEach((from, i) => {
+      const clash = interviews.some(
+        (x) => x.minute < from + lengthMinutes && from < x.minute + lengthMinutes,
+      );
+      if (busy[i] || clash) taken.add(from);
+    });
+    return taken;
+  }
+
+  /** True when the customer has blocked, or been blocked by, anyone (such a customer's search cannot share cached pages). */
+  async hasBlocks(userId: string): Promise<boolean> {
+    const rows = await this.prisma.$queryRaw<Array<{ one: number }>>(Prisma.sql`
+      SELECT 1 AS one FROM user_blocks
+      WHERE blocker_user_id = ${userId}::uuid OR blocked_user_id = ${userId}::uuid LIMIT 1`);
+    return rows.length > 0;
   }
 
   /**
@@ -76,6 +135,46 @@ export class SearchRepository {
         AND ${verifiedWorkerCondition('wp.id')}
         AND ${this.notBlocked(forCustomerUserId)}`);
     return this.hydrate(rows);
+  }
+
+  /**
+   * Visible (not moderated away) reviews of one worker, newest first, with the reviewer's FIRST NAME only. Callers have already
+   * checked the worker is visible to customers.
+   */
+  async listVisibleReviews(
+    workerId: string,
+    skip: number,
+    take: number,
+  ): Promise<{
+    items: Array<{
+      score: number;
+      comment: string | null;
+      createdAt: Date;
+      reviewerFirstName: string | null;
+    }>;
+    total: number;
+  }> {
+    const [items, totals] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{
+          score: number;
+          comment: string | null;
+          createdAt: Date;
+          reviewerFirstName: string | null;
+        }>
+      >(Prisma.sql`
+        SELECT r.score::int AS score, r.review_text AS comment, r.created_at AS "createdAt",
+               NULLIF(split_part(btrim(cp.name), ' ', 1), '') AS "reviewerFirstName"
+        FROM ratings r
+        LEFT JOIN customer_profiles cp ON cp.user_id = r.customer_user_id
+        WHERE r.worker_id = ${workerId}::uuid AND r.status = 'VISIBLE'
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT ${take} OFFSET ${skip}`),
+      this.prisma.$queryRaw<Array<{ total: number }>>(Prisma.sql`
+        SELECT count(*)::int AS total FROM ratings r
+        WHERE r.worker_id = ${workerId}::uuid AND r.status = 'VISIBLE'`),
+    ]);
+    return { items, total: totals[0]?.total ?? 0 };
   }
 
   /** Aggregate rating of each given worker (workers with no rating are absent). */
@@ -121,6 +220,18 @@ export class SearchRepository {
     if (c.window) {
       conditions.push(
         Prisma.sql`EXISTS (SELECT 1 FROM worker_time_windows tw WHERE tw.worker_id = wp.id AND tw.start_minute <= ${c.window.fromMinute} AND tw.end_minute >= ${c.window.toMinute})`,
+      );
+    }
+    if (c.window && !c.skipBusy) {
+      conditions.push(
+        Prisma.sql`NOT ${workerBusyCondition(Prisma.sql`wp.id`, {
+          startDate: c.startDate ?? indiaToday(),
+          engagement: c.engagement,
+          fromMinute: c.window.fromMinute,
+          toMinute: c.window.toMinute,
+          excludeBookingId: c.excludeBookingId,
+          bufferMinutes: this.config.travelBufferMinutes,
+        })}`,
       );
     }
     if (c.language) {

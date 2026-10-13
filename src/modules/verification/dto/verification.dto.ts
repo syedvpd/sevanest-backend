@@ -121,11 +121,15 @@ export class CheckView {
   })
   status!: EffectiveCheckStatus;
   @ApiProperty() required!: boolean;
-  @ApiProperty({ nullable: true }) submittedAt!: Date | null;
-  @ApiProperty({ nullable: true }) reviewedAt!: Date | null;
-  @ApiProperty({ nullable: true, description: 'Reason given when a check was rejected.' })
+  @ApiProperty({ nullable: true, type: Date }) submittedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) reviewedAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Reason given when a check was rejected.',
+    type: String,
+  })
   remarks!: string | null;
-  @ApiProperty({ nullable: true, example: '2027-10-09' }) recheckAt!: string | null;
+  @ApiProperty({ nullable: true, example: '2027-10-09', type: String }) recheckAt!: string | null;
   @ApiProperty({ type: [DocumentView] }) documents!: DocumentView[];
 }
 
@@ -158,21 +162,21 @@ export class QueueItem {
   @ApiProperty() workerId!: string;
   @ApiProperty({ enum: CHECK_TYPES }) checkType!: CheckType;
   @ApiProperty({ enum: CHECK_STATUSES }) status!: StoredCheckStatus;
-  @ApiProperty({ nullable: true }) submittedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) submittedAt!: Date | null;
   @ApiProperty() uploadedDocuments!: number;
 }
 
 export class EventView {
-  @ApiProperty({ nullable: true }) fromStatus!: StoredCheckStatus | null;
+  @ApiProperty({ nullable: true, type: String }) fromStatus!: StoredCheckStatus | null;
   @ApiProperty() toStatus!: StoredCheckStatus;
   @ApiProperty() actorUserId!: string;
-  @ApiProperty({ nullable: true }) remarks!: string | null;
+  @ApiProperty({ nullable: true, type: String }) remarks!: string | null;
   @ApiProperty() createdAt!: Date;
 }
 
 export class AdminCheckView extends CheckView {
   @ApiProperty() checkId!: string;
-  @ApiProperty({ nullable: true }) reviewerUserId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) reviewerUserId!: string | null;
   @ApiProperty({ type: [EventView], description: 'Full history, oldest first.' })
   history!: EventView[];
 }

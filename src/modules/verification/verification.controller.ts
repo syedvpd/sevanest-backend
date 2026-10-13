@@ -11,6 +11,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -52,6 +53,7 @@ export class WorkerVerificationController {
   constructor(private readonly verification: VerificationService) {}
 
   @Get()
+  @ApiModelResponse(WorkerVerificationResponse)
   @ApiOperation({
     summary: 'My verification status (FR-VER-012)',
     description:
@@ -62,6 +64,7 @@ export class WorkerVerificationController {
   }
 
   @Post('checks/:checkType/documents')
+  @ApiModelResponse(DocumentUploadResponse, { status: 201 })
   @ApiOperation({
     summary: 'Ask for a short-lived upload link for a document of one check',
     description:
@@ -76,6 +79,7 @@ export class WorkerVerificationController {
   }
 
   @Post('documents/:documentId/confirm')
+  @ApiModelResponse(WorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Confirm that a document was uploaded',
@@ -90,6 +94,7 @@ export class WorkerVerificationController {
   }
 
   @Post('checks/:checkType/submit')
+  @ApiModelResponse(WorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Submit one check for review',
@@ -124,6 +129,7 @@ export class AdminVerificationController {
   ) {}
 
   @Get('queue')
+  @ApiPageResponse(QueueItem)
   @Permissions(PermissionCode.VERIFICATION_REVIEW)
   @ApiOperation({ summary: 'Verification queue, oldest submission first (paginated)' })
   queue(@Query() query: VerificationQueueQuery): Promise<Page<QueueItem>> {
@@ -131,6 +137,7 @@ export class AdminVerificationController {
   }
 
   @Get('requirements')
+  @ApiModelResponse(RequirementsResponse)
   @Permissions(PermissionCode.VERIFICATION_REVIEW)
   @ApiOperation({ summary: 'Checks required for a worker to count as verified' })
   requirements(): Promise<RequirementsResponse> {
@@ -138,6 +145,7 @@ export class AdminVerificationController {
   }
 
   @Put('requirements')
+  @ApiModelResponse(RequirementsResponse)
   @Permissions(PermissionCode.VERIFICATION_CONFIGURE)
   @ApiOperation({
     summary: 'Replace the set of required checks (audited)',
@@ -152,6 +160,7 @@ export class AdminVerificationController {
   }
 
   @Post('checks/:checkId/start-review')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.VERIFICATION_REVIEW)
   @ApiOperation({ summary: 'Take a submitted check into review (SUBMITTED to IN_REVIEW)' })
@@ -163,6 +172,7 @@ export class AdminVerificationController {
   }
 
   @Post('checks/:checkId/approve')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.VERIFICATION_DECIDE)
   @ApiOperation({
@@ -179,6 +189,7 @@ export class AdminVerificationController {
   }
 
   @Post('checks/:checkId/reject')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.VERIFICATION_DECIDE)
   @ApiOperation({ summary: 'Reject a check in review (remarks required)' })
@@ -191,6 +202,7 @@ export class AdminVerificationController {
   }
 
   @Post('checks/:checkId/recheck')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.VERIFICATION_DECIDE)
   @ApiOperation({
@@ -206,6 +218,7 @@ export class AdminVerificationController {
   }
 
   @Get('documents/:documentId/link')
+  @ApiModelResponse(DocumentLinkResponse)
   @Permissions(PermissionCode.VERIFICATION_DOCUMENT_VIEW)
   @ApiOperation({
     summary: 'Short-lived signed link to open a KYC document (every issue is audited)',
@@ -240,6 +253,7 @@ export class AdminWorkerVerificationController {
   constructor(private readonly verification: VerificationService) {}
 
   @Get()
+  @ApiModelResponse(AdminWorkerVerificationResponse)
   @Permissions(PermissionCode.VERIFICATION_REVIEW)
   @ApiOperation({ summary: "A worker's checks, document metadata and full history" })
   get(

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MalwareModule } from '../../integrations/malware/malware.module';
 import { StorageModule } from '../../integrations/storage/storage.module';
 import { UsersModule } from '../users/users.module';
 import { WorkersModule } from '../workers/workers.module';
@@ -7,6 +8,7 @@ import {
   AdminWorkerVerificationController,
   WorkerVerificationController,
 } from './verification.controller';
+import { WorkerOnboardingController } from './worker-onboarding.controller';
 import { VerificationRepository } from './verification.repository';
 import { VerificationService } from './verification.service';
 
@@ -16,11 +18,12 @@ import { VerificationService } from './verification.service';
  * Private object storage comes from the shared StorageModule (`s3`, `disabled`, test-only `memory`).
  */
 @Module({
-  imports: [UsersModule, WorkersModule, StorageModule],
+  imports: [UsersModule, WorkersModule, StorageModule, MalwareModule],
   controllers: [
     WorkerVerificationController,
     AdminVerificationController,
     AdminWorkerVerificationController,
+    WorkerOnboardingController,
   ],
   providers: [VerificationRepository, VerificationService],
   exports: [VerificationService],

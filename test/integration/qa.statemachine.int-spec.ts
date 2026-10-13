@@ -133,7 +133,8 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
   /** A booking in exactly this state, satisfying the database CHECK constraints. */
   async function bookingIn(state: State): Promise<string> {
     const future = new Date(Date.now() + 2 * 86400000);
-    const start = new Date(Date.now() + 86400000);
+    // The agreed start date is today: customers and workers cannot start a service before it (D-59).
+    const start = new Date();
     const needsWorker = state !== 'NEW_REQUEST';
     const scheduled =
       state === 'INTERVIEW_TRIAL_SCHEDULED' || state === 'INTERVIEW_TRIAL_COMPLETED';
@@ -174,7 +175,8 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
         scheduledAt: new Date(Date.now() + 3 * 86400000).toISOString(),
       },
       'interview-complete': { outcomeNote: 'ok' },
-      'confirm-worker': { startDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10) },
+      // the seeded bookings start today, so a repeated confirmation carries the same date
+      'confirm-worker': { startDate: new Date().toISOString().slice(0, 10) },
       cancel: { reason: 'matrix' },
       decline: {},
       'reopen-matching': {},

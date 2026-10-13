@@ -39,6 +39,15 @@ export class SearchWorkersQuery extends PageQueryDto {
   @Matches(TIME_OF_DAY, { message: 'availableTo must be HH:mm' })
   availableTo?: string;
 
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description:
+      'The date the work starts (India). With the timings, workers already booked for an overlapping time on those dates are left out. Defaults to today.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startDate must be YYYY-MM-DD' })
+  startDate?: string;
+
   @ApiPropertyOptional({ example: 'hi' })
   @IsOptional()
   @Matches(LANGUAGE_CODE, { message: 'language must be a language code such as "hi"' })
@@ -111,7 +120,8 @@ export class PhotoLinkView {
 export class WorkerCard {
   @ApiProperty({ description: 'Opaque worker reference for the next step (not the account id).' })
   workerId!: string;
-  @ApiProperty({ nullable: true, description: 'Total months.' }) experienceMonths!: number | null;
+  @ApiProperty({ nullable: true, description: 'Total months.', type: Number }) experienceMonths!:
+    number | null;
   @ApiProperty({ type: [CategoryRefView] }) categories!: CategoryRefView[];
   @ApiProperty({ type: [String] }) languages!: string[];
   @ApiProperty({ type: [AreaRefView] }) serviceAreas!: AreaRefView[];
@@ -124,4 +134,51 @@ export class WorkerCard {
   verification!: 'VERIFIED';
   @ApiProperty({ type: RatingSummaryView, nullable: true }) rating!: RatingSummaryView | null;
   @ApiProperty({ type: PhotoLinkView, nullable: true }) photo!: PhotoLinkView | null;
+}
+
+export class WorkerReviewView {
+  @ApiProperty({
+    description: '1 to the rating scale maximum (see GET /reference-data ratingScaleMax).',
+  })
+  score!: number;
+  @ApiProperty({
+    nullable: true,
+    description: 'The review text, or null when the customer gave a score only.',
+    type: String,
+  })
+  comment!: string | null;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'First word of the reviewer name only. No surname, id, contact or booking reference.',
+    type: String,
+  })
+  reviewerFirstName!: string | null;
+}
+
+export class SlotsQuery {
+  @ApiProperty({
+    example: '2026-11-03',
+    description: 'India date, from today up to the booking horizon.',
+  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date must be YYYY-MM-DD' })
+  date!: string;
+}
+
+export class WorkerSlotsView {
+  @ApiProperty() date!: string;
+  @ApiProperty({ example: 60, description: 'Length of one interview or trial slot in minutes.' })
+  slotMinutes!: number;
+  @ApiProperty({
+    example: 14,
+    description: 'How many days ahead a slot can be requested (today included).',
+  })
+  horizonDays!: number;
+  @ApiProperty({
+    type: [String],
+    example: ['09:00', '10:00'],
+    description: 'Free start times (HH:mm, India time), earliest first.',
+  })
+  slots!: string[];
 }

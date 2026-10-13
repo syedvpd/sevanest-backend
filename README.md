@@ -181,6 +181,23 @@ counter degrades to per-process memory (logged) instead of failing every request
   `POST /me/deletion-request` (recorded for staff; nothing is erased automatically because retention rules are undecided). **App start-up** -
   `GET /app-config` and `GET /reference-data` are public and cacheable.
 
+## Interim policy defaults and small additions
+The business has not decided several policies; the backend uses safe, switchable defaults (decision D-59, questions Q-83..Q-91) so work is not blocked:
+
+| Item | Default now | Change it by |
+|---|---|---|
+| Cancellation fee / refund | fee 0, no automatic refund; a paid + cancelled booking raises a payment exception for a person with `payment.refund` | needs the client policy (Q-83) |
+| Start before the agreed date | not allowed for customer/worker; staff may | `BOOKING_START_EARLY_DAYS` |
+| Customer verification | VERIFIED when the profile is complete and an address is saved; staff decisions are never overridden | `CUSTOMER_AUTO_VERIFY=false` |
+| Worker emergency contact / address | any admin with `worker.view`, every read audited (`worker.sensitive_view`) | needs the client policy (Q-86) |
+| Forgotten admin password | a Super Admin runs `POST /admin/users/{id}/password-reset` (temporary password shown once, sessions revoked); no MFA | needs the client choice (Q-87) |
+| Malware scan of KYC documents | off; with `CLAMAV_HOST` every document is scanned and an unscannable file is never accepted | `CLAMAV_HOST` |
+| Data erasure | deletion requests are recorded for staff; nothing is erased automatically | needs retention rules (Q-88) |
+
+**Worker double-booking (D-63):** a worker booked for 09:00-10:00 on a date cannot be taken for an overlapping time on that date (409 `WORKER_UNAVAILABLE`) but is bookable again from 10:00, at other hours, on other dates and by other customers' other workers; busy workers are hidden from search and matching for the requested time (`startDate` + `availableFrom/To`). **Category engagement types:** `PUT /admin/service-categories/{id}/engagements` limits what a category offers (empty = all). **Opportunity feed:** `GET /workers/me/opportunities`. **Worker references:** `GET/PUT /workers/me/references`. **Another interview time:** the worker proposes with `PUT /workers/me/bookings/{id}/slot-proposal`, the customer answers with `POST /bookings/{id}/slot-proposal/accept|reject`. **Replacement history:** `GET /bookings/{id}/replacement-chain`. **Edit conflicts:** customer profile / address and several admin resources return an `ETag`; send it back as `If-Match` (412 `STALE_VERSION` when stale). **Provider check:** `npm run check:providers` (see the runbook).
+
+Also available: `GET .../attendance/.../summary?month=YYYY-MM`, list filters on customers and bookings, `GET /admin/reports/export/{report}` (CSV), `POST /admin/bookings` and `POST /admin/workers` (staff acting on someone's behalf), an optional `Idempotency-Key` header on unsafe endpoints, and `ETag`/`If-Match` on the worker and customer admin edits. Operations (backups, monitoring, keep-alive): `docs/qa/OPERATIONS_RUNBOOK.md`.
+
 ## Database safety
 Schema changes only via `prisma migrate dev` (reviewed SQL in `prisma/migrations`) and `prisma migrate deploy` elsewhere.
 Never `migrate reset`, `db push --force-reset`, `DROP`, or `TRUNCATE` on a shared database.

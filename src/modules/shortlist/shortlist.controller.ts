@@ -9,6 +9,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
+import { ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -26,6 +27,7 @@ export class ShortlistController {
   constructor(private readonly shortlist: ShortlistService) {}
 
   @Get()
+  @ApiPageResponse(ShortlistItemView)
   @ApiOperation({
     summary: 'My shortlisted workers, newest first (paginated)',
     description:

@@ -221,9 +221,10 @@ describe('QA - end-to-end journeys (integration)', () => {
     expect(api.sms.lastTo(worker.mobile!)?.body).toBe(`Booking ${bookingId} is confirmed`);
 
     // ---- the service: start, attendance, completion ---------------------------------------------------------
-    await w.post(`/api/v1/workers/me/bookings/${bookingId}/start`).expect(200);
+    // the agreed start date arrives (a service cannot be started before it)
     await api.prisma
       .$executeRaw`UPDATE bookings SET start_date = ${todayIst()}::date WHERE id = ${bookingId}::uuid`;
+    await w.post(`/api/v1/workers/me/bookings/${bookingId}/start`).expect(200);
     const att = await w.post(`/api/v1/workers/me/attendance/bookings/${bookingId}`, {
       status: 'PRESENT',
     });
@@ -303,7 +304,9 @@ describe('QA - end-to-end journeys (integration)', () => {
     await c
       .post(`/api/v1/bookings/${second}/interview-complete`, { outcomeNote: 'ok' })
       .expect(200);
-    await c.post(`/api/v1/bookings/${second}/confirm-worker`, { startDate: inDays(1) }).expect(200);
+    await c
+      .post(`/api/v1/bookings/${second}/confirm-worker`, { startDate: todayIst() })
+      .expect(200);
     const pay2 = (await c.post('/api/v1/payments', { bookingId: second })).body;
     const done2 = fakeGateway(api).completeCheckout(pay2.checkout.orderId as string, 'SUCCEEDED');
     await c.post(`/api/v1/payments/${pay2.id}/verify`, done2).expect(200);

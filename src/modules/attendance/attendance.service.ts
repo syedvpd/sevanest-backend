@@ -12,6 +12,7 @@ import {
   AdminRecordAttendanceDto,
   AttendanceListQuery,
   AttendanceStatusValue,
+  AttendanceSummaryView,
   AttendanceView,
   CorrectAttendanceDto,
   RaiseExceptionDto,
@@ -155,6 +156,33 @@ export class AttendanceService {
     return this.page(bookingId, query);
   }
 
+  async summaryForWorker(
+    workerId: string,
+    bookingId: string,
+    month: string,
+  ): Promise<AttendanceSummaryView> {
+    const booking = await this.bookings.getSummary(bookingId).catch(() => null);
+    if (!booking || booking.workerId !== workerId) throw this.bookingNotFound();
+    return this.summary(bookingId, month);
+  }
+
+  async summaryForCustomer(
+    userId: string,
+    bookingId: string,
+    month: string,
+  ): Promise<AttendanceSummaryView> {
+    const booking = await this.bookings.getSummary(bookingId).catch(() => null);
+    if (!booking || booking.customerUserId !== userId) throw this.bookingNotFound();
+    return this.summary(bookingId, month);
+  }
+
+  async summaryForAdmin(bookingId: string, month: string): Promise<AttendanceSummaryView> {
+    await this.bookings.getSummary(bookingId).catch(() => {
+      throw this.bookingNotFound();
+    });
+    return this.summary(bookingId, month);
+  }
+
   async adminList(
     bookingId: string,
     query: AttendanceListQuery,
@@ -178,6 +206,25 @@ export class AttendanceService {
         ),
       ),
       meta: { page: query.page, limit: query.limit, total },
+    };
+  }
+
+  private async summary(bookingId: string, month: string): Promise<AttendanceSummaryView> {
+    const [year, mon] = month.split('-').map(Number);
+    const daysInMonth = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+    const from = `${month}-01`;
+    const to = `${month}-${String(daysInMonth).padStart(2, '0')}`;
+    const counts = await this.repository.countByStatus(bookingId, { from, to });
+    return {
+      bookingId,
+      month,
+      from,
+      to,
+      daysInMonth,
+      present: counts.PRESENT,
+      absent: counts.ABSENT,
+      exception: counts.EXCEPTION,
+      recorded: counts.PRESENT + counts.ABSENT + counts.EXCEPTION,
     };
   }
 

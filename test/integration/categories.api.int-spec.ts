@@ -139,7 +139,13 @@ describe('Service Categories API (integration)', () => {
       );
       expect(res.body.meta).toMatchObject({ page: 1, limit: 100 });
       for (const row of res.body.data as Array<Record<string, unknown>>) {
-        expect(Object.keys(row).sort()).toEqual(['code', 'description', 'id', 'name']);
+        expect(Object.keys(row).sort()).toEqual([
+          'allowedEngagements',
+          'code',
+          'description',
+          'id',
+          'name',
+        ]);
       }
 
       const page = await as(customer).get('/api/v1/service-categories?limit=2&page=2');

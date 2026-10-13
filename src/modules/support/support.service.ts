@@ -382,6 +382,7 @@ export class SupportService {
         unassigned: query.unassigned,
         bookingId: query.bookingId,
         creatorKind: query.creatorKind,
+        creatorUserId: query.creatorUserId,
       },
       skipFor(query),
       query.limit,

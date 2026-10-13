@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -16,6 +17,8 @@ export const UsersErrorCode = {
   CANNOT_CHANGE_OWN_STATUS: 'CANNOT_CHANGE_OWN_STATUS',
   ADMIN_EMAIL_TAKEN: 'ADMIN_EMAIL_TAKEN',
   ROLE_NOT_FOUND: 'ROLE_NOT_FOUND',
+  NOT_AN_ADMIN: 'NOT_AN_ADMIN',
+  USE_CHANGE_PASSWORD: 'USE_CHANGE_PASSWORD',
 } as const;
 
 export interface UserIdentity extends UserRecord, RoleAndPermissions {}
@@ -84,6 +87,63 @@ export class UsersService {
     tx: Prisma.TransactionClient,
   ): Promise<void> {
     return this.repository.updatePasswordHash(userId, passwordHash, tx);
+  }
+
+  /**
+   * A Super Admin sets a new temporary password for ANOTHER admin who is locked out or forgot theirs (there is no self-service reset: it
+   * would need a delivery channel and an MFA decision). The password is random, shown once to the caller, never stored in clear or audited;
+   * every session of that admin is revoked, and they should change it at once with POST /admin/account/password.
+   */
+  async resetAdminPassword(
+    targetUserId: string,
+    actor: Actor & { userId: string },
+  ): Promise<{ temporaryPassword: string }> {
+    const target = await this.getByIdOrThrow(targetUserId);
+    if (target.type !== 'ADMIN') {
+      throw new DomainException(
+        UsersErrorCode.NOT_AN_ADMIN,
+        'Only an admin account has a password',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    if (target.id === actor.userId) {
+      throw new DomainException(
+        UsersErrorCode.USE_CHANGE_PASSWORD,
+        'Use the change-password endpoint for your own account',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const temporaryPassword = this.generateTemporaryPassword();
+    const passwordHash = await this.hasher.hash(temporaryPassword);
+    await this.repository.transaction(async (tx) => {
+      await this.repository.updatePasswordHash(target.id, passwordHash, tx);
+      await this.audit.record(
+        {
+          action: 'admin.password_reset',
+          entityType: 'user',
+          entityId: target.id,
+          actorId: actor.userId,
+          actorRole: actor.roles.join(',') || null,
+        },
+        tx,
+      );
+    });
+    this.events.emitPasswordReset({ userId: target.id });
+    return { temporaryPassword };
+  }
+
+  private generateTemporaryPassword(): string {
+    const pick = (chars: string): string => chars[randomInt(chars.length)];
+    const sets = ['abcdefghjkmnpqrstuvwxyz', 'ABCDEFGHJKMNPQRSTUVWXYZ', '23456789', '!@#%*-_'];
+    const all = sets.join('');
+    const length = Math.max(20, this.config.adminLogin.passwordMinLength);
+    const chars = sets.map(pick);
+    while (chars.length < length) chars.push(pick(all));
+    for (let i = chars.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join('');
   }
 
   getAccess(userId: string): Promise<RoleAndPermissions> {

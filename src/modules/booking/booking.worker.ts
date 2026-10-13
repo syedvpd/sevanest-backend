@@ -5,6 +5,7 @@ import {
   OnApplicationBootstrap,
   OnModuleDestroy,
 } from '@nestjs/common';
+import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { HeartbeatService } from '../../infrastructure/cache/heartbeat.service';
 import { BookingModule } from './booking.module';
 import { BookingSweepService } from './booking-sweep.service';
@@ -22,6 +23,7 @@ export class BookingSweepLoop implements OnApplicationBootstrap, OnModuleDestroy
   constructor(
     private readonly sweep: BookingSweepService,
     private readonly heartbeat: HeartbeatService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -38,6 +40,7 @@ export class BookingSweepLoop implements OnApplicationBootstrap, OnModuleDestroy
     this.running = true;
     try {
       await this.heartbeat.beat('booking-checks');
+      await this.idempotency.purgeExpired().catch(() => 0);
       const run = await this.sweep.runOnce();
       if (run.noResponseAlerts + run.stuckPaymentAlerts + run.autoCancelled + run.failed > 0) {
         this.logger.log(`Booking checks: ${JSON.stringify(run)}`);

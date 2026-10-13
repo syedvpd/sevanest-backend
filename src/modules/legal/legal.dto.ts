@@ -8,7 +8,7 @@ const trim = ({ value }: { value: unknown }): unknown =>
 
 export class LegalDocumentView {
   @ApiProperty() version!: string;
-  @ApiProperty({ nullable: true }) url!: string | null;
+  @ApiProperty({ nullable: true, type: String }) url!: string | null;
 }
 
 export class LegalCurrentView {
@@ -62,6 +62,6 @@ export class DeletionRequestView {
   @ApiProperty() userId!: string;
   @ApiProperty({ enum: ['REQUESTED', 'CANCELLED', 'COMPLETED'] }) status!: string;
   @ApiProperty() requestedAt!: Date;
-  @ApiProperty({ nullable: true }) cancelledAt!: Date | null;
-  @ApiProperty({ nullable: true }) completedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) cancelledAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) completedAt!: Date | null;
 }

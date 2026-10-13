@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './common/audit/audit.module';
+import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { AppConfigModule } from './config/config.module';
@@ -19,6 +20,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { SystemModule } from './modules/system/system.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { SafetyModule } from './modules/safety/safety.module';
+import { HomeModule } from './modules/home/home.module';
 import { ShortlistModule } from './modules/shortlist/shortlist.module';
 import { WorkerPhotoModule } from './modules/worker-photo/worker-photo.module';
 import { AvailabilityModule } from './modules/availability/availability.module';
@@ -81,12 +83,14 @@ const embeddedWorkers =
     QueueModule,
     AuditModule,
     OutboxModule,
+    IdempotencyModule,
     UsersModule,
     AlertsModule,
     LegalModule,
     AuthModule,
     WorkerPhotoModule,
     ShortlistModule,
+    HomeModule,
     SafetyModule,
     MetaModule,
     SystemModule,

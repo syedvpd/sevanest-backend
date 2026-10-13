@@ -109,3 +109,30 @@ Traceability, API/RBAC audit, journeys, performance and production-readiness evi
 | TRUST_PROXY_HOPS mandatory in production; Redis throttle default | IMPLEMENTED (config specs); hop count is an operator decision (Q-82) |
 | First Super Admin bootstrap (hidden prompt / secret file, strength check) | IMPLEMENTED, CLI run locally on a throwaway DB; must be run once on the production service |
 | Migration `20261018090000_payment_recovery_kyc_integrity` | VERIFIED on empty DB + after 11 migrations, no drift |
+
+## Small items and interim defaults (2026-10-12)
+| Area | Status |
+|---|---|
+| Attendance summary, list filters, report CSV, admin-created booking/worker | IMPLEMENTED, integration-tested |
+| Generic Idempotency-Key; If-Match (worker edit, customer status) | IMPLEMENTED, integration-tested; If-Match not on other admin resources |
+| Start-date guard; customer auto-verification; Super Admin password reset; audited sensitive reads | IMPLEMENTED as interim defaults (D-59), switchable |
+| ClamAV malware scanning | IMPLEMENTED (adapter + fail-safe), unit/integration with fakes; no scanner deployed |
+| Automatic refunds/fees, earnings, MFA, erasure/retention, maps, error tracking | NOT BUILT: decisions Q-83..Q-91 |
+| Full PRD audit | `docs/qa/prd-implementation-matrix.md` (157 rows) and `remaining-gap-backlog.md` (59 tickets) |
+
+## Audit closure (2026-10-12)
+| Area | Status |
+|---|---|
+| Worker double-booking / availability by hour | IMPLEMENTED, integration-tested incl. concurrent confirmation (D-63) |
+| Category engagement restrictions | IMPLEMENTED (mechanism + enforcement); no default lists (Q-93) |
+| Opportunity feed | IMPLEMENTED |
+| Heartbeat / readiness false negative | FIXED in code; confirm after deploy |
+| Remaining findings | `docs/qa/closure-register.md`, `docs/qa/remaining-gap-backlog.md` |
+
+## Second closure run (2026-10-13)
+| Area | Status |
+|---|---|
+| Worker references; slot proposals; replacement chain; customer versioning | IMPLEMENTED, integration-tested (remaining.int-spec) |
+| Availability edge cases (buffer, races, releases) | IMPLEMENTED and tested (scheduling.buffer.int-spec) |
+| Provider check command | IMPLEMENTED; run locally: storage OK, others not configured |
+| Decisions | `docs/qa/decision-register.md` |

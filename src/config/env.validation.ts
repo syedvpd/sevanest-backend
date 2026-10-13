@@ -8,6 +8,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Length,
   Matches,
   ValidateIf,
   Max,
@@ -171,6 +172,29 @@ export class EnvironmentVariables {
   @Max(60000)
   PROVIDER_HTTP_TIMEOUT_MS: number = 8000;
 
+  /**
+   * Optional malware scanning of uploaded KYC documents with a ClamAV daemon (clamd) that the operator runs. Unset = documents are
+   * validated (type, size, content) but not scanned, and the readiness report says so.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(1, 255)
+  CLAMAV_HOST?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  CLAMAV_PORT: number = 3310;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  @Max(120000)
+  CLAMAV_TIMEOUT_MS: number = 20000;
+
   // --- Twilio (SMS and/or WhatsApp). Credentials live only in the environment / deployment secret store. ---
   @ValidateIf(usesTwilio)
   @IsString()
@@ -302,7 +326,7 @@ export class EnvironmentVariables {
   RAZORPAY_KEY_SECRET?: string;
 
   /** The secret typed when creating the webhook in the Razorpay dashboard (NOT the API key secret). */
-  @ValidateIf(isRazorpay)
+  @ValidateIf((o: EnvironmentVariables) => isRazorpay(o) && o.RAZORPAY_WEBHOOK_SECRET !== undefined)
   @IsString()
   @MinLength(8)
   RAZORPAY_WEBHOOK_SECRET?: string;
@@ -434,6 +458,44 @@ export class EnvironmentVariables {
   @Min(1)
   @Max(100000)
   PENDING_PAYMENT_AUTO_CANCEL_HOURS?: number;
+
+  /**
+   * How many days before the agreed start date a customer or worker may press "start". Default 0 = not before the start date (staff may always
+   * start). The business has not set a tolerance (interim default); raise it here without a code change.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(30)
+  BOOKING_START_EARLY_DAYS?: number;
+
+  /** Minutes a worker needs between two jobs on the same day (travel). 0 = back-to-back bookings allowed. Business value, not decided (Q-84). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(240)
+  BOOKING_TRAVEL_BUFFER_MINUTES: number = 0;
+
+  /**
+   * Seconds a customer worker-search page may be served from an in-process cache shared by customers without blocks. 0 = off (the
+   * default: every search reads the database). A small value (10-30) trades a little freshness of the list for a large cut in database
+   * work; booking confirmation always re-checks eligibility and busy hours, so a stale card can never produce a wrong booking.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(300)
+  SEARCH_CACHE_TTL_SECONDS: number = 0;
+
+  /**
+   * Automatically mark a customer VERIFIED once they have a complete profile and an active address (and PENDING again without one). Staff
+   * decisions are never overridden. Interim rule until the business defines customer verification; false = staff only.
+   */
+  @Transform(toBoolean)
+  @IsBoolean()
+  CUSTOMER_AUTO_VERIFY: boolean = true;
 
   /** Resolution target in hours for a ticket without a priority. Unset = no target (Q-59). */
   @IsOptional()
@@ -599,6 +661,14 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
   ) {
     throw new Error(
       'Invalid environment configuration: PENDING_PAYMENT_AUTO_CANCEL_HOURS must be greater than PENDING_PAYMENT_ALERT_HOURS',
+    );
+  }
+  if (isRazorpay(config) && !config.RAZORPAY_WEBHOOK_SECRET) {
+    // Allowed (development): payments still complete through the client verification and the recovery sweeper, but gateway
+    // notifications are refused. Production should set it so a lost client report is caught in real time.
+    process.emitWarning(
+      'RAZORPAY_WEBHOOK_SECRET is not set: Razorpay webhooks are rejected; payments rely on client verification and the periodic recovery check',
+      'ConfigWarning',
     );
   }
   if (config.NODE_ENV === NodeEnv.Production) {

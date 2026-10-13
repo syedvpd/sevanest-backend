@@ -10,7 +10,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -23,6 +25,8 @@ import {
   AdminAttendanceView,
   AdminRecordAttendanceDto,
   AttendanceListQuery,
+  AttendanceSummaryQuery,
+  AttendanceSummaryView,
   AttendanceView,
   CorrectAttendanceDto,
   RaiseExceptionDto,
@@ -40,7 +44,9 @@ export class WorkerAttendanceController {
     private readonly workers: WorkersService,
   ) {}
 
+  @Idempotent()
   @Post()
+  @ApiModelResponse(AttendanceView, { status: 201 })
   @ApiOperation({
     summary: "Record today's attendance status for my active booking",
     description:
@@ -56,6 +62,7 @@ export class WorkerAttendanceController {
   }
 
   @Get()
+  @ApiPageResponse(AttendanceView)
   @ApiOperation({ summary: 'Attendance history of my booking, newest date first (paginated)' })
   async list(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -64,6 +71,18 @@ export class WorkerAttendanceController {
   ): Promise<Page<AttendanceView>> {
     const ref = await this.workers.requireRefByUserId(user.userId);
     return this.attendance.listForWorker(ref.workerId, bookingId, query);
+  }
+
+  @Get('summary')
+  @ApiModelResponse(AttendanceSummaryView)
+  @ApiOperation({ summary: 'Present / absent / exception counts for one month of my booking' })
+  async summary(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Query() query: AttendanceSummaryQuery,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AttendanceSummaryView> {
+    const ref = await this.workers.requireRefByUserId(user.userId);
+    return this.attendance.summaryForWorker(ref.workerId, bookingId, query.month);
   }
 }
 
@@ -76,6 +95,7 @@ export class CustomerAttendanceController {
   constructor(private readonly attendance: AttendanceService) {}
 
   @Get()
+  @ApiPageResponse(AttendanceView)
   @ApiOperation({ summary: 'Attendance history of my booking, newest date first (paginated)' })
   list(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -85,7 +105,20 @@ export class CustomerAttendanceController {
     return this.attendance.listForCustomer(user.userId, bookingId, query);
   }
 
+  @Get('summary')
+  @ApiModelResponse(AttendanceSummaryView)
+  @ApiOperation({ summary: 'Present / absent / exception counts for one month of my booking' })
+  summary(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Query() query: AttendanceSummaryQuery,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AttendanceSummaryView> {
+    return this.attendance.summaryForCustomer(user.userId, bookingId, query.month);
+  }
+
+  @Idempotent()
   @Post('exceptions')
+  @ApiModelResponse(AttendanceView, { status: 201 })
   @ApiOperation({
     summary: 'Raise an exception for a date the worker did not record',
     description: 'Only when no entry exists for that date (409 otherwise); a note is required.',
@@ -111,6 +144,7 @@ export class AdminAttendanceController {
   ) {}
 
   @Get('attendance/bookings/:bookingId')
+  @ApiPageResponse(AdminAttendanceView)
   @Permissions(PermissionCode.ATTENDANCE_VIEW)
   @ApiOperation({ summary: 'Attendance of a booking with the full change history (paginated)' })
   list(
@@ -120,7 +154,20 @@ export class AdminAttendanceController {
     return this.attendance.adminList(bookingId, query);
   }
 
+  @Get('attendance/bookings/:bookingId/summary')
+  @ApiModelResponse(AttendanceSummaryView)
+  @Permissions(PermissionCode.ATTENDANCE_VIEW)
+  @ApiOperation({ summary: 'Present / absent / exception counts for one month of a booking' })
+  summary(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Query() query: AttendanceSummaryQuery,
+  ): Promise<AttendanceSummaryView> {
+    return this.attendance.summaryForAdmin(bookingId, query.month);
+  }
+
+  @Idempotent()
   @Post('attendance/bookings/:bookingId')
+  @ApiModelResponse(AttendanceView, { status: 201 })
   @Permissions(PermissionCode.ATTENDANCE_MANAGE)
   @ApiOperation({ summary: 'Record attendance for a date on behalf of the worker (audited)' })
   async record(
@@ -132,6 +179,7 @@ export class AdminAttendanceController {
   }
 
   @Patch('attendance/:attendanceId')
+  @ApiModelResponse(AdminAttendanceView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.ATTENDANCE_MANAGE)
   @ApiOperation({

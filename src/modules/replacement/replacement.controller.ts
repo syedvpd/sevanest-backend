@@ -9,7 +9,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -37,7 +39,9 @@ import { ReplacementActor, ReplacementService } from './replacement.service';
 export class ReplacementsController {
   constructor(private readonly replacements: ReplacementService) {}
 
+  @Idempotent()
   @Post()
+  @ApiModelResponse(ReplacementView, { status: 201 })
   @ApiOperation({
     summary: 'Ask for a replacement of my active booking',
     description:
@@ -51,6 +55,7 @@ export class ReplacementsController {
   }
 
   @Get()
+  @ApiPageResponse(ReplacementView)
   @ApiOperation({ summary: 'My replacement requests, newest first (paginated)' })
   list(
     @Query() query: ReplacementListQuery,
@@ -60,6 +65,7 @@ export class ReplacementsController {
   }
 
   @Get(':requestId')
+  @ApiModelResponse(ReplacementView)
   @ApiOperation({ summary: 'One of my requests (404 for anyone else)' })
   get(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -68,7 +74,9 @@ export class ReplacementsController {
     return this.replacements.getMine(user.userId, requestId);
   }
 
+  @Idempotent()
   @Post(':requestId/cancel')
+  @ApiModelResponse(ReplacementView)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Withdraw an open request; the booking becomes ACTIVE again' })
   cancel(
@@ -78,7 +86,9 @@ export class ReplacementsController {
     return this.replacements.cancel(user.userId, requestId);
   }
 
+  @Idempotent()
   @Post(':requestId/select')
+  @ApiModelResponse(ReplacementView)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Choose the replacement worker once the request is approved',
@@ -109,6 +119,7 @@ export class AdminReplacementsController {
   ) {}
 
   @Get()
+  @ApiPageResponse(AdminReplacementView)
   @Permissions(PermissionCode.REPLACEMENT_VIEW)
   @ApiOperation({ summary: 'All replacement requests (paginated, filter by status/booking)' })
   list(@Query() query: AdminReplacementListQuery): Promise<Page<AdminReplacementView>> {
@@ -116,6 +127,7 @@ export class AdminReplacementsController {
   }
 
   @Get(':requestId')
+  @ApiModelResponse(AdminReplacementView)
   @Permissions(PermissionCode.REPLACEMENT_VIEW)
   @ApiOperation({
     summary: 'One request with who asked, who decided and the worker being replaced',
@@ -125,6 +137,7 @@ export class AdminReplacementsController {
   }
 
   @Post(':requestId/approve')
+  @ApiModelResponse(AdminReplacementView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.REPLACEMENT_MANAGE)
   @ApiOperation({ summary: 'Approve eligibility (REQUESTED to APPROVED)' })
@@ -137,6 +150,7 @@ export class AdminReplacementsController {
   }
 
   @Post(':requestId/reject')
+  @ApiModelResponse(AdminReplacementView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.REPLACEMENT_MANAGE)
   @ApiOperation({
@@ -151,6 +165,7 @@ export class AdminReplacementsController {
   }
 
   @Get(':requestId/candidates')
+  @ApiModelResponse(MatchCandidatesResponse)
   @Permissions(PermissionCode.REPLACEMENT_VIEW, PermissionCode.MATCHING_RUN)
   @ApiOperation({
     summary:
@@ -170,6 +185,7 @@ export class AdminReplacementsController {
   }
 
   @Post(':requestId/select')
+  @ApiModelResponse(ReplacementView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.REPLACEMENT_MANAGE)
   @ApiOperation({ summary: 'Select the replacement worker on the customer behalf (audited)' })

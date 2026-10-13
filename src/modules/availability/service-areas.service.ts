@@ -1,3 +1,4 @@
+import { assertIfMatch } from '../../common/concurrency/if-match';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
@@ -11,6 +12,7 @@ import {
   AdminServiceAreaListQuery,
   AdminServiceAreaResponse,
   CreateServiceAreaDto,
+  ResolveAreaQuery,
   ServiceAreaListQuery,
   ServiceAreaResponse,
   UpdateServiceAreaDto,
@@ -30,6 +32,9 @@ function toAdminArea(area: AreaRecord): AdminServiceAreaResponse {
   return {
     ...toPublicArea(area),
     isEnabled: area.isEnabled,
+    centerLatitude: area.centerLatitude,
+    centerLongitude: area.centerLongitude,
+    radiusMeters: area.radiusMeters,
     createdAt: area.createdAt,
     updatedAt: area.updatedAt,
   };
@@ -56,6 +61,40 @@ export class ServiceAreasService {
       data: items.map(toPublicArea),
       meta: { page: query.page, limit: query.limit, total },
     };
+  }
+
+  /**
+   * Map a device position (and/or a geocoder's area name) to an enabled service area. A position wins when some area's circle covers it
+   * (nearest centre); otherwise an exact, case-insensitive name match is used. 404 AREA_NOT_FOUND when nothing matches: the customer
+   * then chooses an area from the list.
+   */
+  async resolve(query: ResolveAreaQuery): Promise<ServiceAreaResponse> {
+    const hasPoint = query.latitude !== undefined && query.longitude !== undefined;
+    if (
+      (query.latitude === undefined) !== (query.longitude === undefined) ||
+      (!hasPoint && !query.name)
+    ) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'latitude', messages: ['send latitude with longitude, and/or name'] }],
+      );
+    }
+    const byPoint = hasPoint
+      ? await this.repository.findAreaCovering(
+          query.latitude as number,
+          query.longitude as number,
+          query.city,
+        )
+      : null;
+    const area =
+      byPoint ??
+      (query.name ? await this.repository.findEnabledAreaByName(query.name, query.city) : null);
+    if (!area) {
+      throw this.notFound();
+    }
+    return toPublicArea(area);
   }
 
   async getEnabled(id: string): Promise<ServiceAreaResponse> {
@@ -138,9 +177,23 @@ export class ServiceAreasService {
     dto: CreateServiceAreaDto,
     actor: Actor & { userId: string },
   ): Promise<AdminServiceAreaResponse> {
+    this.assertGeoComplete(
+      dto.centerLatitude ?? null,
+      dto.centerLongitude ?? null,
+      dto.radiusMeters ?? null,
+    );
     try {
       const created = await this.repository.transaction(async (tx) => {
-        const area = await this.repository.createArea({ name: dto.name, city: dto.city }, tx);
+        const area = await this.repository.createArea(
+          {
+            name: dto.name,
+            city: dto.city,
+            centerLatitude: dto.centerLatitude ?? null,
+            centerLongitude: dto.centerLongitude ?? null,
+            radiusMeters: dto.radiusMeters ?? null,
+          },
+          tx,
+        );
         await this.audit.record(
           {
             action: 'service_area.create',
@@ -167,6 +220,7 @@ export class ServiceAreasService {
     id: string,
     dto: UpdateServiceAreaDto,
     actor: Actor & { userId: string },
+    ifMatch?: string,
   ): Promise<AdminServiceAreaResponse> {
     const fields = changedFieldNames(dto);
     if (fields.length === 0) {
@@ -183,9 +237,17 @@ export class ServiceAreasService {
         if (!before) {
           throw this.notFound();
         }
+        assertIfMatch(ifMatch, before.updatedAt);
+        this.assertGeoComplete(
+          dto.centerLatitude === undefined ? before.centerLatitude : dto.centerLatitude,
+          dto.centerLongitude === undefined ? before.centerLongitude : dto.centerLongitude,
+          dto.radiusMeters === undefined ? before.radiusMeters : dto.radiusMeters,
+        );
         const after = await this.repository.updateArea(id, dto, tx);
         const changes: Record<string, { from: unknown; to: unknown }> = {};
-        for (const field of fields as Array<'name' | 'city' | 'isEnabled'>) {
+        for (const field of fields as Array<
+          'name' | 'city' | 'isEnabled' | 'centerLatitude' | 'centerLongitude' | 'radiusMeters'
+        >) {
           if (before[field] !== after[field]) {
             changes[field] = { from: before[field], to: after[field] };
           }
@@ -211,6 +273,24 @@ export class ServiceAreasService {
         throw this.duplicate();
       }
       throw error;
+    }
+  }
+
+  /** A centre needs latitude, longitude and radius together; all three may be null. */
+  private assertGeoComplete(lat: number | null, lng: number | null, radius: number | null): void {
+    const set = [lat, lng, radius].filter((v) => v !== null).length;
+    if (set !== 0 && set !== 3) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [
+          {
+            field: 'centerLatitude',
+            messages: ['centerLatitude, centerLongitude and radiusMeters go together'],
+          },
+        ],
+      );
     }
   }
 

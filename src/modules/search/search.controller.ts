@@ -11,7 +11,15 @@ import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import type { Page } from '../../common/pagination/pagination';
-import { SearchWorkersQuery, WorkerCard } from './dto/search.dto';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
+import { PageQueryDto } from '../../common/pagination/pagination';
+import {
+  SearchWorkersQuery,
+  SlotsQuery,
+  WorkerCard,
+  WorkerReviewView,
+  WorkerSlotsView,
+} from './dto/search.dto';
 import { SearchService } from './search.service';
 
 /** Worker discovery for customers (FRD FM-03). Read-only. */
@@ -49,6 +57,35 @@ export class SearchController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Page<WorkerCard>> {
     return this.search.searchForCustomer(query, user.userId);
+  }
+
+  @Get(':workerId/ratings')
+  @ApiPageResponse(WorkerReviewView)
+  @ApiOperation({
+    summary: "A worker's reviews (paginated, newest first)",
+    description:
+      'Score, comment, createdAt and the reviewer first name only. Reviews hidden by moderation are not listed. 404 WORKER_NOT_FOUND exactly as for the profile (unknown or not visible to customers). `meta.total` is the number of visible reviews.',
+  })
+  reviews(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @Query() query: PageQueryDto,
+  ): Promise<Page<WorkerReviewView>> {
+    return this.search.listReviews(workerId, query);
+  }
+
+  @Get(':workerId/slots')
+  @ApiModelResponse(WorkerSlotsView)
+  @ApiOperation({
+    summary: 'Free interview or trial start times of a worker on one date',
+    description:
+      'One-hour slots inside the worker availability windows, minus held bookings and confirmed interviews, within the next 14 days (today included; today only from one hour ahead). 404 WORKER_NOT_FOUND exactly as for the profile; 400 for a date outside the horizon.',
+  })
+  slots(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @Query() query: SlotsQuery,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WorkerSlotsView> {
+    return this.search.listSlots(workerId, query, user.userId);
   }
 
   @Get(':workerId')

@@ -712,7 +712,8 @@ describe('Customers API (integration)', () => {
         userId: customer.userId,
         mobile: customer.mobile,
         accountStatus: 'ACTIVE',
-        verificationStatus: 'PENDING',
+        // a complete profile with an active address is verified automatically (D-59, CUSTOMER_AUTO_VERIFY)
+        verificationStatus: 'VERIFIED',
       });
       const byId = Object.fromEntries(
         (res.body.addresses as Array<{ id: string; isActive: boolean; isDefault: boolean }>).map(

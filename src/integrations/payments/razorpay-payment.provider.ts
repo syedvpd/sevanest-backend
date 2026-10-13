@@ -114,6 +114,8 @@ export class RazorpayPaymentProvider implements PaymentProvider {
 
   verifyWebhookSignature(rawBody: Buffer, headers: Record<string, string | undefined>): boolean {
     const given = headers['x-razorpay-signature'];
+    // No webhook secret configured: nothing can be authenticated, so every notification is refused (never HMAC with an empty key).
+    if (!this.settings.webhookSecret) return false;
     return (
       typeof given === 'string' && this.same(this.hmac(this.settings.webhookSecret, rawBody), given)
     );

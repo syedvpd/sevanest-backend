@@ -7,6 +7,11 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
+  IsLatitude,
+  IsLongitude,
+  Max,
+  Min,
   IsOptional,
   IsString,
   IsUUID,
@@ -96,6 +101,34 @@ export class CreateServiceAreaDto {
   @IsString()
   @Length(2, 100)
   city!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Map centre of the area (set with the longitude and radius, or clear all three with null).',
+    type: Number,
+  })
+  @IsOptional()
+  @IsLatitude()
+  centerLatitude?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  @IsOptional()
+  @IsLongitude()
+  centerLongitude?: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    minimum: 100,
+    maximum: 100000,
+    description: 'Radius in metres around the centre.',
+    type: Number,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  @Max(100000)
+  radiusMeters?: number | null;
 }
 
 export class UpdateServiceAreaDto {
@@ -117,10 +150,69 @@ export class UpdateServiceAreaDto {
   @IsOptional()
   @IsBoolean()
   isEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Map centre of the area (set with the longitude and radius, or clear all three with null).',
+    type: Number,
+  })
+  @IsOptional()
+  @IsLatitude()
+  centerLatitude?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  @IsOptional()
+  @IsLongitude()
+  centerLongitude?: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    minimum: 100,
+    maximum: 100000,
+    description: 'Radius in metres around the centre.',
+    type: Number,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  @Max(100000)
+  radiusMeters?: number | null;
 }
 
 export class ServiceAreaListQuery extends PageQueryDto {
   @ApiPropertyOptional({ description: 'Only areas of this city (case-insensitive).' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 100)
+  city?: string;
+}
+
+export class ResolveAreaQuery {
+  @ApiPropertyOptional({ description: 'Position from the device. Needs longitude too.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  longitude?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Area name as returned by a geocoder (case-insensitive exact match). Used when no position is given or no area covers it.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 100)
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Narrow a name match to one city.' })
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -146,6 +238,9 @@ export class ServiceAreaResponse {
 
 export class AdminServiceAreaResponse extends ServiceAreaResponse {
   @ApiProperty() isEnabled!: boolean;
+  @ApiProperty({ nullable: true, type: Number }) centerLatitude!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) centerLongitude!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) radiusMeters!: number | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

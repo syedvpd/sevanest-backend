@@ -10,7 +10,16 @@ import {
   AdminBookingsController,
   BookingsController,
   WorkerBookingsController,
+  WorkerOpportunitiesController,
 } from './booking.controller';
+import {
+  AdminInterviewsController,
+  BookingInterviewsController,
+  CustomerInterviewsController,
+  WorkerInterviewsController,
+} from './interview.controller';
+import { InterviewRepository } from './interview.repository';
+import { InterviewService } from './interview.service';
 import { BookingRepository } from './booking.repository';
 import { BookingService } from './booking.service';
 import { BookingSweepService } from './booking-sweep.service';
@@ -29,8 +38,24 @@ import { BookingSweepService } from './booking-sweep.service';
     AvailabilityModule,
     SearchModule,
   ],
-  controllers: [BookingsController, WorkerBookingsController, AdminBookingsController],
-  providers: [BookingRepository, BookingService, BookingLifecycleHooks, BookingSweepService],
-  exports: [BookingService, BookingLifecycleHooks, BookingSweepService],
+  controllers: [
+    BookingsController,
+    WorkerBookingsController,
+    WorkerOpportunitiesController,
+    AdminBookingsController,
+    BookingInterviewsController,
+    CustomerInterviewsController,
+    WorkerInterviewsController,
+    AdminInterviewsController,
+  ],
+  providers: [
+    BookingRepository,
+    InterviewRepository,
+    BookingService,
+    InterviewService,
+    BookingLifecycleHooks,
+    BookingSweepService,
+  ],
+  exports: [BookingService, InterviewService, BookingLifecycleHooks, BookingSweepService],
 })
 export class BookingModule {}

@@ -82,6 +82,49 @@ export class PreviousEmployerDto {
   mobile!: string;
 }
 
+export class WorkerReferenceDto {
+  @ApiProperty({ example: 'Mrs. Rao' })
+  @Transform(trim)
+  @IsString()
+  @Length(1, 200)
+  name!: string;
+
+  @ApiProperty({ example: '9876543210' })
+  @IsIndianMobile()
+  mobile!: string;
+
+  @ApiPropertyOptional({ example: 'Previous employer', maxLength: 100 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 100)
+  relationship?: string;
+}
+
+/** Maximum references a worker can list: a technical bound, not a policy (the number the business wants is undecided). */
+export const MAX_WORKER_REFERENCES = 5;
+
+export class SetWorkerReferencesDto {
+  @ApiProperty({
+    type: [WorkerReferenceDto],
+    maxItems: MAX_WORKER_REFERENCES,
+    description:
+      'Replaces the whole list. A mobile number may appear once. An empty list clears it.',
+  })
+  @IsArray()
+  @ArrayMaxSize(MAX_WORKER_REFERENCES)
+  @ValidateNested({ each: true })
+  @Type(() => WorkerReferenceDto)
+  references!: WorkerReferenceDto[];
+}
+
+export class WorkerReferenceView {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() mobile!: string;
+  @ApiProperty({ nullable: true, type: String }) relationship!: string | null;
+}
+
 export class CreateWorkerProfileDto {
   @ApiProperty({ example: 'Ramesh Kumar' })
   @Transform(trim)
@@ -89,6 +132,17 @@ export class CreateWorkerProfileDto {
   @Length(1, 200)
   @Matches(NAME, { message: "name may contain letters, spaces and . ' - only" })
   name!: string;
+}
+
+/** Staff creating the account and profile of a worker who is helped to register (assisted onboarding, FR-WON-007). */
+export class AdminCreateWorkerDto extends CreateWorkerProfileDto {
+  @ApiProperty({
+    example: '9876543210',
+    description:
+      'The mobile of the worker. They sign in with an OTP sent to it; staff never hold their login.',
+  })
+  @IsIndianMobile()
+  mobile!: string;
 }
 
 /**
@@ -116,6 +170,7 @@ export class UpdateWorkerProfileDto {
     nullable: true,
     description:
       'Amount in rupees, positive. null clears it. The period is not defined by the specifications.',
+    type: Number,
   })
   @IsOptional()
   @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
@@ -127,6 +182,7 @@ export class UpdateWorkerProfileDto {
     nullable: true,
     example: 'hi',
     description: 'Language for my notifications and app. null clears it (platform default).',
+    type: String,
   })
   @IsOptional()
   @Matches(LANGUAGE_CODE, { message: 'preferredLanguage must be a language code such as "hi"' })
@@ -200,6 +256,46 @@ export class AdminWorkerListQuery extends PageQueryDto {
   @IsString()
   @Length(10, 15)
   mobile?: string;
+
+  @ApiPropertyOptional({ description: 'Part of the name (case-insensitive).' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 100)
+  name?: string;
+
+  @ApiPropertyOptional({ enum: ['ACTIVE', 'SUSPENDED'] })
+  @IsOptional()
+  @IsIn(['ACTIVE', 'SUSPENDED'])
+  accountStatus?: 'ACTIVE' | 'SUSPENDED';
+
+  @ApiPropertyOptional({ description: 'Only workers who offer this service area.' })
+  @IsOptional()
+  @IsUUID()
+  areaId?: string;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 10, description: 'Average rating at least this.' })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(1)
+  @Max(10)
+  minRating?: number;
+
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description: 'Registered on or after (India date).',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'createdFrom must be YYYY-MM-DD' })
+  createdFrom?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-30',
+    description: 'Registered on or before (India date).',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'createdTo must be YYYY-MM-DD' })
+  createdTo?: string;
 }
 
 // --- responses -------------------------------------------------------------------------------------------------
@@ -227,10 +323,10 @@ export class WorkerProfileResponse {
   @ApiProperty() name!: string;
   @ApiProperty({ description: 'From the verified account; read-only.' }) mobile!: string;
   @ApiProperty({ enum: ['DRAFT', 'SUBMITTED'] }) onboardingStatus!: string;
-  @ApiProperty({ nullable: true }) submittedAt!: Date | null;
-  @ApiProperty({ nullable: true }) experienceMonths!: number | null;
-  @ApiProperty({ nullable: true }) expectedSalary!: number | null;
-  @ApiProperty({ nullable: true }) preferredLanguage!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) submittedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Number }) experienceMonths!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) expectedSalary!: number | null;
+  @ApiProperty({ nullable: true, type: String }) preferredLanguage!: string | null;
   @ApiProperty({ type: [String] }) languages!: string[];
   @ApiProperty({ type: WorkerAddressResponse, nullable: true })
   address!: WorkerAddressResponse | null;
@@ -254,7 +350,8 @@ export class AdminWorkerSummary {
   @ApiProperty({ description: 'Use with /admin/users/{userId}/status to suspend.' })
   userId!: string;
   @ApiProperty() name!: string;
-  @ApiProperty({ nullable: true, description: 'Masked in lists.' }) mobile!: string | null;
+  @ApiProperty({ nullable: true, description: 'Masked in lists.', type: String }) mobile!:
+    string | null;
   @ApiProperty({ enum: ['DRAFT', 'SUBMITTED'] }) onboardingStatus!: string;
   @ApiProperty({ enum: ['ACTIVE', 'SUSPENDED'] }) accountStatus!: string;
   @ApiProperty({ type: [WorkerCategoryRef] }) categories!: WorkerCategoryRef[];

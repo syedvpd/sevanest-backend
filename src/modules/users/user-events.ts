@@ -22,6 +22,20 @@ export class UserEvents {
     });
   }
 
+  onPasswordReset(handler: (event: { userId: string }) => Promise<void>): void {
+    this.emitter.on('password-reset', (event: { userId: string }) => {
+      handler(event).catch((error: unknown) =>
+        this.logger.error(
+          `Password reset handler failed for ${event.userId}: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    });
+  }
+
+  emitPasswordReset(event: { userId: string }): void {
+    this.emitter.emit('password-reset', event);
+  }
+
   emitStatusChanged(event: UserStatusChangedEvent): void {
     this.emitter.emit('status-changed', event);
   }

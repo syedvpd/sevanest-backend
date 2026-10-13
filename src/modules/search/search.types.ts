@@ -1,14 +1,6 @@
 /** Engagement values the Availability module stores (Q-38: customer-side daily/hourly are not modelled). */
-export const ENGAGEMENTS = [
-  'FULL_TIME',
-  'PART_TIME',
-  'LIVE_IN',
-  'DAILY',
-  'HOURLY',
-  'SHIFT',
-  'ONE_TIME',
-] as const;
-export type Engagement = (typeof ENGAGEMENTS)[number];
+export { ENGAGEMENTS, type Engagement } from '../../common/validation/engagements';
+import type { Engagement } from '../../common/validation/engagements';
 
 /**
  * What an eligible worker must satisfy. Category and area are resolved to ids by the caller (and so are already known to be
@@ -28,6 +20,12 @@ export interface EligibleWorkerCriteria {
   minExperienceMonths?: number;
   /** Minimum average rating (only workers with at least one rating qualify). */
   minRating?: number;
+  /** With a window: the date the work starts (YYYY-MM-DD, India). Workers already booked for an overlapping time on the overlapping dates are not eligible. Defaults to today. */
+  startDate?: string;
+  /** Booking's own check for "is this worker busy" is separate (409), so it asks eligibility without the busy rule. */
+  skipBusy?: boolean;
+  /** A booking that must not count as a conflict (the one being matched or confirmed). */
+  excludeBookingId?: string;
   /** The customer asking: workers blocked by (or blocking) this user are never eligible for them. */
   forCustomerUserId?: string;
 }

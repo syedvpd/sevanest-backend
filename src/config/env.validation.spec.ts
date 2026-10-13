@@ -245,7 +245,6 @@ describe('validateEnvironment', () => {
         ['msg91', 'MSG91_OTP_TEMPLATE_ID', msg91],
         ['razorpay', 'RAZORPAY_KEY_ID', razorpay],
         ['razorpay', 'RAZORPAY_KEY_SECRET', razorpay],
-        ['razorpay', 'RAZORPAY_WEBHOOK_SECRET', razorpay],
       ])('%s: refuses to start without %s (no silent fallback)', (_name, key, config) => {
         const { [key]: _omitted, ...rest } = config as Record<string, string>;
         expect(() => validateEnvironment(rest)).toThrow(key);

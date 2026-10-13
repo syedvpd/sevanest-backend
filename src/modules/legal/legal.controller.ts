@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -22,6 +23,7 @@ export class LegalController {
   constructor(private readonly legal: LegalService) {}
 
   @Get('current')
+  @ApiModelResponse(LegalStatusView)
   @Public()
   @ApiOperation({ summary: 'The current terms and privacy versions (no sign-in needed)' })
   current(): LegalCurrentView {
@@ -29,6 +31,7 @@ export class LegalController {
   }
 
   @Get('status')
+  @ApiModelResponse(LegalStatusView)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Have I accepted the current versions?' })
   status(@CurrentUser() user: AuthenticatedUser): Promise<LegalStatusView> {
@@ -36,6 +39,7 @@ export class LegalController {
   }
 
   @Post('accept')
+  @ApiModelResponse(LegalStatusView)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -58,6 +62,7 @@ export class AccountDeletionController {
   constructor(private readonly legal: LegalService) {}
 
   @Post()
+  @ApiModelResponse(DeletionRequestView, { status: 201 })
   @ApiOperation({
     summary: 'Ask for my account and personal data to be deleted',
     description:
@@ -92,6 +97,7 @@ export class AdminDeletionController {
   constructor(private readonly legal: LegalService) {}
 
   @Get()
+  @ApiPageResponse(DeletionRequestView)
   @Permissions(PermissionCode.USER_STATUS_MANAGE)
   @ApiOperation({ summary: 'Account deletion requests (newest first)' })
   list(@Query() query: DeletionListQuery): Promise<Page<DeletionRequestView>> {

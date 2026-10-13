@@ -1,3 +1,4 @@
+import { indiaToday } from '../../src/common/time/india';
 import { ApiApp } from './api-app';
 import { as, approveCheck, onboardWorker, OnboardedWorker } from './workforce';
 import type { Caller } from './workforce';
@@ -57,7 +58,12 @@ export async function makeBooking(
     .expect(200);
   await c.post(`/api/v1/bookings/${id}/interview-complete`, { outcomeNote: 'ok' }).expect(200);
   if (stage === 'INTERVIEW_TRIAL_COMPLETED') return result;
-  await c.post(`/api/v1/bookings/${id}/confirm-worker`, { startDate: inDays(1) }).expect(200);
+  // A service can only be started on or after its agreed start date, so a booking that is taken all the way to ACTIVE starts today.
+  await c
+    .post(`/api/v1/bookings/${id}/confirm-worker`, {
+      startDate: stage === 'ACTIVE' ? indiaToday() : inDays(1),
+    })
+    .expect(200);
   if (stage === 'PENDING_PAYMENT') return result;
   await payForBooking(api, admin, customer, id);
   if (stage === 'CONFIRMED') return result;

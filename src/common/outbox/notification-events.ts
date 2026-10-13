@@ -30,6 +30,16 @@ export const NotificationEvent = {
   BOOKING_STARTED: 'BOOKING_STARTED',
   BOOKING_COMPLETED: 'BOOKING_COMPLETED',
   BOOKING_CANCELLED: 'BOOKING_CANCELLED',
+  /** Customer: the worker proposed a different interview/trial time. */
+  BOOKING_SLOT_PROPOSED: 'BOOKING_SLOT_PROPOSED',
+  /** Worker: the customer requested (or re-requested) an interview or trial time. */
+  INTERVIEW_REQUESTED: 'INTERVIEW_REQUESTED',
+  /** Customer: the worker answered an interview/trial request (declined, proposed another time) or the customer kept the time. */
+  INTERVIEW_RESPONDED: 'INTERVIEW_RESPONDED',
+  /** The other party cancelled an interview or trial. */
+  INTERVIEW_CANCELLED: 'INTERVIEW_CANCELLED',
+  /** Worker: the customer answered the proposed time. */
+  BOOKING_SLOT_ANSWERED: 'BOOKING_SLOT_ANSWERED',
   RATING_RECEIVED: 'RATING_RECEIVED',
   ATTENDANCE_EXCEPTION: 'ATTENDANCE_EXCEPTION',
   TICKET_MESSAGE: 'TICKET_MESSAGE',
@@ -60,6 +70,11 @@ export const EVENT_PARAMS: Record<NotificationEventCode, readonly string[]> = {
   BOOKING_STARTED: ['bookingId'],
   BOOKING_COMPLETED: ['bookingId'],
   BOOKING_CANCELLED: ['bookingId'],
+  BOOKING_SLOT_PROPOSED: ['bookingId', 'proposedAt'],
+  INTERVIEW_REQUESTED: ['bookingId', 'interviewId'],
+  INTERVIEW_RESPONDED: ['bookingId', 'interviewId', 'answer'],
+  INTERVIEW_CANCELLED: ['bookingId', 'interviewId'],
+  BOOKING_SLOT_ANSWERED: ['bookingId', 'answer'],
   RATING_RECEIVED: ['bookingId'],
   ATTENDANCE_EXCEPTION: ['bookingId'],
   TICKET_MESSAGE: ['ticketId'],

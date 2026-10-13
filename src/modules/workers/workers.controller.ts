@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -10,7 +11,11 @@ import {
   Post,
   Put,
   Query,
+  Res,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
+import type { Response } from 'express';
+import { etagOf } from '../../common/concurrency/if-match';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -19,13 +24,16 @@ import type { Page } from '../../common/pagination/pagination';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import {
+  AdminCreateWorkerDto,
   AdminWorkerDetail,
   AdminWorkerListQuery,
   AdminWorkerSummary,
   CreateWorkerProfileDto,
   SetWorkerCategoriesDto,
+  SetWorkerReferencesDto,
   UpdateWorkerProfileDto,
   WorkerProfileResponse,
+  WorkerReferenceView,
 } from './dto/workers.dto';
 import { WorkersService } from './workers.service';
 
@@ -38,6 +46,7 @@ export class WorkersController {
   constructor(private readonly workers: WorkersService) {}
 
   @Post()
+  @ApiModelResponse(WorkerProfileResponse, { status: 201 })
   @ApiOperation({ summary: 'Start my work profile after OTP registration (409 if it exists)' })
   create(
     @Body() dto: CreateWorkerProfileDto,
@@ -47,6 +56,7 @@ export class WorkersController {
   }
 
   @Get()
+  @ApiModelResponse(WorkerProfileResponse)
   @ApiOperation({
     summary: 'Get my profile (404 WORKER_PROFILE_NOT_FOUND until created)',
     description:
@@ -57,6 +67,7 @@ export class WorkersController {
   }
 
   @Patch()
+  @ApiModelResponse(WorkerProfileResponse)
   @ApiOperation({
     summary: 'Save a step of my profile (any subset of fields)',
     description:
@@ -70,6 +81,7 @@ export class WorkersController {
   }
 
   @Put('categories')
+  @ApiModelResponse(WorkerProfileResponse)
   @ApiOperation({
     summary: 'Set my roles (service categories) - replaces the whole set',
     description:
@@ -82,7 +94,28 @@ export class WorkersController {
     return this.workers.setMyCategories(user.userId, dto);
   }
 
+  @Get('references')
+  @ApiModelResponse(WorkerReferenceView, { isArray: true })
+  @ApiOperation({ summary: 'My references (employers or people who can vouch for me)' })
+  getReferences(@CurrentUser() user: AuthenticatedUser): Promise<WorkerReferenceView[]> {
+    return this.workers.getMyReferences(user.userId);
+  }
+
+  @Put('references')
+  @ApiModelResponse(WorkerReferenceView, { isArray: true })
+  @ApiOperation({
+    summary: 'Set my references - replaces the whole list (up to 5; an empty list clears it)',
+    description: 'Each mobile once; your own number is refused (400).',
+  })
+  setReferences(
+    @Body() dto: SetWorkerReferencesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WorkerReferenceView[]> {
+    return this.workers.setMyReferences(user.userId, dto);
+  }
+
   @Post('submit')
+  @ApiModelResponse(WorkerProfileResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Submit my profile for verification',
@@ -105,7 +138,25 @@ export class AdminWorkersController {
     private readonly users: UsersService,
   ) {}
 
+  @Post()
+  @ApiModelResponse(AdminWorkerDetail, { status: 201 })
+  @Permissions(PermissionCode.WORKER_MANAGE)
+  @ApiOperation({
+    summary:
+      'Create a worker account and empty profile for a mobile (assisted onboarding, audited)',
+    description:
+      '409 MOBILE_IN_USE (a customer or staff number), 409 WORKER_PROFILE_EXISTS. The worker signs in with an OTP to that number.',
+  })
+  async create(
+    @Body() dto: AdminCreateWorkerDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerDetail> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.workers.adminCreate(dto, { userId: admin.userId, roles: access.roles });
+  }
+
   @Get()
+  @ApiPageResponse(AdminWorkerSummary)
   @Permissions(PermissionCode.WORKER_VIEW)
   @ApiOperation({ summary: 'List workers (paginated, mobile masked)' })
   list(@Query() query: AdminWorkerListQuery): Promise<Page<AdminWorkerSummary>> {
@@ -113,25 +164,60 @@ export class AdminWorkersController {
   }
 
   @Get(':workerId')
+  @ApiModelResponse(AdminWorkerDetail)
   @Permissions(PermissionCode.WORKER_VIEW)
   @ApiOperation({ summary: 'Worker profile including address and emergency contact' })
-  get(@Param('workerId', ParseUUIDPipe) workerId: string): Promise<AdminWorkerDetail> {
-    return this.workers.adminGet(workerId);
+  async get(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @Res({ passthrough: true }) res: Response,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerDetail> {
+    const access = await this.users.getAccess(admin.userId);
+    const detail = await this.workers.adminRead(workerId, {
+      userId: admin.userId,
+      roles: access.roles,
+    });
+    res.setHeader('ETag', etagOf(detail.updatedAt));
+    return detail;
   }
 
   @Patch(':workerId')
+  @ApiModelResponse(AdminWorkerDetail)
   @Permissions(PermissionCode.WORKER_MANAGE)
-  @ApiOperation({ summary: "Edit a worker profile on the worker's behalf (assisted onboarding)" })
+  @ApiOperation({
+    summary: "Edit a worker profile on the worker's behalf (assisted onboarding)",
+    description:
+      'Send If-Match with the ETag of the GET to refuse the edit (412 STALE_VERSION) when someone else changed the profile meanwhile.',
+  })
   async update(
     @Param('workerId', ParseUUIDPipe) workerId: string,
     @Body() dto: UpdateWorkerProfileDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminWorkerDetail> {
     const access = await this.users.getAccess(admin.userId);
-    return this.workers.adminUpdate(workerId, dto, { userId: admin.userId, roles: access.roles });
+    return this.workers.adminUpdate(
+      workerId,
+      dto,
+      { userId: admin.userId, roles: access.roles },
+      ifMatch,
+    );
+  }
+
+  @Get(':workerId/references')
+  @ApiModelResponse(WorkerReferenceView, { isArray: true })
+  @Permissions(PermissionCode.WORKER_VIEW)
+  @ApiOperation({ summary: "A worker's references (audited read: third-party personal data)" })
+  async references(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<WorkerReferenceView[]> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.workers.adminReferences(workerId, { userId: admin.userId, roles: access.roles });
   }
 
   @Put(':workerId/categories')
+  @ApiModelResponse(AdminWorkerDetail)
   @Permissions(PermissionCode.WORKER_MANAGE)
   @ApiOperation({ summary: "Set a worker's roles (service categories) on their behalf" })
   async setCategories(

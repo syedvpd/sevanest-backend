@@ -116,12 +116,18 @@ export class PaymentView {
   @ApiProperty({
     nullable: true,
     description: 'Receipt number once the payment succeeded (FR-PAY-002).',
+    type: String,
   })
   receiptNumber!: string | null;
-  @ApiProperty({ nullable: true }) paidAt!: Date | null;
-  @ApiProperty({ nullable: true, description: 'Refund status where applicable (FR-PAY-004).' })
+  @ApiProperty({ nullable: true, type: Date }) paidAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    enum: ['REFUND_PENDING', 'REFUNDED', 'REFUND_FAILED'],
+    description: 'Refund status where applicable (FR-PAY-004).',
+  })
   refundStatus!: 'REFUND_PENDING' | 'REFUNDED' | 'REFUND_FAILED' | null;
-  @ApiProperty({ nullable: true }) refundedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) refundedAt!: Date | null;
   @ApiProperty() createdAt!: Date;
 }
 
@@ -139,12 +145,13 @@ export class AdminPaymentView extends PaymentView {
   @ApiProperty({
     nullable: true,
     description: 'Gateway reference kept for reconciliation (FR-PAY-008).',
+    type: String,
   })
   providerOrderId!: string | null;
-  @ApiProperty({ nullable: true }) providerPaymentId!: string | null;
-  @ApiProperty({ nullable: true }) failureReason!: string | null;
-  @ApiProperty({ nullable: true }) refundReason!: string | null;
-  @ApiProperty({ nullable: true }) refundedByUserId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) providerPaymentId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) failureReason!: string | null;
+  @ApiProperty({ nullable: true, type: String }) refundReason!: string | null;
+  @ApiProperty({ nullable: true, type: String }) refundedByUserId!: string | null;
 }
 
 export class WebhookAck {

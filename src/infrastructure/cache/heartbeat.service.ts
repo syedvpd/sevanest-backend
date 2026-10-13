@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from './redis.service';
 
 const PREFIX = 'worker:heartbeat:';
-/** A loop that has not ticked for this long is considered stopped. Loops tick at least once a minute. */
+/** Default: a loop that has not ticked for this long is considered stopped (loops that tick every minute). */
 const TTL_SECONDS = 180;
 
 /**
@@ -16,10 +16,12 @@ export class HeartbeatService {
 
   constructor(private readonly redis: RedisService) {}
 
-  async beat(name: string): Promise<void> {
+  /** `intervalMs` = how often the loop ticks; the heartbeat then lives for 2.5 ticks (never less than the default), so a slow loop is not reported as stopped between ticks. */
+  async beat(name: string, intervalMs?: number): Promise<void> {
+    const ttl = Math.max(TTL_SECONDS, Math.ceil(((intervalMs ?? 0) * 2.5) / 1000));
     try {
       await this.redis.ensureConnected();
-      await this.redis.client.set(`${PREFIX}${name}`, new Date().toISOString(), 'EX', TTL_SECONDS);
+      await this.redis.client.set(`${PREFIX}${name}`, new Date().toISOString(), 'EX', ttl);
     } catch (error) {
       this.logger.warn(`Heartbeat not recorded for ${name}: ${(error as Error).message}`);
     }

@@ -24,3 +24,23 @@ No payment/SMS/push/WhatsApp vendor · booking state model unconfirmed (Q-55) ·
 
 ## NOT verified
 GitHub Actions run, real providers, real bucket, reverse proxy/TLS, load/soak, backup restore, multi-replica Redis.
+
+## 2026-10-12 late: small backlog items, interim policy defaults and PRD audit
+Built: attendance month summary, customer/booking list filters, report CSV export, admin-created booking and worker, generic Idempotency-Key, If-Match on two admin edits, start-date guard, customer auto-verification, Super Admin password reset, audited emergency-contact reads, optional ClamAV scanning (decisions D-59..D-62, questions Q-83..Q-91; migrations `20261020090000`, `20261020100000`).
+Evidence (local, `_ci` databases): typecheck, lint, format OK - unit 270/270 - e2e 27/27 - integration 731 of 732 in one full run (the one failure fixed and re-run green; no second clean full run) - 15 migrations, no drift.
+PRD audit (inspection only, no code changes): `docs/qa/prd-implementation-matrix.md` and the other audit documents; verdict NOT READY: 8 P0 rows (real SMS/payment never exercised, backups/monitoring, secrets exposed, worker loops) and 13 P1 rows. Apps and web admin are not in the workspace.
+
+## 2026-10-12 closure of the PRD audit
+Built: worker double-booking rule (D-63: overlap in dates and hours, free after the service ends, per-worker lock at confirmation, optional travel buffer), category engagement restrictions (D-64), worker opportunity feed (D-65), heartbeat TTL fix (the two "missing" loops were a false negative), worker list filters, complaint history filter. Migrations: `20261020110000_category_engagements` (16 in total).
+Evidence: format, lint, typecheck clean; unit 270/270; e2e 27/27; integration 743/743 (40 suites, clean full run, fresh DB); no schema drift; Docker image builds and starts in production mode. Closure: `docs/qa/closure-register.md` (5 fixed and verified, 6 partially fixed, 20 blocked by a decision, 15 blocked by an external dependency, 3 not verified, 4 not fixed).
+Verdict: NOT PRODUCTION READY - real SMS, payment gateway, push, storage, backups/monitoring, secret rotation and the client policy decisions remain.
+
+## 2026-10-13 second closure run
+Built: worker references (max 5), interview/trial time proposals with customer/staff answer, replacement-chain history, customer self-edit versioning (ETag/If-Match), If-Match on categories / areas / templates, admin worker filters (area, minimum rating), `npm run check:providers`, decision register Q-77..Q-93, runbook launch checks. Migration `20261021090000_references_slot_proposals` (17 in total). Closure register: 55 findings - 11 fixed and verified, 6 partially fixed, 20 blocked by a decision, 15 blocked by an external dependency, 3 not verified, 0 not fixed.
+Still NOT PRODUCTION READY: real SMS, Razorpay sandbox, FCM, backups / monitoring, TLS and CI evidence, secret rotation, loops re-check after deploy, client decisions.
+
+## Customer-app gap work (2026-10-13)
+Built: worker reviews list for customers (`GET /search/workers/{id}/ratings`), `ratingScaleMax` in `/reference-data`, address `label/line2/state` (migration `20261018090000`), response schemas published for the customer-facing controllers. Answers to all 15 asks in `docs/qa/customer-app-api-gaps.md`. Not built (decisions): price guidance, budget search, area-from-coordinates, customer photo, `minRating`. Evidence: unit 270, integration 795/796 on a fresh DB (one untracked WIP `onboarding.int-spec.ts` failure), `appfeedback` 10/10.
+
+## 2026-10-13 customer-app blockers
+Built: `GET /pricing/guidance` (+ admin `PUT/GET/DELETE /admin/pricing-guidance`), `GET /locations/service-area` (+ optional centre/radius on service areas), `GET /search/workers/{id}/slots`, `GET /interviews`, `GET /customers/me/home`, `allowedActions`/`timeline` on interviews, typed schemas. Search returns page and total in one statement; `SEARCH_CACHE_TTL_SECONDS` (default 0) enables a per-instance page cache. Migrations `20261023090000`, `20261023100000`. See `docs/qa/customer-app-*.md`. Load test (100k users) partly run: search was the bottleneck (about 36 req/s alone on a laptop-class DB, about 200 req/s mixed after the fix); capacity assessment document still to be written.

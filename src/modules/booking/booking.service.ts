@@ -6,8 +6,8 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { NotificationEvent } from '../../common/outbox/notification-events';
 import { OutboxService } from '../../common/outbox/outbox.service';
-import { Page, skipFor } from '../../common/pagination/pagination';
-import { indiaToday, isRealDate } from '../../common/time/india';
+import { Page, PageQueryDto, skipFor } from '../../common/pagination/pagination';
+import { createdRange, indiaToday, isRealDate } from '../../common/time/india';
 import type { Prisma } from '../../generated/prisma/client';
 import { AppConfigService } from '../../config/app-config.service';
 import { toMinutes, toText } from '../availability/domain/time-windows';
@@ -27,14 +27,22 @@ import {
   BookingAction,
   BookingActionDto,
   BookingDetailView,
-  BookingListQuery,
+  BookingFilterQuery,
+  ChainEntryView,
+  ProposeSlotDto,
   BookingStatusValue,
   BookingView,
   CreateBookingDto,
   TimelineEntry,
   WorkerBookingView,
 } from './dto/booking.dto';
-import { BookingEventRecord, BookingRecord, BookingRepository } from './booking.repository';
+import {
+  BookingEventRecord,
+  BookingFilter,
+  BookingRecord,
+  BookingRepository,
+} from './booking.repository';
+import { InterviewRepository } from './interview.repository';
 
 export const BookingErrorCode = {
   BOOKING_NOT_FOUND: 'BOOKING_NOT_FOUND',
@@ -45,6 +53,9 @@ export const BookingErrorCode = {
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
   ADDRESS_NOT_FOUND: 'ADDRESS_NOT_FOUND',
   OUTSIDE_SERVICE_AREA: 'OUTSIDE_SERVICE_AREA',
+  START_TOO_EARLY: 'START_TOO_EARLY',
+  NO_SLOT_PROPOSAL: 'NO_SLOT_PROPOSAL',
+  WORKER_UNAVAILABLE: 'WORKER_UNAVAILABLE',
 } as const;
 
 export type ActorKindValue = 'CUSTOMER' | 'WORKER' | 'ADMIN' | 'SYSTEM';
@@ -135,6 +146,7 @@ export class BookingService {
     private readonly legal: LegalService,
     private readonly alerts: AlertsService,
     private readonly config: AppConfigService,
+    private readonly interviews: InterviewRepository,
   ) {}
 
   private readonly logger = new Logger(BookingService.name);
@@ -145,6 +157,7 @@ export class BookingService {
     customerUserId: string,
     dto: CreateBookingDto,
     idempotencyKey?: string,
+    onBehalfOf?: { userId: string; roles: string[] },
   ): Promise<{ booking: BookingDetailView; created: boolean }> {
     const fromMinute = toMinutes(dto.availableFrom);
     const toMinute = toMinutes(dto.availableTo);
@@ -181,6 +194,7 @@ export class BookingService {
       this.categories.requireEnabledByCode(dto.category),
       this.areas.requireEnabled(dto.areaId),
     ]);
+    await this.categories.assertEngagementOffered(category.id, dto.engagement);
     let addressId: string | null = null;
     if (dto.addressId) {
       const address = await this.customers.findActiveAddressForBooking(
@@ -213,6 +227,7 @@ export class BookingService {
         fromMinute,
         toMinute,
         customerUserId,
+        startDate: dto.startDate,
       });
     }
     try {
@@ -241,18 +256,24 @@ export class BookingService {
             bookingId: created.id,
             fromStatus: null,
             toStatus: 'NEW_REQUEST',
-            actorUserId: customerUserId,
-            actorKind: 'CUSTOMER',
+            actorUserId: onBehalfOf?.userId ?? customerUserId,
+            actorKind: onBehalfOf ? 'ADMIN' : 'CUSTOMER',
           },
           tx,
         );
         await this.audit.record(
           {
-            action: 'booking.create',
+            action: onBehalfOf ? 'booking.admin_create' : 'booking.create',
             entityType: 'booking',
             entityId: created.id,
-            actorId: customerUserId,
-            metadata: { category: category.code, areaId: area.id, engagement: dto.engagement },
+            actorId: onBehalfOf?.userId ?? customerUserId,
+            actorRole: onBehalfOf?.roles.join(',') || null,
+            metadata: {
+              category: category.code,
+              areaId: area.id,
+              engagement: dto.engagement,
+              ...(onBehalfOf ? { customerUserId } : {}),
+            },
           },
           tx,
         );
@@ -286,9 +307,20 @@ export class BookingService {
     }
   }
 
-  async listMine(customerUserId: string, query: BookingListQuery): Promise<Page<BookingView>> {
+  /** Staff creating a booking for a customer who asked by phone: the same validation, a timeline entry and audit record naming the admin. */
+  async createForCustomer(
+    customerId: string,
+    dto: CreateBookingDto,
+    admin: { userId: string; roles: string[] },
+    idempotencyKey?: string,
+  ): Promise<{ booking: BookingDetailView; created: boolean }> {
+    const customerUserId = await this.customers.activeUserIdOf(customerId);
+    return this.create(customerUserId, dto, idempotencyKey, admin);
+  }
+
+  async listMine(customerUserId: string, query: BookingFilterQuery): Promise<Page<BookingView>> {
     const { items, total } = await this.repository.list(
-      { customerUserId, status: query.status },
+      { customerUserId, ...this.filterOf(query) },
       skipFor(query),
       query.limit,
     );
@@ -296,6 +328,12 @@ export class BookingService {
       data: await this.views(items),
       meta: { page: query.page, limit: query.limit, total },
     };
+  }
+
+  /** The newest booking that is not finished (for the Home screen), or null. */
+  async activeForCustomer(customerUserId: string): Promise<BookingView | null> {
+    const { items } = await this.repository.list({ customerUserId, openOnly: true }, 0, 1);
+    return (await this.views(items))[0] ?? null;
   }
 
   async getMine(customerUserId: string, bookingId: string): Promise<BookingDetailView> {
@@ -308,9 +346,189 @@ export class BookingService {
 
   // --- worker ------------------------------------------------------------------------------------------------
 
-  async listForWorker(workerId: string, query: BookingListQuery): Promise<Page<WorkerBookingView>> {
+  async listForWorker(
+    workerId: string,
+    query: BookingFilterQuery,
+  ): Promise<Page<WorkerBookingView>> {
     const { items, total } = await this.repository.list(
-      { workerId, status: query.status },
+      { workerId, ...this.filterOf(query) },
+      skipFor(query),
+      query.limit,
+    );
+    const views = await this.views(items);
+    return {
+      data: views.map((view) => this.workerView(view)),
+      meta: { page: query.page, limit: query.limit, total },
+    };
+  }
+
+  /**
+   * The worker's opportunity feed (PRD 6.3): jobs matched to them that wait for their answer, newest first, with the answer deadline when
+   * one is configured. Only the privacy-safe requirement summary is shown. A job leaves the feed when the worker answers, the customer
+   * or staff change it, or it is cancelled.
+   */
+  // --- another interview/trial time (FRD schedule conflict: request another slot) -----------------------------
+
+  /**
+   * The matched worker cannot make the scheduled time and proposes another. The booking stays INTERVIEW_TRIAL_SCHEDULED at the original
+   * time until the customer (or staff) accepts; one proposal is open at a time (a new one replaces it; the same time repeats safely).
+   */
+  async proposeSlot(
+    workerId: string,
+    bookingId: string,
+    dto: ProposeSlotDto,
+  ): Promise<WorkerBookingView> {
+    const at = new Date(dto.proposedAt);
+    if (at.getTime() <= Date.now()) {
+      throw this.invalid('proposedAt', 'proposedAt must be in the future');
+    }
+    const workerUserId = (await this.workers.requireRefById(workerId)).userId;
+    await this.repository.transaction(async (tx) => {
+      const booking = await this.repository.lock(bookingId, tx);
+      if (!booking || booking.workerId !== workerId) throw this.notFound();
+      this.requireStatus(booking, 'INTERVIEW_TRIAL_SCHEDULED');
+      if (booking.scheduledAt?.getTime() === at.getTime()) {
+        throw this.invalid('proposedAt', 'that is already the scheduled time');
+      }
+      if (booking.proposedSlotAt?.getTime() === at.getTime()) return; // repeating changes nothing
+      await this.repository.setSlotProposal(booking.id, { at, note: dto.note ?? null }, tx);
+      await this.interviews.mirrorProposal(booking.id, { at, by: 'WORKER' }, null, tx);
+      await this.repository.addEvent(
+        {
+          bookingId: booking.id,
+          fromStatus: booking.status,
+          toStatus: booking.status,
+          actorUserId: workerUserId,
+          actorKind: 'WORKER',
+          note: 'proposed another time',
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: 'booking.slot_proposed',
+          entityType: 'booking',
+          entityId: booking.id,
+          actorId: workerUserId,
+          metadata: { proposedAt: at.toISOString() },
+        },
+        tx,
+      );
+      await this.outbox.notify(
+        {
+          event: NotificationEvent.BOOKING_SLOT_PROPOSED,
+          recipients: [booking.customerUserId],
+          params: { bookingId: booking.id, proposedAt: at.toISOString() },
+        },
+        tx,
+      );
+    });
+    return this.getForWorker(workerId, bookingId);
+  }
+
+  /** The customer (or staff) accepts the proposed time - it becomes the scheduled time - or keeps the original. */
+  async answerSlotProposal(
+    bookingId: string,
+    accept: boolean,
+    actor: BookingActor,
+  ): Promise<BookingDetailView> {
+    await this.repository.transaction(async (tx) => {
+      const booking = await this.repository.lock(bookingId, tx);
+      if (!booking) throw this.notFound();
+      if (actor.kind === 'CUSTOMER' && booking.customerUserId !== actor.userId) {
+        throw this.notFound();
+      }
+      this.requireStatus(booking, 'INTERVIEW_TRIAL_SCHEDULED');
+      if (!booking.proposedSlotAt) {
+        throw new DomainException(
+          BookingErrorCode.NO_SLOT_PROPOSAL,
+          'There is no proposed time to answer',
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (accept) {
+        if (booking.proposedSlotAt.getTime() <= Date.now()) {
+          throw this.invalid('proposedAt', 'the proposed time has already passed');
+        }
+        await this.repository.setSchedule(booking.id, booking.proposedSlotAt, tx);
+        await this.interviews.mirrorProposal(booking.id, null, booking.proposedSlotAt, tx);
+      } else {
+        await this.repository.setSlotProposal(booking.id, null, tx);
+        await this.interviews.mirrorProposal(booking.id, null, null, tx);
+      }
+      await this.repository.addEvent(
+        {
+          bookingId: booking.id,
+          fromStatus: booking.status,
+          toStatus: booking.status,
+          actorUserId: actor.userId,
+          actorKind: actor.kind,
+          note: accept ? 'accepted the proposed time' : 'kept the original time',
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: accept ? 'booking.slot_accepted' : 'booking.slot_rejected',
+          entityType: 'booking',
+          entityId: booking.id,
+          actorId: actor.userId,
+          actorRole: actor.roles?.join(',') || null,
+        },
+        tx,
+      );
+      if (booking.workerId) {
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.BOOKING_SLOT_ANSWERED,
+            recipients: [(await this.workers.requireRefById(booking.workerId)).userId],
+            params: { bookingId: booking.id, answer: accept ? 'ACCEPTED' : 'KEPT_ORIGINAL' },
+          },
+          tx,
+        );
+      }
+    });
+    return actor.kind === 'CUSTOMER'
+      ? this.getMine(actor.userId!, bookingId)
+      : this.adminGet(bookingId);
+  }
+
+  /**
+   * The replacement chain a booking belongs to, oldest first (original booking, its replacement, the replacement of the replacement ...).
+   * A customer sees only their own chain; workers are not exposed to it; staff also see the worker of each link.
+   */
+  async chain(
+    bookingId: string,
+    viewer: { kind: 'CUSTOMER'; userId: string } | { kind: 'ADMIN' },
+  ): Promise<ChainEntryView[]> {
+    const start = await this.repository.findById(bookingId);
+    if (!start || (viewer.kind === 'CUSTOMER' && start.customerUserId !== viewer.userId)) {
+      throw this.notFound();
+    }
+    const ids = await this.repository.replacementChain(bookingId);
+    const records = await this.repository.findManyByIds(ids);
+    const byId = new Map(records.map((r) => [r.id, r]));
+    return ids.map((id, index) => {
+      const r = byId.get(id)!;
+      return {
+        bookingId: r.id,
+        position: index + 1,
+        status: r.status,
+        replacesBookingId: r.replacesBookingId,
+        startDate: r.startDate,
+        createdAt: r.createdAt,
+        current: r.id === bookingId,
+        ...(viewer.kind === 'ADMIN' ? { workerId: r.workerId } : {}),
+      };
+    });
+  }
+
+  async opportunitiesForWorker(
+    workerId: string,
+    query: PageQueryDto,
+  ): Promise<Page<WorkerBookingView>> {
+    const { items, total } = await this.repository.list(
+      { workerId, status: 'MATCHED', awaitingWorkerResponse: true },
       skipFor(query),
       query.limit,
     );
@@ -331,9 +549,23 @@ export class BookingService {
 
   // --- admin -------------------------------------------------------------------------------------------------
 
+  private filterOf(query: BookingFilterQuery): Omit<BookingFilter, 'customerUserId' | 'workerId'> {
+    return {
+      status: query.status,
+      categoryId: query.categoryId,
+      areaId: query.areaId,
+      engagement: query.engagement,
+      ...createdRange(query.createdFrom, query.createdTo),
+    };
+  }
+
   async adminList(query: AdminBookingListQuery): Promise<Page<BookingView>> {
     const { items, total } = await this.repository.list(
-      { customerUserId: query.customerUserId, workerId: query.workerId, status: query.status },
+      {
+        customerUserId: query.customerUserId,
+        workerId: query.workerId,
+        ...this.filterOf(query),
+      },
       skipFor(query),
       query.limit,
     );
@@ -398,6 +630,17 @@ export class BookingService {
     });
     const fresh = (await this.repository.findById(result))!;
     return this.detail(fresh, actor.kind === 'ADMIN');
+  }
+
+  /** For the interview / trial workflow (same module): one booking move with timeline, alerts and audit in the caller transaction. */
+  async moveForInterview(
+    booking: BookingRecord,
+    change: Parameters<BookingRepository['update']>[1],
+    actor: BookingActor,
+    tx: Prisma.TransactionClient,
+    info: { action: string; note?: string },
+  ): Promise<void> {
+    await this.move(booking, change, actor, tx, info);
   }
 
   // --- contract for other modules (Payment, Attendance, Replacement) -----------------------------------------
@@ -526,7 +769,12 @@ export class BookingService {
     const old = await this.repository.lock(bookingId, tx);
     if (!old) throw this.notFound();
     this.requireStatus(old, 'REPLACEMENT_REQUESTED');
-    await this.assertEligible(newWorkerId, old);
+    // The replacement works from today on, so the replacement worker must be free from today.
+    await this.assertEligible(
+      newWorkerId,
+      { ...old, startDate: indiaToday(), excludeBookingId: old.id },
+      { tx, lock: true },
+    );
     const created = await this.repository.create(
       {
         customerUserId: old.customerUserId,
@@ -572,7 +820,7 @@ export class BookingService {
     const audit = `booking.${action}`;
     switch (action) {
       case 'match': {
-        await this.assertEligible(dto.workerId!, booking);
+        await this.assertEligible(dto.workerId!, booking, { tx });
         await this.assign(booking, dto.workerId!, actor, tx, audit);
         return;
       }
@@ -608,6 +856,16 @@ export class BookingService {
           tx,
           { action: audit },
         );
+        await this.interviews.confirmLegacy(
+          booking.id,
+          {
+            type: dto.scheduleType!,
+            at: prepared.scheduledAt!,
+            kind: actor.kind,
+            userId: actor.userId,
+          },
+          tx,
+        );
         await this.notifyBoth(
           booking,
           NotificationEvent.INTERVIEW_TRIAL_SCHEDULED,
@@ -621,6 +879,7 @@ export class BookingService {
         return;
       }
       case 'decline': {
+        await this.interviews.cancelOpen(booking.id, 'the worker declined the booking', tx);
         const toNew = rule.to === 'NEW_REQUEST';
         await this.move(
           booking,
@@ -657,6 +916,7 @@ export class BookingService {
         return;
       }
       case 'reopen-matching': {
+        await this.interviews.cancelOpen(booking.id, 'matching was re-opened', tx);
         await this.move(
           booking,
           { status: rule.to, scheduleType: null, scheduledAt: null, outcomeNote: null },
@@ -671,6 +931,7 @@ export class BookingService {
           action: audit,
           note: dto.outcomeNote,
         });
+        await this.interviews.completeLegacy(booking.id, dto.outcomeNote, tx);
         if (booking.workerId) {
           await this.outbox.notify(
             {
@@ -684,7 +945,12 @@ export class BookingService {
         return;
       }
       case 'confirm-worker': {
-        await this.assertEligible(booking.workerId!, booking);
+        // Confirming gives the worker's time to this customer: under a per-worker lock, refuse it if the worker is already booked then.
+        await this.assertEligible(
+          booking.workerId!,
+          { ...booking, startDate: dto.startDate, excludeBookingId: booking.id },
+          { tx, lock: true },
+        );
         await this.move(booking, { status: rule.to, startDate: dto.startDate }, actor, tx, {
           action: audit,
         });
@@ -722,6 +988,7 @@ export class BookingService {
       }
       case 'start':
       case 'complete': {
+        if (action === 'start') this.assertNotTooEarly(booking, actor);
         await this.move(booking, { status: rule.to }, actor, tx, { action: audit });
         await this.notifyBoth(
           booking,
@@ -735,6 +1002,22 @@ export class BookingService {
       }
       default:
         await this.move(booking, { status: rule.to }, actor, tx, { action: audit });
+    }
+  }
+
+  /** Customers and workers cannot start the service before its agreed start date (less the configured tolerance); staff can. */
+  private assertNotTooEarly(booking: BookingRecord, actor: BookingActor): void {
+    if (actor.kind === 'ADMIN' || actor.kind === 'SYSTEM' || !booking.startDate) return;
+    const earliest = new Date(`${booking.startDate}T00:00:00.000Z`);
+    earliest.setUTCDate(earliest.getUTCDate() - this.config.ops.bookingStartEarlyDays);
+    const today = indiaToday();
+    if (today < earliest.toISOString().slice(0, 10)) {
+      throw new DomainException(
+        BookingErrorCode.START_TOO_EARLY,
+        `The service cannot start before ${booking.startDate}`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        [{ field: 'startDate', messages: [`agreed start date is ${booking.startDate}`] }],
+      );
     }
   }
 
@@ -790,6 +1073,12 @@ export class BookingService {
     info: { action: string; note?: string },
   ): Promise<void> {
     await this.repository.update(booking.id, change, tx);
+    // An interview or trial only exists while the booking is matched / scheduled / completed: any other move closes the open one.
+    if (
+      !['MATCHED', 'INTERVIEW_TRIAL_SCHEDULED', 'INTERVIEW_TRIAL_COMPLETED'].includes(change.status)
+    ) {
+      await this.interviews.cancelOpen(booking.id, `booking moved to ${change.status}`, tx);
+    }
     // Alerts about a state the booking has left are closed by the move itself.
     if (change.status !== 'NEW_REQUEST') {
       await this.alerts.autoResolve(
@@ -921,13 +1210,19 @@ export class BookingService {
   private async assertEligible(
     workerId: string,
     requirement: {
+      id?: string;
       categoryId: string;
       areaId: string;
       engagement: BookingRecord['engagement'];
       fromMinute: number;
       toMinute: number;
       customerUserId?: string;
+      /** The date the work starts; falls back to the requested start date, then today. */
+      startDate?: string | null;
+      requestedStartDate?: string | null;
+      excludeBookingId?: string;
     },
+    options: { tx?: Prisma.TransactionClient; lock?: boolean } = {},
   ): Promise<void> {
     const eligible = await this.search.isEligible({
       forCustomerUserId: requirement.customerUserId,
@@ -936,6 +1231,7 @@ export class BookingService {
       areaId: requirement.areaId,
       engagement: requirement.engagement,
       window: { fromMinute: requirement.fromMinute, toMinute: requirement.toMinute },
+      skipBusy: true,
     });
     if (!eligible) {
       throw new DomainException(
@@ -943,6 +1239,29 @@ export class BookingService {
         'The worker is not available for this requirement',
         HttpStatus.UNPROCESSABLE_ENTITY,
         [{ field: 'workerId', messages: ['the worker is not eligible for this booking'] }],
+      );
+    }
+    // Double-booking rule: a worker already booked for an overlapping time (same dates, overlapping hours) cannot be taken for this one.
+    // Other hours of the same day, and any time after the other service ends, stay bookable.
+    if (options.tx && options.lock) await this.repository.lockWorker(workerId, options.tx);
+    const busy = await this.repository.isWorkerBusy(
+      workerId,
+      {
+        startDate: requirement.startDate ?? requirement.requestedStartDate ?? indiaToday(),
+        engagement: requirement.engagement,
+        fromMinute: requirement.fromMinute,
+        toMinute: requirement.toMinute,
+        excludeBookingId: requirement.excludeBookingId ?? requirement.id,
+        bufferMinutes: this.config.travelBufferMinutes,
+      },
+      options.tx,
+    );
+    if (busy) {
+      throw new DomainException(
+        BookingErrorCode.WORKER_UNAVAILABLE,
+        'The worker is already booked for part of that time',
+        HttpStatus.CONFLICT,
+        [{ field: 'workerId', messages: ['the worker has another booking at that time'] }],
       );
     }
   }
@@ -1005,6 +1324,8 @@ export class BookingService {
         requirementNote: b.requirementNote,
         workerRespondedAt: b.workerRespondedAt,
         respondBy: b.respondBy,
+        proposedSlotAt: b.proposedSlotAt,
+        proposedSlotNote: b.proposedSlotNote,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
       };
@@ -1048,6 +1369,8 @@ export class BookingService {
       requirementNote: view.requirementNote,
       workerRespondedAt: view.workerRespondedAt,
       respondBy: view.respondBy,
+      proposedSlotAt: view.proposedSlotAt,
+      proposedSlotNote: view.proposedSlotNote,
       updatedAt: view.updatedAt,
     };
   }

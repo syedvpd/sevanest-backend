@@ -5,6 +5,8 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { Page, skipFor } from '../../common/pagination/pagination';
+import { assertIfMatch } from '../../common/concurrency/if-match';
+import { createdRange } from '../../common/time/india';
 import { changedFieldNames } from '../../common/validation/fields';
 import { maskMobile, normalizeIndianMobile } from '../../common/validation/indian-mobile';
 import { assertLanguageSupported } from '../../common/validation/language';
@@ -14,14 +16,17 @@ import { ServiceCategoriesService } from '../service-categories/service-categori
 import { UsersService } from '../users/users.service';
 import type { Actor, UserRecord } from '../users/users.types';
 import {
+  AdminCreateWorkerDto,
   AdminWorkerDetail,
   AdminWorkerListQuery,
   AdminWorkerSummary,
   CreateWorkerProfileDto,
   SetWorkerCategoriesDto,
+  SetWorkerReferencesDto,
   UpdateWorkerProfileDto,
   WorkerCategoryRef,
   WorkerProfileResponse,
+  WorkerReferenceView,
 } from './dto/workers.dto';
 import { WorkerSubmissionRegistry } from './worker-submission.registry';
 import { ProfileScalarUpdate, WorkerRecord, WorkersRepository } from './workers.repository';
@@ -31,6 +36,7 @@ export const WorkersErrorCode = {
   WORKER_PROFILE_NOT_FOUND: 'WORKER_PROFILE_NOT_FOUND',
   WORKER_NOT_FOUND: 'WORKER_NOT_FOUND',
   PROFILE_INCOMPLETE: 'PROFILE_INCOMPLETE',
+  MOBILE_IN_USE: 'MOBILE_IN_USE',
 } as const;
 
 /** Who is acting on a worker profile: the worker themself, or an admin (assisted onboarding). */
@@ -234,6 +240,119 @@ export class WorkersService {
 
   // --- admin (permissions worker.view / worker.manage) ------------------------------------------------------
 
+  /**
+   * Assisted onboarding (FR-WON-007): staff create the account for a mobile and an empty profile. A mobile that already belongs to a
+   * customer or staff account, or already has a worker profile, is a 409. The worker signs in later with an OTP sent to that number; the profile is
+   * completed through the admin edit endpoints and still goes through the normal submit and verification.
+   */
+  async adminCreate(
+    dto: AdminCreateWorkerDto,
+    admin: Actor & { userId: string },
+  ): Promise<AdminWorkerDetail> {
+    const mobile = normalizeIndianMobile(dto.mobile)!;
+    const { user } = await this.users.findOrCreateByMobile(mobile, 'WORKER');
+    if (user.type !== 'WORKER') {
+      throw new DomainException(
+        WorkersErrorCode.MOBILE_IN_USE,
+        'This mobile number belongs to another kind of account',
+        HttpStatus.CONFLICT,
+      );
+    }
+    try {
+      const worker = await this.repository.transaction(async (tx) => {
+        const created = await this.repository.create({ userId: user.id, name: dto.name }, tx);
+        await this.audit.record(
+          {
+            action: 'worker.admin_create',
+            entityType: 'worker_profile',
+            entityId: created.id,
+            actorId: admin.userId,
+            actorRole: admin.roles?.join(',') || null,
+            metadata: { onboardingStatus: created.onboardingStatus },
+          },
+          tx,
+        );
+        return created;
+      });
+      return this.adminGet(worker.id);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new DomainException(
+          WorkersErrorCode.WORKER_PROFILE_EXISTS,
+          'A worker profile already exists for this mobile number',
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
+  }
+
+  // --- references (PRD 6.1) ---------------------------------------------------------------------------------
+
+  async getMyReferences(userId: string): Promise<WorkerReferenceView[]> {
+    const ref = await this.requireRefByUserId(userId);
+    return this.repository.listReferences(ref.workerId);
+  }
+
+  /** Replaces the worker's reference list. Each mobile once; the worker's own number is refused. Audited with counts only (no personal data). */
+  async setMyReferences(
+    userId: string,
+    dto: SetWorkerReferencesDto,
+  ): Promise<WorkerReferenceView[]> {
+    const ref = await this.requireRefByUserId(userId);
+    const own = (await this.users.findById(userId))?.mobile ?? null;
+    const seen = new Set<string>();
+    for (const r of dto.references) {
+      if (seen.has(r.mobile) || r.mobile === own) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [
+            {
+              field: 'references',
+              messages: ['each reference needs a different mobile that is not your own'],
+            },
+          ],
+        );
+      }
+      seen.add(r.mobile);
+    }
+    await this.repository.transaction(async (tx) => {
+      if (!(await this.repository.lock(ref.workerId, tx))) throw this.workerNotFound();
+      await this.repository.replaceReferences(ref.workerId, dto.references, tx);
+      await this.audit.record(
+        {
+          action: 'worker.references_set',
+          entityType: 'worker_profile',
+          entityId: ref.workerId,
+          actorId: userId,
+          metadata: { count: dto.references.length },
+        },
+        tx,
+      );
+    });
+    return this.repository.listReferences(ref.workerId);
+  }
+
+  /** Staff read of a worker's references: personal data of third parties, so every read is audited. */
+  async adminReferences(
+    workerId: string,
+    actor: Actor & { userId: string },
+  ): Promise<WorkerReferenceView[]> {
+    await this.requireRefById(workerId);
+    const list = await this.repository.listReferences(workerId);
+    await this.audit.record({
+      action: 'worker.sensitive_view',
+      entityType: 'worker_profile',
+      entityId: workerId,
+      actorId: actor.userId,
+      actorRole: actor.roles?.join(',') || null,
+      metadata: { groups: ['references'] },
+    });
+    return list;
+  }
+
   async adminList(query: AdminWorkerListQuery): Promise<Page<AdminWorkerSummary>> {
     let userId: string | undefined;
     if (query.mobile !== undefined) {
@@ -245,7 +364,16 @@ export class WorkersService {
       userId = user.id;
     }
     const { items, total } = await this.repository.list(
-      { onboardingStatus: query.onboardingStatus, categoryId: query.categoryId, userId },
+      {
+        onboardingStatus: query.onboardingStatus,
+        categoryId: query.categoryId,
+        userId,
+        name: query.name,
+        accountStatus: query.accountStatus,
+        areaId: query.areaId,
+        minRating: query.minRating,
+        ...createdRange(query.createdFrom, query.createdTo),
+      },
       skipFor(query),
       query.limit,
     );
@@ -271,6 +399,24 @@ export class WorkersService {
     };
   }
 
+  /**
+   * The full profile as staff read it, including the home address and the emergency contact. Every such read is audited (who, which worker,
+   * which sensitive groups) so access to the emergency contact is traceable; the viewing policy itself is still undecided (Q-78 interim:
+   * any admin with worker.view, audited).
+   */
+  async adminRead(workerId: string, actor: Actor & { userId: string }): Promise<AdminWorkerDetail> {
+    const detail = await this.adminGet(workerId);
+    await this.audit.record({
+      action: 'worker.sensitive_view',
+      entityType: 'worker_profile',
+      entityId: workerId,
+      actorId: actor.userId,
+      actorRole: actor.roles?.join(',') || null,
+      metadata: { groups: ['address', 'emergencyContact'] },
+    });
+    return detail;
+  }
+
   async adminGet(workerId: string): Promise<AdminWorkerDetail> {
     const worker = await this.repository.findById(workerId);
     if (!worker) {
@@ -288,9 +434,10 @@ export class WorkersService {
     workerId: string,
     dto: UpdateWorkerProfileDto,
     actor: Actor & { userId: string },
+    ifMatch?: string,
   ): Promise<AdminWorkerDetail> {
     await this.requireRefById(workerId);
-    await this.update(workerId, dto, { kind: 'admin', actor });
+    await this.update(workerId, dto, { kind: 'admin', actor }, ifMatch);
     return this.adminGet(workerId);
   }
 
@@ -310,6 +457,7 @@ export class WorkersService {
     workerId: string,
     dto: UpdateWorkerProfileDto,
     by: WorkerActor,
+    ifMatch?: string,
   ): Promise<WorkerProfileResponse> {
     const fields = changedFieldNames(dto);
     if (fields.length === 0) {
@@ -328,6 +476,9 @@ export class WorkersService {
     const updated = await this.repository.transaction(async (tx) => {
       if (!(await this.repository.lock(workerId, tx))) {
         throw this.workerNotFound();
+      }
+      if (ifMatch !== undefined) {
+        assertIfMatch(ifMatch, (await this.repository.findById(workerId, tx))!.updatedAt);
       }
       await this.repository.updateScalars(workerId, scalarUpdate(dto), tx);
       if (dto.languages) {

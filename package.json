@@ -22,6 +22,7 @@
     "start:worker": "node dist/worker",
     "seed": "node dist/seed",
     "seed:launch": "node dist/seed-launch",
+    "check:providers": "node dist/check-providers",
     "bootstrap:admin": "node dist/bootstrap-admin",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint \"{src,test}/**/*.ts\"",

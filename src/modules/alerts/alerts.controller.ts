@@ -9,6 +9,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -31,6 +32,7 @@ export class AdminAlertsController {
   ) {}
 
   @Get()
+  @ApiPageResponse(AlertView)
   @Permissions(PermissionCode.ALERT_VIEW)
   @ApiOperation({
     summary: 'Open alerts (newest first, paginated); filter by status, severity, type',
@@ -52,6 +54,7 @@ export class AdminAlertsController {
   }
 
   @Post(':alertId/acknowledge')
+  @ApiModelResponse(AlertView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.ALERT_MANAGE)
   @ApiOperation({ summary: 'Mark that someone is looking at it (repeating is harmless; audited)' })
@@ -63,6 +66,7 @@ export class AdminAlertsController {
   }
 
   @Post(':alertId/resolve')
+  @ApiModelResponse(AlertView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.ALERT_MANAGE)
   @ApiOperation({

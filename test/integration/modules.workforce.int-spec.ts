@@ -54,6 +54,8 @@ describe('Module boundaries (static)', () => {
       safety: ['booking', 'workers', 'users', 'alerts'],
       meta: ['booking', 'legal', 'safety', 'support', 'search'],
       system: ['users'],
+      // Home only composes read calls of other modules for the customer Home screen; nothing depends on it.
+      home: ['booking', 'notifications', 'shortlist', 'users'],
       // Existing modules gained leaf dependencies.
     };
     allowed.booking = [
@@ -490,7 +492,14 @@ describe('Workforce journey and contract (integration)', () => {
         'timeWindows',
       ]);
       expect(props('UpdateServiceCategoryDto')).toEqual(['description', 'isEnabled', 'name']);
-      expect(props('UpdateServiceAreaDto')).toEqual(['city', 'isEnabled', 'name']);
+      expect(props('UpdateServiceAreaDto')).toEqual([
+        'centerLatitude',
+        'centerLongitude',
+        'city',
+        'isEnabled',
+        'name',
+        'radiusMeters',
+      ]);
       expect(props('SetWorkerCategoriesDto')).toEqual(['categoryIds']);
       expect(props('RequestDocumentUploadDto')).toEqual(['contentType', 'sizeBytes']);
       expect(props('ApproveCheckDto')).toEqual(['recheckAt', 'remarks']);
@@ -507,6 +516,7 @@ describe('Workforce journey and contract (integration)', () => {
           'limit',
           'minExperienceMonths',
           'page',
+          'startDate',
         ].sort(),
       );
       // The customer-facing card is an exact allow-list; the document view carries no storage key.

@@ -9,5 +9,6 @@ import { ShortlistService } from './shortlist.service';
   imports: [SearchModule],
   controllers: [ShortlistController],
   providers: [ShortlistRepository, ShortlistService],
+  exports: [ShortlistService],
 })
 export class ShortlistModule {}

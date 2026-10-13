@@ -83,10 +83,37 @@ export class CreateAddressDto {
   pincode!: string;
 
   @ApiPropertyOptional({
+    example: 'Home',
+    nullable: true,
+    description: 'A short name such as Home or Office.',
+    type: String,
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 50)
+  label?: string | null;
+
+  @ApiPropertyOptional({ example: 'Near the temple', nullable: true, type: String })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 500)
+  line2?: string | null;
+
+  @ApiPropertyOptional({ example: 'Telangana', nullable: true, type: String })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 100)
+  state?: string | null;
+
+  @ApiPropertyOptional({
     minimum: -90,
     maximum: 90,
     nullable: true,
     description: 'Set together with longitude, or omit both.',
+    type: Number,
   })
   @IsOptional()
   @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 6 })
@@ -94,7 +121,7 @@ export class CreateAddressDto {
   @Max(90)
   latitude?: number | null;
 
-  @ApiPropertyOptional({ minimum: -180, maximum: 180, nullable: true })
+  @ApiPropertyOptional({ minimum: -180, maximum: 180, nullable: true, type: Number })
   @IsOptional()
   @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 6 })
   @Min(-180)
@@ -125,6 +152,41 @@ export class AdminCustomerListQuery extends PageQueryDto {
   @IsString()
   @Length(10, 15)
   mobile?: string;
+
+  @ApiPropertyOptional({ description: 'Part of the name (case-insensitive).' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 100)
+  name?: string;
+
+  @ApiPropertyOptional({ enum: ['ACTIVE', 'SUSPENDED'], description: 'Account status.' })
+  @IsOptional()
+  @IsIn(['ACTIVE', 'SUSPENDED'])
+  accountStatus?: 'ACTIVE' | 'SUSPENDED';
+
+  @ApiPropertyOptional({ description: 'City of any active saved address (case-insensitive).' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 100)
+  city?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description: 'Registered on or after (India date).',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'createdFrom must be YYYY-MM-DD' })
+  createdFrom?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description: 'Registered on or before (India date).',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'createdTo must be YYYY-MM-DD' })
+  createdTo?: string;
 }
 
 export class UpdateVerificationStatusDto {
@@ -167,8 +229,11 @@ export class AddressResponse {
   @ApiProperty() area!: string;
   @ApiProperty() city!: string;
   @ApiProperty() pincode!: string;
-  @ApiProperty({ nullable: true }) latitude!: number | null;
-  @ApiProperty({ nullable: true }) longitude!: number | null;
+  @ApiProperty({ nullable: true, type: String }) label!: string | null;
+  @ApiProperty({ nullable: true, type: String }) line2!: string | null;
+  @ApiProperty({ nullable: true, type: String }) state!: string | null;
+  @ApiProperty({ nullable: true, type: Number }) latitude!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) longitude!: number | null;
   @ApiProperty() isDefault!: boolean;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
@@ -201,4 +266,25 @@ export class CustomerNoteResponse {
   @ApiProperty() authorId!: string;
   @ApiProperty() note!: string;
   @ApiProperty() createdAt!: Date;
+}
+
+export class CustomerOnboardingStep {
+  @ApiProperty({ enum: ['PROFILE', 'ADDRESS', 'VERIFICATION'] }) key!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty() done!: boolean;
+  @ApiProperty({ type: [String] }) missing!: string[];
+}
+
+export class CustomerOnboardingResponse {
+  @ApiProperty({ description: 'false until POST /customers/me has been called.' })
+  profileCreated!: boolean;
+  @ApiProperty({ type: [CustomerOnboardingStep] }) steps!: CustomerOnboardingStep[];
+  @ApiProperty({ nullable: true, enum: ['PROFILE', 'ADDRESS', 'VERIFICATION'] }) nextStep!:
+    string | null;
+  @ApiProperty({ nullable: true, enum: ['PENDING', 'VERIFIED'] }) verificationStatus!:
+    string | null;
+  @ApiProperty({
+    description: 'Profile saved and at least one address: the customer can make a booking request.',
+  })
+  canBook!: boolean;
 }

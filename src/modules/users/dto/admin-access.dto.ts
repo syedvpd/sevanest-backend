@@ -71,7 +71,7 @@ export class RoleView {
 
 export class PermissionView {
   @ApiProperty() code!: string;
-  @ApiProperty({ nullable: true }) description!: string | null;
+  @ApiProperty({ nullable: true, type: String }) description!: string | null;
   @ApiProperty({ description: 'true = can only ever be held by the Super Admin role.' })
   superAdminOnly!: boolean;
 }

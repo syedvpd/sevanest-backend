@@ -63,3 +63,16 @@ Fresh disposable database `sevanest_p2_ci` (local container; 11 migrations appli
 | Docker production image + API/worker containers | built, ready 200, worker up, bad config aborts start-up |
 
 New suites: `remediation2.discovery.int-spec.ts` (15), `remediation2.operations.int-spec.ts` (5). Detail and caveats: `docs/qa/backend-gap-remediation.md` P2.5.
+
+# Customer-app gap work (2026-10-13)
+Fresh disposable database `sevanest_p3_ci` (local container, all migrations applied incl. `20261018090000_customer_address_label`). Remote `.env` database not contacted.
+
+| Command | Result |
+|---|---|
+| typecheck, format:check | exit 0 |
+| `npm run lint` | fails only in `test/integration/onboarding.int-spec.ts` (14 `no-unsafe-*` errors in an untracked file that is not part of this work); everything else clean |
+| `npm test` | 29 suites, 270 tests passed |
+| `npm run test:integration` (clean database) | 44 of 45 suites, 795 of 796 tests passed. The failure is `onboarding.int-spec.ts` ("saves each screen on its own...", expects `nextStep` PHOTO but `worker-onboarding.controller.ts` treats PHOTO as optional and returns SUBMIT). Both files are untracked work-in-progress outside this change; not fixed |
+| New suite `appfeedback.int-spec.ts` | 10 passed |
+
+Not run: `scripts/seed-demo.ts` changes (need a real bucket and Super Admin credentials), anything against the staging server.

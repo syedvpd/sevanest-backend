@@ -103,6 +103,31 @@ export const DEFAULT_IN_APP_TEMPLATES: ReadonlyArray<{
     body: 'The service is marked completed. You can now rate it.',
   },
   { event: 'BOOKING_CANCELLED', title: 'Booking cancelled', body: 'A booking was cancelled.' },
+  {
+    event: 'INTERVIEW_REQUESTED',
+    title: 'Interview or trial requested',
+    body: 'A customer asked for an interview or trial. Please accept, decline or propose another time.',
+  },
+  {
+    event: 'INTERVIEW_RESPONDED',
+    title: 'Interview or trial update',
+    body: 'The worker answered your interview or trial request. Open the booking to see it.',
+  },
+  {
+    event: 'INTERVIEW_CANCELLED',
+    title: 'Interview or trial cancelled',
+    body: 'An interview or trial was cancelled.',
+  },
+  {
+    event: 'BOOKING_SLOT_PROPOSED',
+    title: 'New time proposed',
+    body: 'The worker proposed a different time for your interview or trial. Please accept or keep the original time.',
+  },
+  {
+    event: 'BOOKING_SLOT_ANSWERED',
+    title: 'Time proposal answered',
+    body: 'The customer answered the time you proposed.',
+  },
   { event: 'RATING_RECEIVED', title: 'New rating', body: 'You received a new rating.' },
   {
     event: 'ATTENDANCE_EXCEPTION',

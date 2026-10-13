@@ -123,3 +123,31 @@ Owner: C=client/business, U=user(tech lead), L=legal, V=vendor. "Blocks" = earli
 | Q-80 | Who is alerted about money problems, through which channel, and how fast; how long resolved items are kept (extends Q-57, Q-63, Q-68) | C | `PAYMENT_EXCEPTION_ALERT` goes to active admins holding `payment.manage` via the notification pipeline only if a template for that event exists (none seeded); `GET /admin/payment-exceptions` is the source of truth |
 | Q-81 | KYC malware scanning vendor, quarantine instead of delete, retention of confirmed documents (extends Q-69) | C+V | No scanner. Structural validation (type, size, end-of-file marker), SHA-256 recorded at confirmation and re-checked before a reviewer gets a link; rejected uploads are deleted; uploads never confirmed are deleted after 24 h (engineering default, not a retention rule); confirmed documents are never deleted |
 | Q-82 | Real proxy topology per environment (Render only, or CDN in front) to set `TRUST_PROXY_HOPS` | U | Production refuses to start without an explicit value; `render.yaml` template uses 1 |
+| Q-83 | Cancellation fee and automatic refund rules (who is refunded how much and when) (extends Q-17, Q-21, Q-77) | C | Interim D-59: fee 0, no automatic refund; paid + cancelled raises a `PaymentException` for a person with `payment.refund` |
+| Q-84 | How early may a service start before its agreed start date | C | `BOOKING_START_EARLY_DAYS` (default 0); staff can always start |
+| Q-85 | What makes a customer VERIFIED (extends Q-26) | C | `CUSTOMER_AUTO_VERIFY`: complete profile + active address; staff decisions are final |
+| Q-86 | Who may see a worker's emergency contact and address, and when (extends Q-74) | C | Any admin with `worker.view`; each read audited |
+| Q-87 | Admin MFA method and forgotten-password process (extends Q-66) | C | Self-service change exists; a Super Admin can set a temporary password for another admin; no MFA |
+| Q-88 | Data erasure and retention periods for personal data, documents, audit logs (extends Q-69) | C+V | Deletion requests are recorded for staff (`/me/deletion-request`); nothing is erased automatically |
+| Q-89 | Is malware scanning of documents required, and with which scanner | C+V | Optional ClamAV via `CLAMAV_HOST`; without it documents are validated but not scanned (readiness warns) |
+| Q-90 | Maps provider (geocoding, distance) and whether matching uses distance | C+U | Not integrated; addresses keep optional coordinates |
+| Q-91 | Error monitoring tool and backup/restore targets | U | Infrastructure: `docs/qa/OPERATIONS_RUNBOOK.md` |
+| Q-92 | Travel/turnaround time a worker needs between two jobs on the same day; whether an unpaid confirmed booking should hold the worker (and for how long) (extends Q-78) | C | `BOOKING_TRAVEL_BUFFER_MINUTES=0`; an unpaid PENDING_PAYMENT booking holds the worker until paid or cancelled |
+| Q-93 | The engagement types each of the six categories offers (PRD 4 says "typical") and what "Monthly" means (extends Q-38) | C | No list applied: every category accepts every engagement until an administrator sets it |
+
+## Raised by the customer-app team - 2026-10-13
+| ID | Question | Owner | Current behaviour (no value invented) |
+|---|---|---|---|
+| Q-76 | Price guidance for the budget step: who owns the numbers and what is the model (category x area x engagement -> min/max/period/basis)? | C | Nothing exists; no endpoint. See `docs/qa/customer-app-api-gaps.md` #4 |
+| Q-77 | Budget filter in search and matching days of week / start date (extends Q-37, Q-39, Q-47) | C | Budget is stored on bookings as a label only; search filters on time-of-day windows only |
+| Q-78 | Resolve coordinates to a service area: boundary data and overlap rules | C+U | Areas have no geometry; not built |
+| Q-79 | Customer profile photo: in V1 scope? | C | Not in SRS 3.2 / FRD FM-02; not built |
+| Q-80 | Rating filter (`minRating`): include or hide unrated workers; any ranking (extends Q-46) | C | Not built; reviews are listed to customers (Q-60 sign-off needed) |
+
+## Customer-app decisions needed (2026-10-13)
+* **Q-94 Price bands**: who supplies and maintains typical price bands (category x engagement x area, amount, period)? Safe now: `GET /pricing/guidance` answers 404 until an admin enters bands. Impact: the app hides the guidance card.
+* **Q-95 Budget filter**: what period does a worker's expected salary use (hour, day, month), and may search hide workers above the customer's budget? Safe now: budget is a label on the booking. Impact: the budget range does not filter search.
+* **Q-96 Weekday availability**: are workers available on specific weekdays? Safe now: availability is time of day only; `startDate` and busy hours are matched. Impact: weekdays in the requirement are not matched.
+* **Q-97 Customer photo**: is a customer profile photo in V1? Safe now: not built (FR-CUS-001..006 do not list it). Impact: no "Add a photo".
+* **Q-98 Map provider / area boundaries**: polygons or a geocoder for exact area lookup. Safe now: admin-set centre and radius per area, then exact name. Impact: some positions need a manual area pick.
+* **Q-99 Interview length and horizon**: client sign-off on 60 minutes and 14 days (current defaults of `/slots`).

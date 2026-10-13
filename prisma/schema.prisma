@@ -214,14 +214,16 @@ enum CustomerVerificationStatus {
 /// Customer domain (SRS 3.2). One profile per customer user. The mobile number is NOT copied here: it stays on `users`
 /// (verified by OTP, read-only). Suspension is `users.status`; the profile only carries the verification state.
 model CustomerProfile {
-  id                 String                     @id @default(uuid(7)) @db.Uuid
-  userId             String                     @unique @map("user_id") @db.Uuid
-  name               String
-  email              String
-  preferredLanguage  String                     @map("preferred_language")
-  verificationStatus CustomerVerificationStatus @default(PENDING) @map("verification_status")
-  createdAt          DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String                     @id @default(uuid(7)) @db.Uuid
+  userId               String                     @unique @map("user_id") @db.Uuid
+  name                 String
+  email                String
+  preferredLanguage    String                     @map("preferred_language")
+  verificationStatus   CustomerVerificationStatus @default(PENDING) @map("verification_status")
+  /// True once an administrator set the status by hand: automatic verification then leaves it alone.
+  verificationAdminSet Boolean                    @default(false) @map("verification_admin_set")
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user      User              @relation(fields: [userId], references: [id], onDelete: Restrict)
   addresses CustomerAddress[]
@@ -241,6 +243,10 @@ model CustomerAddress {
   area       String
   city       String
   pincode    String
+  /// Optional presentation fields the customer app asked for (label such as Home/Office, second address line, state).
+  label      String?
+  line2      String?
+  state      String?
   latitude   Decimal? @db.Decimal(9, 6)
   longitude  Decimal? @db.Decimal(9, 6)
   isDefault  Boolean  @default(false) @map("is_default")
@@ -289,22 +295,44 @@ model ServiceCategory {
 
   bookings Booking[]
 
+  engagements CategoryEngagement[]
+
+  pricingGuidance PricingGuidance[]
+
   @@map("service_categories")
+}
+
+/// Which engagement types a category offers (PRD 4). A category with NO rows here is unrestricted (nothing is assumed for a category the
+/// administrator has not configured).
+model CategoryEngagement {
+  categoryId String               @map("category_id") @db.Uuid
+  engagement EngagementPreference
+
+  category ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, engagement])
+  @@map("category_engagements")
 }
 
 /// Service area master (FRD FM-16: unique within the city; enabled/disabled). Ownership of config masters is open (Q-14);
 /// the table is stable if it moves to the Admin module later.
 model ServiceArea {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  name      String
-  city      String
-  isEnabled Boolean  @default(true) @map("is_enabled")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String   @id @default(uuid(7)) @db.Uuid
+  name            String
+  city            String
+  isEnabled       Boolean  @default(true) @map("is_enabled")
+  /// Optional centre and radius, set by an admin, so a map position can be resolved to this area (nearest centre within its radius).
+  centerLatitude  Float?   @map("center_latitude")
+  centerLongitude Float?   @map("center_longitude")
+  radiusMeters    Int?     @map("radius_meters")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workers WorkerPreferredArea[]
 
   bookings Booking[]
+
+  pricingGuidance PricingGuidance[]
 
   @@map("service_areas")
 }
@@ -372,9 +400,28 @@ model WorkerProfile {
   ratingSummary      WorkerRatingSummary?
   profilePhotos      WorkerProfilePhoto[]
   shortlistedBy      CustomerShortlistItem[]
+  references         WorkerReference[]
 
   @@index([onboardingStatus, createdAt])
   @@map("worker_profiles")
+}
+
+/// Employer / personal references of a worker (PRD 6.1 "previous employer/reference details"). The single previous employer on the
+/// profile stays; this list holds further references. Private to the worker and to staff with worker.view (reads audited).
+model WorkerReference {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  workerId     String   @map("worker_id") @db.Uuid
+  position     Int      @db.SmallInt
+  name         String
+  mobile       String
+  relationship String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([workerId, mobile])
+  @@index([workerId, position])
+  @@map("worker_references")
 }
 
 /// Roles the worker offers (FR-WP-001). The reverse index serves "workers for category X".
@@ -572,6 +619,15 @@ enum ScheduleType {
   TRIAL
 }
 
+enum InterviewStatus {
+  REQUESTED
+  CONFIRMED
+  RESCHEDULE_PROPOSED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
 /// A customer requirement and, once matched, the worker engaged for it. Timings are minutes after local midnight (India) like Availability.
 model Booking {
   id                 String               @id @default(uuid(7)) @db.Uuid
@@ -602,6 +658,9 @@ model Booking {
   /// Worker response to a MATCHED opportunity (PRD 6.3 accept/decline). respond_by is set from configuration when matching, null = no deadline.
   workerRespondedAt  DateTime?            @map("worker_responded_at") @db.Timestamptz(6)
   respondBy          DateTime?            @map("respond_by") @db.Timestamptz(6)
+  /// A different interview/trial time proposed by the worker, waiting for the customer (state does not change). Cleared when answered.
+  proposedSlotAt     DateTime?            @map("proposed_slot_at") @db.Timestamptz(6)
+  proposedSlotNote   String?              @map("proposed_slot_note")
   idempotencyKey     String?              @map("idempotency_key")
   requestHash        String?              @map("request_hash")
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -622,6 +681,7 @@ model Booking {
   replacementFor      ReplacementRequest?  @relation("ReplacementNew")
   rating              Rating?
   tickets             SupportTicket[]
+  interviews          InterviewTrial[]
 
   @@unique([customerUserId, idempotencyKey])
   @@index([customerUserId, createdAt])
@@ -1278,4 +1338,81 @@ model DeletionRequest {
   @@index([userId, requestedAt])
   @@index([status, requestedAt])
   @@map("deletion_requests")
+}
+
+/// Generic Idempotency-Key store: one row per (user, key). The first request claims the key (IN_PROGRESS) and stores its response when
+/// done; a repeat with the same key and the same request replays that response, a different request is refused. Rows lapse after
+/// `expires_at` and are purged by the worker.
+model IdempotencyKey {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  key          String
+  method       String
+  path         String
+  requestHash  String   @map("request_hash")
+  done         Boolean  @default(false)
+  statusCode   Int?     @map("status_code")
+  responseBody Json?    @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@unique([userId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+/// PRD section 12 "Interview/Trial: schedule, status, outcome". One row per interview or trial session of a booking (a booking can have
+/// several over time, at most ONE open at a time: partial unique index in the migration). The booking keeps its coarse state
+/// (matched / scheduled / completed); this entity holds the request, the worker answer, proposals, rescheduling and the outcome.
+model InterviewTrial {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  bookingId         String          @map("booking_id") @db.Uuid
+  type              ScheduleType
+  status            InterviewStatus @default(REQUESTED)
+  requestedByKind   String          @map("requested_by_kind")
+  requestedByUserId String?         @map("requested_by_user_id") @db.Uuid
+  /// What the customer asked for.
+  preferredAt       DateTime        @map("preferred_at") @db.Timestamptz(6)
+  /// The agreed time (set when CONFIRMED).
+  scheduledAt       DateTime?       @map("scheduled_at") @db.Timestamptz(6)
+  /// A different time proposed by the other party, waiting for an answer.
+  proposedAt        DateTime?       @map("proposed_at") @db.Timestamptz(6)
+  proposedByKind    String?         @map("proposed_by_kind")
+  note              String?
+  declineReason     String?         @map("decline_reason")
+  cancelReason      String?         @map("cancel_reason")
+  outcomeNote       String?         @map("outcome_note")
+  completedAt       DateTime?       @map("completed_at") @db.Timestamptz(6)
+  cancelledAt       DateTime?       @map("cancelled_at") @db.Timestamptz(6)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, createdAt])
+  @@index([status, scheduledAt])
+  @@map("interview_trials")
+}
+
+/// Typical price band shown to customers on the Budget step. Entered by an administrator (nothing is derived or invented): one row per
+/// category + engagement, optionally narrowed to one area (an area row wins over the category-wide row). Amounts are paise.
+model PricingGuidance {
+  id         String               @id @default(uuid(7)) @db.Uuid
+  categoryId String               @map("category_id") @db.Uuid
+  areaId     String?              @map("area_id") @db.Uuid
+  engagement EngagementPreference
+  minMinor   Int                  @map("min_minor")
+  maxMinor   Int                  @map("max_minor")
+  /// HOUR | DAY | MONTH | ONE_TIME (the Budget step periods).
+  period     String
+  /// Short text shown with the band, for example "Typical for Hyderabad, set by SevaNest".
+  basis      String
+  createdAt  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  category ServiceCategory @relation(fields: [categoryId], references: [id])
+  area     ServiceArea?    @relation(fields: [areaId], references: [id], onDelete: Restrict)
+
+  @@index([areaId])
+  @@map("pricing_guidance")
 }

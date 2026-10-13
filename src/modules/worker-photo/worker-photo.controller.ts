@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
+import { ApiModelResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -24,6 +25,7 @@ export class WorkerPhotoController {
   constructor(private readonly photos: WorkerPhotoService) {}
 
   @Post()
+  @ApiModelResponse(PhotoUploadResponse, { status: 201 })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Ask for a short-lived upload link for a new profile photo',
@@ -53,6 +55,7 @@ export class WorkerPhotoController {
   }
 
   @Get()
+  @ApiModelResponse(PhotoLink)
   @ApiOperation({ summary: 'A short-lived link to my current photo (404 when none)' })
   mine(@CurrentUser() user: AuthenticatedUser): Promise<PhotoLink> {
     return this.photos.getMine(user.userId);

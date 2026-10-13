@@ -1,7 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString, Length, Matches } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+} from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
+import { ENGAGEMENTS } from '../../../common/validation/engagements';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -47,7 +57,7 @@ export class UpdateServiceCategoryDto {
   @Length(2, 100)
   name?: string;
 
-  @ApiPropertyOptional({ nullable: true, description: 'null or empty clears it.' })
+  @ApiPropertyOptional({ nullable: true, description: 'null or empty clears it.', type: String })
   @IsOptional()
   @Transform(emptyToNull)
   @IsString()
@@ -71,9 +81,26 @@ export class AdminCategoryListQuery extends PageQueryDto {
 /** What customers and workers see: enabled categories only, no internal state. */
 export class ServiceCategoryResponse {
   @ApiProperty() id!: string;
+  @ApiProperty({
+    type: [String],
+    description: 'Engagement types this category offers; empty = not restricted.',
+  })
+  allowedEngagements!: string[];
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
-  @ApiProperty({ nullable: true }) description!: string | null;
+  @ApiProperty({ nullable: true, type: String }) description!: string | null;
+}
+
+export class SetCategoryEngagementsDto {
+  @ApiProperty({
+    enum: ENGAGEMENTS,
+    isArray: true,
+    description: 'The engagement types the category offers. An empty list removes the restriction.',
+  })
+  @IsArray()
+  @ArrayMaxSize(ENGAGEMENTS.length)
+  @IsIn(ENGAGEMENTS, { each: true })
+  engagements!: string[];
 }
 
 export class AdminServiceCategoryResponse extends ServiceCategoryResponse {

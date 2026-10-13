@@ -79,8 +79,8 @@ export class ReportResponse<T = unknown> {
   definition!: string;
   @ApiProperty({ type: [String], description: 'Known limits of what the data can answer.' })
   notes!: string[];
-  @ApiProperty({ nullable: true }) from!: string | null;
-  @ApiProperty({ nullable: true }) to!: string | null;
+  @ApiProperty({ nullable: true, type: String }) from!: string | null;
+  @ApiProperty({ nullable: true, type: String }) to!: string | null;
   @ApiProperty({ description: 'Report-specific content.' }) data!: T;
   @ApiPropertyOptional({ description: 'Present on paginated reports.' }) meta?: {
     page: number;
@@ -95,4 +95,52 @@ export class ReportCatalogEntry {
   @ApiProperty() path!: string;
   @ApiProperty() definition!: string;
   @ApiProperty({ type: [String] }) notes!: string[];
+}
+
+export const EXPORTABLE_REPORTS = [
+  'new-customers',
+  'worker-registrations',
+  'booking-funnel',
+  'demand-by-category',
+  'demand-by-area',
+  'worker-utilization',
+  'interview-conversion',
+  'cancellation-rate',
+  'replacement-rate',
+  'payment-collections',
+  'support-tickets',
+  'top-rated-workers',
+  'repeat-customers',
+] as const;
+export type ExportableReport = (typeof EXPORTABLE_REPORTS)[number];
+
+/** from/to are required by the period reports and ignored by the point-in-time ones (worker-utilization, top-rated-workers). */
+export class ReportExportQuery {
+  @ApiPropertyOptional({
+    example: '2026-10-01',
+    description: 'First day (India calendar), inclusive.',
+  })
+  @IsOptional()
+  @Matches(DATE, { message: 'from must be a date written as YYYY-MM-DD' })
+  from?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-10-31',
+    description: 'Last day (India calendar), inclusive.',
+  })
+  @IsOptional()
+  @Matches(DATE, { message: 'to must be a date written as YYYY-MM-DD' })
+  to?: string;
+
+  @ApiPropertyOptional({ enum: REPORT_INTERVALS, default: 'day' })
+  @IsOptional()
+  @IsEnum(REPORT_INTERVALS)
+  interval: ReportInterval = 'day';
+
+  @ApiPropertyOptional({ minimum: 1, default: 1, description: 'top-rated-workers only.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  minRatings: number = 1;
 }

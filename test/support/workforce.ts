@@ -27,7 +27,7 @@ export interface OnboardOptions {
   name?: string;
   categoryCodes?: string[];
   areaIds?: string[];
-  engagement?: 'FULL_TIME' | 'PART_TIME' | 'LIVE_IN';
+  engagement?: 'FULL_TIME' | 'PART_TIME' | 'LIVE_IN' | 'DAILY' | 'HOURLY' | 'SHIFT' | 'ONE_TIME';
   windows?: Array<{ start: string; end: string }>;
   experienceMonths?: number;
   languages?: string[];

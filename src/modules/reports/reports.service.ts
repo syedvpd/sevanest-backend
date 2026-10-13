@@ -1,10 +1,14 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { reportRows, toCsv } from '../../common/csv/csv';
 import { skipFor } from '../../common/pagination/pagination';
 import { isRealDate } from '../../common/time/india';
 import {
+  EXPORTABLE_REPORTS,
+  ExportableReport,
   MAX_REPORT_RANGE_DAYS,
+  ReportExportQuery,
   ReportCatalogEntry,
   ReportPagedQuery,
   ReportRangeQuery,
@@ -16,6 +20,9 @@ import { REPORT_CATALOG } from './reports.catalog';
 import { ReportsRepository } from './reports.repository';
 
 const DAY_MS = 86_400_000;
+
+/** Technical cap on one export (not a reporting rule). */
+export const EXPORT_ROWS_MAX = 5000;
 
 /** numerator / denominator to four decimals; null when nothing happened (a rate over zero is not 0%). */
 export function rate(numerator: number, denominator: number): number | null {
@@ -33,6 +40,86 @@ export class ReportsService {
 
   catalog(): readonly ReportCatalogEntry[] {
     return REPORT_CATALOG;
+  }
+
+  /**
+   * Any report as a CSV file: the report's own rows (series, categories, areas ...) with nested values as `a.b` columns. Paged reports are
+   * walked page by page up to EXPORT_ROWS_MAX rows; nothing the screen would not show is added. Formula-looking cells are neutralised.
+   */
+  async exportCsv(
+    name: ExportableReport,
+    q: ReportExportQuery,
+  ): Promise<{ csv: string; rows: number }> {
+    if (!EXPORTABLE_REPORTS.includes(name)) {
+      throw new DomainException(ErrorCode.NOT_FOUND, 'No such report', HttpStatus.NOT_FOUND);
+    }
+    const needsRange = !['worker-utilization', 'top-rated-workers'].includes(name);
+    if (needsRange && (q.from === undefined || q.to === undefined)) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'from', messages: ['from and to are required for this report'] }],
+      );
+    }
+    const range = { from: q.from!, to: q.to! };
+    const series = { ...range, interval: q.interval };
+    const paged = async (fetch: (page: number) => Promise<ReportResponse>): Promise<unknown[]> => {
+      const rows: unknown[] = [];
+      for (let page = 1; rows.length < EXPORT_ROWS_MAX; page++) {
+        const res = await fetch(page);
+        const chunk: unknown[] = Array.isArray(res.data) ? (res.data as unknown[]) : [];
+        rows.push(...chunk);
+        if (chunk.length === 0 || rows.length >= (res.meta?.total ?? 0)) break;
+      }
+      return rows.slice(0, EXPORT_ROWS_MAX);
+    };
+    let data: unknown;
+    switch (name) {
+      case 'new-customers':
+        data = (await this.newCustomers(series)).data;
+        break;
+      case 'worker-registrations':
+        data = (await this.workerRegistrations(series)).data;
+        break;
+      case 'booking-funnel':
+        data = (await this.bookingFunnel(series)).data;
+        break;
+      case 'payment-collections':
+        data = (await this.paymentCollections(series)).data;
+        break;
+      case 'support-tickets':
+        data = (await this.supportTickets(series)).data;
+        break;
+      case 'demand-by-category':
+        data = (await this.demandByCategory(range)).data;
+        break;
+      case 'interview-conversion':
+        data = (await this.interviewConversion(range)).data;
+        break;
+      case 'cancellation-rate':
+        data = (await this.cancellationRate(range)).data;
+        break;
+      case 'replacement-rate':
+        data = (await this.replacementRate(range)).data;
+        break;
+      case 'worker-utilization':
+        data = (await this.workerUtilization()).data;
+        break;
+      case 'demand-by-area':
+        data = await paged((page) => this.demandByArea({ ...range, page, limit: 100 }));
+        break;
+      case 'repeat-customers':
+        data = await paged((page) => this.repeatCustomers({ ...range, page, limit: 100 }));
+        break;
+      case 'top-rated-workers':
+        data = await paged((page) =>
+          this.topRatedWorkers({ minRatings: q.minRatings, page, limit: 100 }),
+        );
+        break;
+    }
+    const rows = reportRows(data);
+    return { csv: toCsv(rows), rows: rows.length };
   }
 
   async newCustomers(q: ReportSeriesQuery): Promise<ReportResponse> {

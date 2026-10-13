@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '../../generated/prisma/client';
+import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
+import { workerBusyCondition, type BusyRequest } from '../../common/scheduling/worker-busy';
 import type { Engagement } from '../search/search.types';
 import type { BookingStatusValue, ScheduleTypeValue } from './dto/booking.dto';
 
@@ -34,6 +35,8 @@ export interface BookingRecord {
   requirementNote: string | null;
   workerRespondedAt: Date | null;
   respondBy: Date | null;
+  proposedSlotAt: Date | null;
+  proposedSlotNote: string | null;
   idempotencyKey: string | null;
   requestHash: string | null;
   createdAt: Date;
@@ -81,6 +84,8 @@ function toRecord(row: Row): BookingRecord {
     requirementNote: row.requirementNote,
     workerRespondedAt: row.workerRespondedAt,
     respondBy: row.respondBy,
+    proposedSlotAt: row.proposedSlotAt,
+    proposedSlotNote: row.proposedSlotNote,
     idempotencyKey: row.idempotencyKey,
     requestHash: row.requestHash,
     createdAt: row.createdAt,
@@ -106,6 +111,15 @@ export interface BookingFilter {
   customerUserId?: string;
   workerId?: string;
   status?: BookingStatusValue;
+  categoryId?: string;
+  areaId?: string;
+  engagement?: Engagement;
+  createdFrom?: Date;
+  createdTo?: Date;
+  /** Offered to a worker who has not accepted or declined yet. */
+  awaitingWorkerResponse?: boolean;
+  /** Not finished: neither COMPLETED, CANCELLED nor REPLACED. */
+  openOnly?: boolean;
 }
 
 /** The only place in the application that touches the booking tables (Prisma models). */
@@ -183,6 +197,12 @@ export class BookingRepository {
   }
 
   /** Serialises every change of one booking for the rest of the transaction. */
+  async findManyByIds(ids: string[]): Promise<BookingRecord[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.booking.findMany({ where: { id: { in: ids } } });
+    return rows.map(toRecord);
+  }
+
   async lock(id: string, tx: Prisma.TransactionClient): Promise<BookingRecord | null> {
     const rows = await tx.$queryRaw<
       Array<{ id: string }>
@@ -210,8 +230,53 @@ export class BookingRepository {
         cancelledByUserId: change.cancelledByUserId,
         workerRespondedAt: change.workerRespondedAt,
         respondBy: change.respondBy,
+        // A proposed alternative slot only exists while the interview/trial is scheduled: any other move clears it.
+        ...(change.status !== 'INTERVIEW_TRIAL_SCHEDULED'
+          ? { proposedSlotAt: null, proposedSlotNote: null }
+          : {}),
       },
     });
+  }
+
+  async setSlotProposal(
+    id: string,
+    proposal: { at: Date; note: string | null } | null,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.booking.update({
+      where: { id },
+      data: { proposedSlotAt: proposal?.at ?? null, proposedSlotNote: proposal?.note ?? null },
+    });
+  }
+
+  async setSchedule(id: string, scheduledAt: Date, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.booking.update({
+      where: { id },
+      data: { scheduledAt, proposedSlotAt: null, proposedSlotNote: null },
+    });
+  }
+
+  /**
+   * The whole replacement chain a booking belongs to, oldest first: walks back to the first booking and forward through every booking
+   * that replaced the previous one. Ids only; the caller decides what each viewer may see.
+   */
+  async replacementChain(id: string): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      WITH RECURSIVE back AS (
+        SELECT b.id, b.replaces_booking_id, 0 AS depth FROM bookings b WHERE b.id = ${id}::uuid
+        UNION ALL
+        SELECT p.id, p.replaces_booking_id, back.depth + 1
+        FROM bookings p JOIN back ON p.id = back.replaces_booking_id
+      ), root AS (
+        SELECT id FROM back ORDER BY depth DESC LIMIT 1
+      ), forward AS (
+        SELECT b.id, b.created_at, 0 AS step FROM bookings b JOIN root ON b.id = root.id
+        UNION ALL
+        SELECT n.id, n.created_at, forward.step + 1
+        FROM bookings n JOIN forward ON n.replaces_booking_id = forward.id
+      )
+      SELECT id FROM forward ORDER BY step ASC`);
+    return rows.map((r) => r.id);
   }
 
   // --- scheduled-job queries ------------------------------------------------------------------------------------
@@ -272,6 +337,25 @@ export class BookingRepository {
     }));
   }
 
+  /**
+   * Serialises every decision that gives one worker's time away (confirming a worker, replacing a worker) for the rest of the transaction,
+   * so two customers confirming the same worker for overlapping times cannot both succeed.
+   */
+  async lockWorker(workerId: string, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${workerId}, 42))`;
+  }
+
+  async isWorkerBusy(
+    workerId: string,
+    request: BusyRequest,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<boolean> {
+    const rows = await db.$queryRaw<Array<{ busy: boolean }>>(
+      Prisma.sql`SELECT ${workerBusyCondition(Prisma.sql`${workerId}::uuid`, request)} AS busy`,
+    );
+    return rows[0]?.busy === true;
+  }
+
   async list(
     filter: BookingFilter,
     skip: number,
@@ -281,6 +365,21 @@ export class BookingRepository {
       ...(filter.customerUserId ? { customerUserId: filter.customerUserId } : {}),
       ...(filter.workerId ? { workerId: filter.workerId } : {}),
       ...(filter.status ? { status: filter.status } : {}),
+      ...(filter.awaitingWorkerResponse ? { workerRespondedAt: null } : {}),
+      ...(filter.openOnly && !filter.status
+        ? { status: { notIn: ['COMPLETED', 'CANCELLED', 'REPLACED'] as BookingStatusValue[] } }
+        : {}),
+      ...(filter.categoryId ? { categoryId: filter.categoryId } : {}),
+      ...(filter.areaId ? { areaId: filter.areaId } : {}),
+      ...(filter.engagement ? { engagement: filter.engagement } : {}),
+      ...(filter.createdFrom || filter.createdTo
+        ? {
+            createdAt: {
+              ...(filter.createdFrom ? { gte: filter.createdFrom } : {}),
+              ...(filter.createdTo ? { lte: filter.createdTo } : {}),
+            },
+          }
+        : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.booking.findMany({

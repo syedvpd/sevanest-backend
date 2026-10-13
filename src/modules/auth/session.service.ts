@@ -49,6 +49,11 @@ export class SessionService implements OnModuleInit {
         this.logger.log(`Revoked ${count} session(s) after suspension of user ${event.userId}`);
       }
     });
+    // A Super Admin reset another admin's password: every session of that admin ends.
+    this.userEvents.onPasswordReset(async (event) => {
+      const count = await this.revokeAllForUser(event.userId);
+      this.logger.log(`Revoked ${count} session(s) after a password reset of user ${event.userId}`);
+    });
   }
 
   /** Creates a session and returns the first token pair. A new login on the same device replaces its previous session. */

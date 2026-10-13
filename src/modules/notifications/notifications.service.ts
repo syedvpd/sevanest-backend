@@ -1,3 +1,4 @@
+import { assertIfMatch } from '../../common/concurrency/if-match';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
@@ -385,9 +386,11 @@ export class NotificationsService {
     id: string,
     dto: UpdateTemplateDto,
     admin: Actor & { userId: string },
+    ifMatch?: string,
   ): Promise<TemplateView> {
     const existing = await this.repository.findTemplate(id);
     if (!existing) throw this.templateNotFound();
+    assertIfMatch(ifMatch, existing.updatedAt);
     this.assertPlaceholders(
       [dto.body ?? existing.body, dto.title ?? existing.title ?? ''],
       this.paramsFor(existing.eventCode),

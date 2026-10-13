@@ -1,4 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { assertIfMatch } from '../../common/concurrency/if-match';
+import { AppConfigService } from '../../config/app-config.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import type { Prisma } from '../../generated/prisma/client';
@@ -24,6 +26,9 @@ export function toAddressView(address: AddressRecord): AddressResponse {
     area: address.area,
     city: address.city,
     pincode: address.pincode,
+    label: address.label,
+    line2: address.line2,
+    state: address.state,
     latitude: address.latitude,
     longitude: address.longitude,
     isDefault: address.isDefault,
@@ -49,6 +54,7 @@ export class CustomerAddressesService {
   constructor(
     private readonly repository: CustomersRepository,
     private readonly audit: AuditService,
+    private readonly config: AppConfigService,
   ) {}
 
   async list(userId: string): Promise<AddressResponse[]> {
@@ -79,6 +85,9 @@ export class CustomerAddressesService {
           area: dto.area,
           city: dto.city,
           pincode: dto.pincode,
+          label: dto.label ?? null,
+          line2: dto.line2 ?? null,
+          state: dto.state ?? null,
           latitude: dto.latitude ?? null,
           longitude: dto.longitude ?? null,
           isDefault: wantsDefault,
@@ -95,11 +104,17 @@ export class CustomerAddressesService {
         },
         tx,
       );
+      await this.autoVerify(customerId, userId, tx);
       return toAddressView(created);
     });
   }
 
-  async update(userId: string, addressId: string, dto: UpdateAddressDto): Promise<AddressResponse> {
+  async update(
+    userId: string,
+    addressId: string,
+    dto: UpdateAddressDto,
+    ifMatch?: string,
+  ): Promise<AddressResponse> {
     const fields = changedFieldNames(dto);
     if (fields.length === 0) {
       throw new DomainException(
@@ -114,6 +129,7 @@ export class CustomerAddressesService {
       if (!existing) {
         throw this.notFound();
       }
+      assertIfMatch(ifMatch, existing.updatedAt);
       // `null` explicitly clears a coordinate; the pair must stay consistent after the merge.
       const latitude = dto.latitude === undefined ? existing.latitude : dto.latitude;
       const longitude = dto.longitude === undefined ? existing.longitude : dto.longitude;
@@ -125,6 +141,9 @@ export class CustomerAddressesService {
           area: dto.area,
           city: dto.city,
           pincode: dto.pincode,
+          label: dto.label,
+          line2: dto.line2,
+          state: dto.state,
           ...(dto.latitude !== undefined || dto.longitude !== undefined
             ? { latitude, longitude }
             : {}),
@@ -188,7 +207,36 @@ export class CustomerAddressesService {
         },
         tx,
       );
+      await this.autoVerify(customerId, userId, tx);
     });
+  }
+
+  /**
+   * Basic customer verification (FR-CUS / FR-VER-007), interim rule: a customer is VERIFIED while their mobile is OTP-verified (always true),
+   * the profile is complete (name and email are required to create it) and they hold at least one active saved address; PENDING when the last
+   * address is removed. A status an administrator set by hand is never overridden. Switch off with CUSTOMER_AUTO_VERIFY=false.
+   */
+  private async autoVerify(
+    customerId: string,
+    userId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (!this.config.customerAutoVerify) return;
+    const state = await this.repository.verificationState(customerId, tx);
+    if (!state || state.adminSet) return;
+    const target = state.activeAddresses > 0 ? 'VERIFIED' : 'PENDING';
+    if (target === state.status) return;
+    await this.repository.setVerificationStatus(customerId, target, tx);
+    await this.audit.record(
+      {
+        action: 'customer.auto_verification',
+        entityType: 'customer_profile',
+        entityId: customerId,
+        actorId: userId,
+        metadata: { from: state.status, to: target },
+      },
+      tx,
+    );
   }
 
   private async requireProfile(userId: string): Promise<{ id: string }> {
