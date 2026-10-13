@@ -14,6 +14,7 @@ import {
   PAYMENT_PROVIDER,
   type PaymentProvider,
   type ProviderPayment,
+  type ProviderPaymentDetails,
   type ProviderPaymentOutcome,
   type ProviderRefund,
   type ProviderWebhookEvent,
@@ -26,10 +27,12 @@ import {
   AdminPaymentListQuery,
   AdminPaymentView,
   BOOKING_FEE_CODE,
+  CheckoutView,
   CreatePaymentResponse,
   FeeView,
   PaymentListQuery,
   PaymentView,
+  ReceiptView,
   RefundDto,
   SetFeeDto,
   VerifyPaymentDto,
@@ -69,7 +72,7 @@ export interface PaymentActor {
 
 type Applied = 'APPLIED' | 'DUPLICATE' | 'IGNORED' | 'MISMATCH';
 
-interface GatewayReport {
+interface GatewayReport extends ProviderPaymentDetails {
   providerPaymentId: string;
   outcome: ProviderPaymentOutcome;
   amountMinor: number;
@@ -216,7 +219,7 @@ export class PaymentService {
     if (!payment.providerOrderId) {
       payment = await this.openOrder(payment);
     }
-    return { ...this.view(payment), checkout: payment.checkoutPayload };
+    return { ...this.view(payment), checkout: this.checkout(payment.checkoutPayload) };
   }
 
   /**
@@ -254,6 +257,10 @@ export class PaymentService {
         outcome: reported.outcome,
         amountMinor: reported.amountMinor,
         currency: reported.currency,
+        method: reported.method,
+        methodDetail: reported.methodDetail,
+        errorCode: reported.errorCode,
+        errorDescription: reported.errorDescription,
       },
       { source: 'client-verification' },
     );
@@ -262,13 +269,47 @@ export class PaymentService {
 
   async listMine(customerUserId: string, query: PaymentListQuery): Promise<Page<PaymentView>> {
     const { items, total } = await this.repository.list(
-      { customerUserId, status: query.status },
+      {
+        customerUserId,
+        status: query.status,
+        bookingId: query.bookingId,
+        refunded: query.refunded,
+      },
       skipFor(query),
       query.limit,
     );
     return {
       data: items.map((p) => this.view(p)),
       meta: { page: query.page, limit: query.limit, total },
+    };
+  }
+
+  /** Receipt of a paid payment (also after a refund). 409 RECEIPT_NOT_AVAILABLE before it is paid. */
+  async receiptMine(customerUserId: string, paymentId: string): Promise<ReceiptView> {
+    const payment = await this.repository.findById(paymentId);
+    if (!payment || payment.customerUserId !== customerUserId) throw this.notFound();
+    if (!payment.receiptNumber || !payment.paidAt) {
+      throw new DomainException(
+        'RECEIPT_NOT_AVAILABLE',
+        'A receipt exists only for a successful payment',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const view = this.view(payment);
+    return {
+      receiptNumber: payment.receiptNumber,
+      paymentId: payment.id,
+      bookingId: payment.bookingId,
+      feeCode: payment.feeCode,
+      amountMinor: payment.amountMinor,
+      currency: payment.currency,
+      paidAt: payment.paidAt,
+      paymentMethod: payment.paymentMethod,
+      paymentMethodDetail: payment.paymentMethodDetail,
+      gatewayReference: payment.providerPaymentId,
+      status: payment.status,
+      refundStatus: view.refundStatus,
+      refundedAt: payment.refundedAt,
     };
   }
 
@@ -312,6 +353,10 @@ export class PaymentService {
         outcome: event.outcome,
         amountMinor: event.amountMinor,
         currency: event.currency,
+        method: event.method,
+        methodDetail: event.methodDetail,
+        errorCode: event.errorCode,
+        errorDescription: event.errorDescription,
       },
       { source: 'webhook', eventId: event.eventId },
     );
@@ -391,6 +436,10 @@ export class PaymentService {
           outcome: report.outcome,
           amountMinor: report.amountMinor,
           currency: report.currency,
+          method: report.method,
+          methodDetail: report.methodDetail,
+          errorCode: report.errorCode,
+          errorDescription: report.errorDescription,
         },
         { source: opts.actor ? 'admin-reconciliation' : 'auto-reconciliation', actor: opts.actor },
       );
@@ -863,7 +912,10 @@ export class PaymentService {
           {
             status: 'FAILED',
             providerPaymentId: report.providerPaymentId,
-            failureReason: 'the gateway reported a failure',
+            failureReason: report.errorDescription ?? 'The payment did not go through',
+            failureCode: report.errorCode ?? null,
+            ...(report.method ? { paymentMethod: report.method } : {}),
+            ...(report.methodDetail ? { paymentMethodDetail: report.methodDetail } : {}),
             // A short tail of checks: another attempt on the same order may still succeed (UPI fails, card works).
             reconcileAttempts: 0,
             reconcileNextAt: new Date(Date.now() + RECOVERY.tailFirstDelayMs),
@@ -897,6 +949,9 @@ export class PaymentService {
         {
           status: 'SUCCEEDED',
           providerPaymentId: report.providerPaymentId,
+          ...(report.method ? { paymentMethod: report.method } : {}),
+          ...(report.methodDetail ? { paymentMethodDetail: report.methodDetail } : {}),
+          failureCode: null,
           paidAt: new Date(),
           receiptNumber,
           reconcileNextAt: null,
@@ -1251,6 +1306,24 @@ export class PaymentService {
       refundStatus: refund,
       refundedAt: payment.refundedAt,
       createdAt: payment.createdAt,
+      paymentMethod: payment.paymentMethod,
+      paymentMethodDetail: payment.paymentMethodDetail,
+      gatewayReference: payment.providerPaymentId,
+      failureCode: payment.status === 'FAILED' ? payment.failureCode : null,
+      failureReason: payment.status === 'FAILED' ? payment.failureReason : null,
+    };
+  }
+
+  /** The typed checkout contract; payloads stored before `gateway` existed are recognised by their key. */
+  private checkout(payload: Record<string, unknown> | null): CheckoutView | null {
+    if (!payload || typeof payload.orderId !== 'string') return null;
+    const keyId = typeof payload.keyId === 'string' ? payload.keyId : null;
+    return {
+      gateway: typeof payload.gateway === 'string' ? payload.gateway : keyId ? 'razorpay' : 'fake',
+      keyId,
+      orderId: payload.orderId,
+      amount: typeof payload.amount === 'number' ? payload.amount : 0,
+      currency: typeof payload.currency === 'string' ? payload.currency : 'INR',
     };
   }
 

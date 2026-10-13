@@ -1,3 +1,4 @@
+import { reportError } from '../observability/sentry';
 import {
   ArgumentsHost,
   Catch,
@@ -62,6 +63,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     body.requestId = requestId;
 
     if (status >= 500) {
+      reportError(exception, requestId ? { requestId } : undefined);
       this.logger.error(
         {
           msg: 'Unhandled exception',

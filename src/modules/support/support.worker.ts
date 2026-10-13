@@ -1,3 +1,4 @@
+import { reportError } from '../../common/observability/sentry';
 import {
   Injectable,
   Logger,
@@ -41,6 +42,7 @@ export class SupportSlaLoop implements OnApplicationBootstrap, OnModuleDestroy {
       const flagged = await this.support.flagSlaBreaches();
       if (flagged > 0) this.logger.log(`Support tickets past their resolution target: ${flagged}`);
     } catch (error) {
+      reportError(error, { job: 'support' });
       this.logger.error(`Support SLA check failed: ${(error as Error).message}`);
     } finally {
       this.running = false;

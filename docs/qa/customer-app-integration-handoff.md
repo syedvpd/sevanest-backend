@@ -46,3 +46,16 @@ Interview object: `{ id, bookingId, type, status, statusLabel, requestedBy, pref
 
 ## Test customer
 `scripts/seed-demo.ts` (local DB only) builds customers with profile, two addresses, workers in several categories/areas and shortlists, through the real API. For a deployed staging server set `ALLOW_TEST_OTP=true`, `TEST_OTP_NUMBERS=<synthetic +91 number>`, `TEST_OTP_CODE=<digits>` (never in production). No real data was seeded anywhere by this work.
+
+## Module 7 - payments (2026-10-13)
+| # | Question | Answer |
+|---|---|---|
+| 1 | Checkout shape | `checkout` is now typed: `{ gateway: "razorpay" \| "fake", keyId: string \| null, orderId, amount, currency }`. Razorpay SDK: `key = keyId`, `order_id = orderId`, `amount`, `currency`. Verify with `POST /payments/{id}/verify { providerPaymentId: razorpay_payment_id, signature: razorpay_signature }`; `razorpay_order_id` is not needed (the server already knows its order and checks the signature against it). The deployed gateway is Razorpay once `PAYMENT_PROVIDER=razorpay` and keys are set (not yet done). |
+| 2 | Receipt | New `GET /payments/{id}/receipt` -> `{ receiptNumber, paymentId, bookingId, feeCode, amountMinor, currency, paidAt, paymentMethod, paymentMethodDetail, gatewayReference, status, refundStatus, refundedAt }`; 409 `RECEIPT_NOT_AVAILABLE` before success; 404 for anyone else. No PDF yet: render it in the app (a PDF needs an approved invoice/GST format). |
+| 3 | Method and reference | `PaymentView` now has `paymentMethod` (upi, card, netbanking, wallet, emi), `paymentMethodDetail` (masked: `ab***@okhdfc`, `Visa **** 4242`, bank or wallet code) and `gatewayReference` (Razorpay `pay_...`). Null until the gateway answers. |
+| 4 | Payment of a booking | `GET /payments?bookingId=` (customer, own payments only). `BookingView` stays without a payment id (bookings do not depend on payments). |
+| 5 | CREATED vs PENDING | `CREATED` only while the gateway order is not yet created (rare; retry `POST /payments`). Once `checkout` is returned the status is `PENDING` until the gateway answers. Treat `PENDING` with a checkout as payable (open the checkout) and after the SDK returns as confirming. |
+| 6 | Retry after FAILED | `POST /payments` for the same booking creates a NEW payment (new order) while the booking is still `PENDING_PAYMENT`; send a fresh `Idempotency-Key`. |
+| 7 | Refund filter | `GET /payments?refunded=true` returns REFUND_PENDING, REFUNDED and REFUND_FAILED. |
+| 8 | Failure reason | `failureCode` and `failureReason` (the gateway's display message) on FAILED payments; null otherwise. The backend cannot know whether money was deducted, so it does not say "no money deducted"; Razorpay automatically refunds amounts debited for failed payments, so the app may say "if money was debited it is refunded automatically by the bank/gateway". |
+Evidence: `test/integration/payment.appfields.int-spec.ts` (4 tests), Razorpay masking unit test; payment, contract, inventory and security suites pass (97 tests). Not verified against real Razorpay (no keys).

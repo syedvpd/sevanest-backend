@@ -1,3 +1,4 @@
+import { reportError } from '../../common/observability/sentry';
 import {
   Injectable,
   Logger,
@@ -41,6 +42,7 @@ export class RecheckDueLoop implements OnApplicationBootstrap, OnModuleDestroy {
       const reminded = await this.verification.notifyRecheckDue();
       if (reminded > 0) this.logger.log(`Re-check reminders queued: ${reminded}`);
     } catch (error) {
+      reportError(error, { job: 'verification' });
       this.logger.error(`Re-check reminder run failed: ${(error as Error).message}`);
     } finally {
       this.running = false;
@@ -81,6 +83,7 @@ export class AbandonedUploadLoop implements OnApplicationBootstrap, OnModuleDest
       const purged = await this.verification.purgeAbandonedUploads(ABANDONED_AFTER_MS);
       if (purged > 0) this.logger.log(`Abandoned uploads discarded: ${purged}`);
     } catch (error) {
+      reportError(error, { job: 'verification' });
       this.logger.error(`Abandoned-upload sweep failed: ${(error as Error).message}`);
     } finally {
       this.running = false;

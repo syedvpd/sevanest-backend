@@ -26,6 +26,9 @@ export interface PaymentRecord {
   receiptNumber: string | null;
   paidAt: Date | null;
   failureReason: string | null;
+  failureCode: string | null;
+  paymentMethod: string | null;
+  paymentMethodDetail: string | null;
   refundReason: string | null;
   refundProviderId: string | null;
   refundedAt: Date | null;
@@ -99,6 +102,9 @@ function toRecord(row: Row): PaymentRecord {
     receiptNumber: row.receiptNumber,
     paidAt: row.paidAt,
     failureReason: row.failureReason,
+    failureCode: row.failureCode,
+    paymentMethod: row.paymentMethod,
+    paymentMethodDetail: row.paymentMethodDetail,
     refundReason: row.refundReason,
     refundProviderId: row.refundProviderId,
     refundedAt: row.refundedAt,
@@ -142,6 +148,9 @@ export interface PaymentChange {
   receiptNumber?: string;
   paidAt?: Date;
   failureReason?: string;
+  failureCode?: string | null;
+  paymentMethod?: string;
+  paymentMethodDetail?: string;
   refundReason?: string;
   refundProviderId?: string | null;
   refundedAt?: Date;
@@ -263,6 +272,7 @@ export class PaymentRepository {
       customerUserId?: string;
       bookingId?: string;
       status?: PaymentStatusValue;
+      refunded?: boolean;
     },
     skip: number,
     take: number,
@@ -271,6 +281,11 @@ export class PaymentRepository {
       ...(filter.customerUserId ? { customerUserId: filter.customerUserId } : {}),
       ...(filter.bookingId ? { bookingId: filter.bookingId } : {}),
       ...(filter.status ? { status: filter.status } : {}),
+      ...(filter.refunded && !filter.status
+        ? {
+            status: { in: ['REFUND_PENDING', 'REFUNDED', 'REFUND_FAILED'] as PaymentStatusValue[] },
+          }
+        : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.payment.findMany({

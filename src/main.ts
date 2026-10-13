@@ -1,4 +1,7 @@
 import 'reflect-metadata';
+import { initSentry } from './common/observability/sentry';
+
+initSentry('api');
 import { Logger as NestLogger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';

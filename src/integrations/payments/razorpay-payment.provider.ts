@@ -7,6 +7,7 @@ import type {
   PaymentProvider,
   ProviderOrder,
   ProviderPayment,
+  ProviderPaymentDetails,
   ProviderPaymentOutcome,
   ProviderRefund,
   ProviderWebhookEvent,
@@ -27,6 +28,45 @@ interface RzpPayment {
   amount?: unknown;
   currency?: unknown;
   status?: unknown;
+  method?: unknown;
+  vpa?: unknown;
+  bank?: unknown;
+  wallet?: unknown;
+  card?: { network?: unknown; last4?: unknown } | null;
+  error_code?: unknown;
+  error_description?: unknown;
+}
+
+const str = (v: unknown): string | undefined =>
+  typeof v === 'string' && v.trim() ? v.trim() : undefined;
+
+/** Masked, display-only details of a Razorpay payment entity: never a full card number or UPI id. */
+export function razorpayDetails(p: RzpPayment): ProviderPaymentDetails {
+  const method = str(p.method)?.toLowerCase();
+  let methodDetail: string | undefined;
+  if (method === 'upi') {
+    const vpa = str(p.vpa);
+    if (vpa?.includes('@')) {
+      const [user, handle] = vpa.split('@');
+      methodDetail = `${user.slice(0, 2)}***@${handle}`;
+    }
+  } else if (method === 'card') {
+    const last4 = str(p.card?.last4);
+    const network = str(p.card?.network);
+    if (last4) methodDetail = `${network ? `${network} ` : ''}**** ${last4.slice(-4)}`;
+  } else if (method === 'netbanking') {
+    methodDetail = str(p.bank);
+  } else if (method === 'wallet') {
+    methodDetail = str(p.wallet);
+  }
+  return {
+    ...(method ? { method } : {}),
+    ...(methodDetail ? { methodDetail } : {}),
+    ...(str(p.error_code) ? { errorCode: str(p.error_code) } : {}),
+    ...(str(p.error_description)
+      ? { errorDescription: str(p.error_description)!.slice(0, 200) }
+      : {}),
+  };
 }
 
 interface RzpRefund {
@@ -84,6 +124,7 @@ export class RazorpayPaymentProvider implements PaymentProvider {
     return {
       providerOrderId: id,
       checkoutPayload: {
+        gateway: 'razorpay',
         keyId: this.settings.keyId,
         orderId: id,
         amount: input.amountMinor,
@@ -184,6 +225,7 @@ export class RazorpayPaymentProvider implements PaymentProvider {
       outcome: mapRazorpayPaymentStatus(payment.status),
       amountMinor: payment.amount,
       currency: typeof payment.currency === 'string' ? payment.currency : undefined,
+      ...razorpayDetails(payment),
     };
   }
 
@@ -268,6 +310,7 @@ export class RazorpayPaymentProvider implements PaymentProvider {
       outcome: mapRazorpayPaymentStatus(p.status),
       amountMinor: p.amount,
       currency: typeof p.currency === 'string' ? p.currency : undefined,
+      ...razorpayDetails(p),
     };
   }
 

@@ -751,6 +751,12 @@ model Payment {
   receiptNumber         String?       @unique @map("receipt_number")
   paidAt                DateTime?     @map("paid_at") @db.Timestamptz(6)
   failureReason         String?       @map("failure_reason")
+  /// Gateway error code of the last failed attempt (for example BAD_REQUEST_ERROR); null otherwise.
+  failureCode           String?       @map("failure_code")
+  /// How the customer paid, as the gateway reports it: upi, card, netbanking, wallet, emi. Display only.
+  paymentMethod         String?       @map("payment_method")
+  /// Masked detail of the method (card network and last 4, masked UPI id, bank or wallet code). Never a full number.
+  paymentMethodDetail   String?       @map("payment_method_detail")
   refundReason          String?       @map("refund_reason")
   refundProviderId      String?       @map("refund_provider_id")
   refundedAt            DateTime?     @map("refunded_at") @db.Timestamptz(6)

@@ -1,4 +1,7 @@
 import 'reflect-metadata';
+import { initSentry } from './common/observability/sentry';
+
+initSentry('worker');
 import { Logger as NestLogger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';

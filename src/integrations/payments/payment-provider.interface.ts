@@ -23,7 +23,15 @@ export interface ProviderOrder {
   checkoutPayload: Record<string, unknown>;
 }
 
-export interface ProviderPayment {
+/** Display details the gateway reports about one payment attempt. Masked; never a full card number or UPI id. */
+export interface ProviderPaymentDetails {
+  method?: string;
+  methodDetail?: string;
+  errorCode?: string;
+  errorDescription?: string;
+}
+
+export interface ProviderPayment extends ProviderPaymentDetails {
   providerPaymentId: string;
   providerOrderId: string;
   outcome: ProviderPaymentOutcome;
@@ -39,7 +47,7 @@ export interface ProviderRefund {
 }
 
 /** A provider notification reduced to what the Payment module needs. Produced only AFTER the signature was verified. */
-export interface ProviderWebhookEvent {
+export interface ProviderWebhookEvent extends ProviderPaymentDetails {
   /** PAYMENT (default) = a payment outcome; REFUND = a refund outcome; IGNORED = authentic but of no interest (acknowledge only). */
   kind?: 'PAYMENT' | 'REFUND' | 'IGNORED';
   /** Unique per notification at the provider; the basis of duplicate protection. */

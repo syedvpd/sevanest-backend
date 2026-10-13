@@ -86,14 +86,25 @@ export class PaymentListQuery extends PageQueryDto {
   @IsOptional()
   @IsEnum(PAYMENT_STATUSES)
   status?: PaymentStatusValue;
-}
 
-export class AdminPaymentListQuery extends PaymentListQuery {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Only payments of this booking.' })
   @IsOptional()
   @IsUUID()
   bookingId?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'true = every refund state (REFUND_PENDING, REFUNDED, REFUND_FAILED). Ignored when status is given.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  refunded?: boolean;
+}
+
+export class AdminPaymentListQuery extends PaymentListQuery {
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
@@ -129,14 +140,87 @@ export class PaymentView {
   refundStatus!: 'REFUND_PENDING' | 'REFUNDED' | 'REFUND_FAILED' | null;
   @ApiProperty({ nullable: true, type: Date }) refundedAt!: Date | null;
   @ApiProperty() createdAt!: Date;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'upi',
+    description:
+      'How it was paid, as the gateway reports it (upi, card, netbanking, wallet, emi). Null until the gateway answers.',
+  })
+  paymentMethod!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'ab***@okhdfc',
+    description:
+      'Masked detail: card network and last 4, masked UPI id, bank or wallet code. Never a full number.',
+  })
+  paymentMethodDetail!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'pay_29QQoUBi66xm2f',
+    description: 'The gateway payment id (show it on the receipt; quote it to support).',
+  })
+  gatewayReference!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Gateway error code of a FAILED payment.',
+  })
+  failureCode!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Gateway message of a FAILED payment, suitable for display. Null otherwise.',
+  })
+  failureReason!: string | null;
+}
+
+export class CheckoutView {
+  @ApiProperty({ enum: ['razorpay', 'fake'], description: 'Which SDK to open.' }) gateway!: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Razorpay key id (public). Pass as `key` to the Razorpay SDK. Null for the fake gateway.',
+  })
+  keyId!: string | null;
+  @ApiProperty({ description: 'Gateway order id. Pass as `order_id` to the Razorpay SDK.' })
+  orderId!: string;
+  @ApiProperty({ description: 'Smallest currency unit (paise).' }) amount!: number;
+  @ApiProperty() currency!: string;
 }
 
 export class CreatePaymentResponse extends PaymentView {
   @ApiProperty({
+    type: CheckoutView,
     nullable: true,
-    description: 'What the gateway SDK needs to open the checkout. Public data only.',
+    description:
+      'What the gateway SDK needs to open the checkout. Null while the gateway order cannot be created yet.',
   })
-  checkout!: Record<string, unknown> | null;
+  checkout!: CheckoutView | null;
+}
+
+export class ReceiptView {
+  @ApiProperty() receiptNumber!: string;
+  @ApiProperty() paymentId!: string;
+  @ApiProperty() bookingId!: string;
+  @ApiProperty({ example: 'BOOKING_FEE', description: 'What was paid for.' }) feeCode!: string;
+  @ApiProperty({ description: 'Smallest currency unit (paise).' }) amountMinor!: number;
+  @ApiProperty() currency!: string;
+  @ApiProperty() paidAt!: Date;
+  @ApiProperty({ nullable: true, type: String }) paymentMethod!: string | null;
+  @ApiProperty({ nullable: true, type: String }) paymentMethodDetail!: string | null;
+  @ApiProperty({ nullable: true, type: String }) gatewayReference!: string | null;
+  @ApiProperty({ enum: PAYMENT_STATUSES }) status!: PaymentStatusValue;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    enum: ['REFUND_PENDING', 'REFUNDED', 'REFUND_FAILED'],
+  })
+  refundStatus!: 'REFUND_PENDING' | 'REFUNDED' | 'REFUND_FAILED' | null;
+  @ApiProperty({ nullable: true, type: Date }) refundedAt!: Date | null;
 }
 
 export class AdminPaymentView extends PaymentView {
@@ -149,7 +233,6 @@ export class AdminPaymentView extends PaymentView {
   })
   providerOrderId!: string | null;
   @ApiProperty({ nullable: true, type: String }) providerPaymentId!: string | null;
-  @ApiProperty({ nullable: true, type: String }) failureReason!: string | null;
   @ApiProperty({ nullable: true, type: String }) refundReason!: string | null;
   @ApiProperty({ nullable: true, type: String }) refundedByUserId!: string | null;
 }

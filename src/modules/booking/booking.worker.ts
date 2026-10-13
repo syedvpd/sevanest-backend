@@ -1,3 +1,4 @@
+import { reportError } from '../../common/observability/sentry';
 import {
   Injectable,
   Logger,
@@ -46,6 +47,7 @@ export class BookingSweepLoop implements OnApplicationBootstrap, OnModuleDestroy
         this.logger.log(`Booking checks: ${JSON.stringify(run)}`);
       }
     } catch (error) {
+      reportError(error, { job: 'booking' });
       this.logger.error(`Booking checks failed: ${(error as Error).message}`);
     } finally {
       this.running = false;

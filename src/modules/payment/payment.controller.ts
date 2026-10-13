@@ -32,12 +32,13 @@ import {
   BOOKING_FEE_CODE,
   CreatePaymentDto,
   CreatePaymentResponse,
-  FeeView,
   FEE_CODE_PATTERN,
+  FeeView,
   PaymentExceptionListQuery,
   PaymentExportQuery,
   PaymentListQuery,
   PaymentView,
+  ReceiptView,
   RefundDto,
   ResolveExceptionDto,
   SetFeeDto,
@@ -94,6 +95,19 @@ export class PaymentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Page<PaymentView>> {
     return this.payments.listMine(user.userId, query);
+  }
+
+  @Get('payments/:paymentId/receipt')
+  @ApiModelResponse(ReceiptView)
+  @ApiOperation({
+    summary:
+      'Receipt of one of my paid payments (409 RECEIPT_NOT_AVAILABLE before payment, 404 for anyone else)',
+  })
+  receipt(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ReceiptView> {
+    return this.payments.receiptMine(user.userId, paymentId);
   }
 
   @Get('payments/:paymentId')

@@ -1,3 +1,4 @@
+import { reportError } from '../../common/observability/sentry';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import {
   Injectable,
@@ -58,6 +59,7 @@ export class NotificationDispatchLoop implements OnApplicationBootstrap, OnModul
       await this.notifications.dispatchOutbox();
       await this.notifications.requeueStale();
     } catch (error) {
+      reportError(error, { job: 'notifications' });
       this.logger.error(`Notification dispatch failed: ${(error as Error).message}`);
     } finally {
       this.running = false;

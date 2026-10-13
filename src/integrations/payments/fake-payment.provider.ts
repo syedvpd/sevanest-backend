@@ -57,6 +57,7 @@ export class FakePaymentProvider implements PaymentProvider {
     return Promise.resolve({
       providerOrderId,
       checkoutPayload: {
+        gateway: 'fake',
         orderId: providerOrderId,
         amount: input.amountMinor,
         currency: input.currency,

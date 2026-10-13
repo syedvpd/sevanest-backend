@@ -58,3 +58,14 @@ Record the result in `docs/qa/phase-verification-results.md`. Until you do, paym
 * `.env` is git-ignored and has never been committed (checked 2026-10-13: not tracked, absent from history; tracked files contain only placeholders).
 * Secrets that were pasted into a chat must be rotated by their owner: Razorpay keys and webhook secret, Supabase database password and service keys, Redis URL password, `JWT_ACCESS_SECRET`, `OTP_HMAC_SECRET`, SMS/Twilio tokens, FCM service account. Change them in the host environment, redeploy, then confirm `GET /health/ready`.
 * Replace the weak admin password: sign in, `POST /admin/account/password`.
+
+## Monitoring and alerting (set up 2026-10-13)
+* **Sentry project** `syed-yh/sevanest-backend`. The API and worker report unexpected errors (HTTP 5xx and failed background runs) when `SENTRY_DSN` is set; nothing is sent without it. Request bodies, headers, cookies, query strings and user data are stripped before sending (`src/common/observability/sentry.ts`). To enable, add `SENTRY_DSN` (from the Sentry project's Client Keys page) and `SENTRY_ENVIRONMENT=production` to **both** Render services and redeploy.
+* **Uptime monitor** "SevaNest API readiness": `GET https://sevanest-backend.onrender.com/health/ready` every 5 minutes, 10 s timeout, marked down after 2 failures. Sentry emails the project team on downtime by default; add Slack or other actions under Alerts if wanted.
+* **Not yet done:** a test error was not sent from the deployed service (the DSN is not on Render yet), alert routing beyond the default email is not configured, and Render free instances sleep when idle, which the uptime monitor will report as slow or down.
+
+## TLS (checked 2026-10-13)
+`sevanest-backend.onrender.com`: TLS 1.3 (`TLS_AES_256_GCM_SHA384`), certificate issued by Google Trust Services (Render-managed, auto-renewed; current one valid until 2026-12-20), HTTP redirects to HTTPS (301), HSTS `max-age=31536000; includeSubDomains`. A custom domain will need its own certificate check after it is added in Render.
+
+## Backups and restore drill
+Scripts: `scripts/db/backup.sh`, `scripts/db/restore.sh` (guide `docs/DATABASE_MIGRATION.md`). Restore drill done **locally** on 2026-10-13 (backup of a local database restored into an empty one; all rows and 21 migrations back; `prisma migrate status` up to date). **Still to do by the owner:** confirm Supabase automatic backups are enabled for the project, run `backup.sh` against Supabase on a schedule and keep copies outside Supabase, and do one restore drill from a Supabase backup into a scratch database.

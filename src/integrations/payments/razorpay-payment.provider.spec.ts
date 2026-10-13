@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { ProviderError } from '../provider-error';
-import { RazorpayPaymentProvider } from './razorpay-payment.provider';
+import { RazorpayPaymentProvider, razorpayDetails } from './razorpay-payment.provider';
 
 const settings = {
   keyId: 'rzp_test_abcdefgh12',
@@ -50,6 +50,7 @@ describe('RazorpayPaymentProvider', () => {
     });
     expect(order.providerOrderId).toBe('order_1');
     expect(order.checkoutPayload).toEqual({
+      gateway: 'razorpay',
       keyId: settings.keyId,
       orderId: 'order_1',
       amount: 49900,
@@ -273,5 +274,34 @@ describe('RazorpayPaymentProvider', () => {
         provider.parseWebhookEvent(Buffer.from(JSON.stringify({ event: 'payment.captured' })), {}),
       ).toBeNull();
     });
+  });
+
+  it('reports the payment method with masked details only, and the gateway error of a failure', () => {
+    expect(razorpayDetails({ method: 'upi', vpa: 'asharao@okhdfc' })).toEqual({
+      method: 'upi',
+      methodDetail: 'as***@okhdfc',
+    });
+    expect(razorpayDetails({ method: 'card', card: { network: 'Visa', last4: '4242' } })).toEqual({
+      method: 'card',
+      methodDetail: 'Visa **** 4242',
+    });
+    expect(razorpayDetails({ method: 'netbanking', bank: 'HDFC' })).toEqual({
+      method: 'netbanking',
+      methodDetail: 'HDFC',
+    });
+    expect(
+      razorpayDetails({
+        method: 'upi',
+        error_code: 'BAD_REQUEST_ERROR',
+        error_description: 'Payment was declined',
+      }),
+    ).toEqual({
+      method: 'upi',
+      errorCode: 'BAD_REQUEST_ERROR',
+      errorDescription: 'Payment was declined',
+    });
+    expect(JSON.stringify(razorpayDetails({ method: 'upi', vpa: 'asharao@okhdfc' }))).not.toContain(
+      'asharao',
+    );
   });
 });

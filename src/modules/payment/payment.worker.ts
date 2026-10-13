@@ -1,3 +1,4 @@
+import { reportError } from '../../common/observability/sentry';
 import {
   Injectable,
   Logger,
@@ -47,6 +48,7 @@ export class PaymentRecoveryLoop implements OnApplicationBootstrap, OnModuleDest
         this.logger.log(`Payment recovery: ${JSON.stringify(run)}`);
       }
     } catch (error) {
+      reportError(error, { job: 'payment' });
       this.logger.error(`Payment recovery run failed: ${(error as Error).message}`);
     } finally {
       this.running = false;
