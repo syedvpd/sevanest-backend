@@ -17,6 +17,16 @@ export const LOG_REDACT_PATHS = [
   '*.refreshTokenHash',
 ];
 
+/** pino-pretty is a dev dependency: a development-mode container built from the production image falls back to JSON logs. */
+function prettyAvailable(): boolean {
+  try {
+    require.resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 @Module({
   imports: [
     LoggerModule.forRootAsync({
@@ -37,7 +47,7 @@ export const LOG_REDACT_PATHS = [
           },
           autoLogging: { ignore: (req) => req.url?.startsWith('/health') ?? false },
           transport:
-            config.nodeEnv === NodeEnv.Development
+            config.nodeEnv === NodeEnv.Development && prettyAvailable()
               ? { target: 'pino-pretty', options: { singleLine: true } }
               : undefined,
         },

@@ -31,9 +31,7 @@ function validate(
     const parts = (schema.allOf as Json[]).map((part) => {
       const r = part.$ref as string | undefined;
       return r
-        ? (((spec.components as Json).schemas as Record<string, Json>)[
-            r.split('/').pop() as string
-          ] as Json)
+        ? ((spec.components as Json).schemas as Record<string, Json>)[r.split('/').pop() as string]
         : part;
     });
     schema = {
@@ -78,7 +76,8 @@ function validate(
     errors.push(`${at}: expected number`);
   if (type === 'boolean' && typeof value !== 'boolean') errors.push(`${at}: expected boolean`);
   const allowed = schema.enum as unknown[] | undefined;
-  if (allowed && !allowed.includes(value)) errors.push(`${at}: ${String(value)} not in enum`);
+  if (allowed && !allowed.includes(value))
+    errors.push(`${at}: ${JSON.stringify(value)} not in enum`);
 }
 
 describe('Published OpenAPI matches the real success responses (integration)', () => {
