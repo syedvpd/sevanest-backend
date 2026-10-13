@@ -28,14 +28,12 @@ export class AuthService {
     private readonly audit: AuditService,
   ) {}
 
-  /** The app that asks for the OTP decides the account type (FRD FM-01: "the app type determines the user type"). */
-  requestOtp(mobile: string, appType: AppType, clientIp: string): Promise<OtpIssueResult> {
-    return this.otp.issue(mobile, clientIp, async () => {
-      const existing = await this.users.findByMobile(mobile);
-      if (existing) {
-        this.assertCanLogin(existing, appType);
-      }
-    });
+  /**
+   * Always answers the same way for every number: account type and status are only checked at verifyOtp, so this
+   * unauthenticated endpoint cannot be used to probe which mobiles are registered, as what, or suspended.
+   */
+  requestOtp(mobile: string, clientIp: string): Promise<OtpIssueResult> {
+    return this.otp.issue(mobile, clientIp);
   }
 
   async verifyOtp(

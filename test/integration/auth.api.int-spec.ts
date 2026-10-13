@@ -136,26 +136,39 @@ describe('Auth API (integration)', () => {
       expect(res.body.code).toBe('OTP_RATE_LIMITED');
     });
 
-    it('refuses suspended accounts BEFORE sending anything', async () => {
+    it('answers a suspended account like any other number, and refuses it at verify', async () => {
       const session = await loginWithOtp(api);
       await api.prisma.user.update({
         where: { id: session.userId },
         data: { status: 'SUSPENDED' },
       });
       await clearCooldown(session.mobile!);
-      const sentBefore = api.sms.sent.length;
       const res = await requestOtp(api, session.mobile!);
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe('ACCOUNT_SUSPENDED');
-      expect(api.sms.sent.length).toBe(sentBefore);
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBeUndefined();
+      const verify = await api
+        .http()
+        .post('/api/v1/auth/otp/verify')
+        .send(verifyBody(session.mobile!, otpFromSms(api, session.mobile!)));
+      expect(verify.status).toBe(403);
+      expect(verify.body.code).toBe('ACCOUNT_SUSPENDED');
     });
 
-    it('refuses a number registered under the other account type (one mobile = one account)', async () => {
+    it('answers a number of the other account type like any other number, and refuses it at verify (one mobile = one account)', async () => {
       const session = await loginWithOtp(api, { appType: 'CUSTOMER' });
       await clearCooldown(session.mobile!);
       const res = await requestOtp(api, session.mobile!, 'WORKER');
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ACCOUNT_TYPE_MISMATCH');
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBeUndefined();
+      const verify = await api
+        .http()
+        .post('/api/v1/auth/otp/verify')
+        .send({
+          ...verifyBody(session.mobile!, otpFromSms(api, session.mobile!)),
+          appType: 'WORKER',
+        });
+      expect(verify.status).toBe(409);
+      expect(verify.body.code).toBe('ACCOUNT_TYPE_MISMATCH');
     });
   });
 

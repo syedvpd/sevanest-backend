@@ -108,8 +108,8 @@ describe('Auth -> Users -> Customers journey and OpenAPI contract (integration)'
       .http()
       .post('/api/v1/auth/otp/request')
       .send({ mobile: session.mobile, appType: 'CUSTOMER' });
-    expect(relogin.status).toBe(403);
-    expect(relogin.body.code).toBe('ACCOUNT_SUSPENDED');
+    // Requesting an OTP does not reveal the suspension; the refusal comes at verify (covered in auth.api).
+    expect(relogin.status).toBe(200);
     const stillThere = await api
       .http()
       .get(`/api/v1/admin/customers/${profile.body.id}`)
@@ -167,8 +167,8 @@ describe('Auth -> Users -> Customers journey and OpenAPI contract (integration)'
       .http()
       .post('/api/v1/auth/otp/request')
       .send({ mobile: customer.mobile, appType: 'WORKER' });
-    expect(claim.status).toBe(409);
-    expect(claim.body.code).toBe('ACCOUNT_TYPE_MISMATCH');
+    // The request looks the same as for any number; the mismatch is refused at verify (covered in auth.api).
+    expect(claim.status).toBe(200);
     expect(await api.prisma.user.count({ where: { mobile: customer.mobile } })).toBe(1);
   });
 

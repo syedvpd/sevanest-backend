@@ -60,7 +60,7 @@ export class AuthController {
       'Rate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). Suspended accounts are refused before anything is sent.',
   })
   requestOtp(@Body() dto: RequestOtpDto, @Req() request: Request): Promise<OtpRequestedResponse> {
-    return this.auth.requestOtp(dto.mobile, dto.appType, clientIp(request));
+    return this.auth.requestOtp(dto.mobile, clientIp(request));
   }
 
   @Public()

@@ -52,14 +52,9 @@ export class OtpService {
   }
 
   /**
-   * Applies lock, per-IP, resend-cooldown and per-mobile limits, creates the OTP and sends it. `beforeIssue` runs
-   * after the IP limit (so probing is rate-limited) and before anything is sent; it may throw to refuse.
+   * Applies lock, per-IP, resend-cooldown and per-mobile limits, creates the OTP and sends it.
    */
-  async issue(
-    mobile: string,
-    clientIp: string,
-    beforeIssue: () => Promise<void>,
-  ): Promise<OtpIssueResult> {
+  async issue(mobile: string, clientIp: string): Promise<OtpIssueResult> {
     await this.redis.ensureConnected();
     const redis = this.redis.client;
     const keys = this.keys(mobile, clientIp);
@@ -74,8 +69,6 @@ export class OtpService {
         ipLeft,
       );
     }
-
-    await beforeIssue();
 
     const cooldownSet = await redis.set(
       keys.cooldown,
