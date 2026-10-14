@@ -396,6 +396,25 @@ describe('validateEnvironment', () => {
       });
     });
 
+    it('accepts only major.minor.patch minimum versions and https store URLs', () => {
+      const ok = validateEnvironment({
+        ...production,
+        APP_MIN_VERSION_CUSTOMER: '1.2.0',
+        APP_STORE_URL_CUSTOMER: 'https://play.google.com/store/apps/details?id=x',
+      });
+      expect(ok.APP_STORE_URL_CUSTOMER).toContain('https://');
+      for (const bad of ['v1.2', '1.2', '1.2.0+45']) {
+        expect(() => validateEnvironment({ ...production, APP_MIN_VERSION_CUSTOMER: bad })).toThrow(
+          'APP_MIN_VERSION_CUSTOMER',
+        );
+      }
+      for (const bad of ['http://play.google.com/x', 'play.google.com', 'https://a b']) {
+        expect(() => validateEnvironment({ ...production, APP_STORE_URL_CUSTOMER: bad })).toThrow(
+          'APP_STORE_URL_CUSTOMER',
+        );
+      }
+    });
+
     it('rejects an unknown SMS provider and an out-of-range OTP length', () => {
       expect(() => validateEnvironment({ ...production, SMS_PROVIDER: 'carrier-pigeon' })).toThrow(
         'SMS_PROVIDER',

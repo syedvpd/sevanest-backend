@@ -151,6 +151,8 @@ export class AppConfigService {
     maintenance: boolean;
     supportPhone?: string;
     supportEmail?: string;
+    storeUrlCustomer?: string;
+    storeUrlWorker?: string;
   } {
     return {
       minVersionCustomer: this.get('APP_MIN_VERSION_CUSTOMER'),
@@ -158,6 +160,8 @@ export class AppConfigService {
       maintenance: this.get('APP_MAINTENANCE_MODE'),
       // A blank value counts as not configured, so the app never shows an empty "Call support" target.
       supportPhone: this.get('SUPPORT_CONTACT_PHONE')?.trim() || undefined,
+      storeUrlCustomer: this.get('APP_STORE_URL_CUSTOMER')?.trim() || undefined,
+      storeUrlWorker: this.get('APP_STORE_URL_WORKER')?.trim() || undefined,
       supportEmail: this.get('SUPPORT_CONTACT_EMAIL')?.trim() || undefined,
     };
   }

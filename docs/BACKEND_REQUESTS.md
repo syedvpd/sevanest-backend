@@ -71,5 +71,12 @@ Evidence for every row: `test/integration/module10.support-safety-notifications.
 ### 54. Permission re-ask timing
 **Client decision, not backend.** The 3-day interval exists nowhere in the backend (no config key, no stored prompt state). It stays a Flutter/product decision; no setting added. Push permission and token binding are independent of it: the app may call `PUT /auth/device-token` whenever it has a token.
 
+### 57. Force update and maintenance (`GET /app-config`)
+- **Store URL:** added `customer.storeUrl` and `worker.storeUrl` (string or `null`). Set by `APP_STORE_URL_CUSTOMER` / `APP_STORE_URL_WORKER`; the server refuses to start unless the value is an `https://` URL. `null` means not configured: hide the Update button.
+- **Version format:** `minVersion` is exactly `major.minor.patch` (for example `1.2.0`), or `null` for no minimum. The server rejects any other value at startup (`v1.2`, `1.2`, `1.2.0+45`), so the app will never receive `+build`. The build number is **not** enforced.
+- **No auth:** `GET /app-config` is public (no sign-in), cacheable for 60 s (`Cache-Control: public, max-age=60`, ETag/304).
+- **Maintenance:** `maintenance: true` (`APP_MAINTENANCE_MODE=true`) is the only switch. Flip it back to `false` and the next Retry or resume gets `false`. Clients may see the old value for up to 60 s because of the cache header.
+- **How it is changed:** both values are environment variables, so a change needs the API to restart or redeploy (no admin endpoint exists; adding one is a product decision). For staging: set `APP_MIN_VERSION_CUSTOMER` above the test build and/or `APP_MAINTENANCE_MODE=true`, redeploy, and check both screens. Nothing was run against the real staging service from here.
+
 ### Not backend items (unchanged)
 Firebase projects (`google-services.json`, `GoogleService-Info.plist`), the Android release keystore and iOS builds block verification of push on a real device. The backend needs `PUSH_PROVIDER=fcm` and `FCM_SERVICE_ACCOUNT_JSON` in the target environment. The local `.env` has both set, but this work deliberately did not send anything through Firebase, so FCM delivery, the real error codes for dead tokens and push on a device remain **unverified**.

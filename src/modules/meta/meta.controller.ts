@@ -21,7 +21,21 @@ const DEFAULT_LANGUAGES = ['en'];
  * data and secrets. Categories and areas are admin data and stay on their own endpoints.
  */
 class MinVersionView {
-  @ApiProperty({ nullable: true, type: String, example: '1.2.0' }) minVersion!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: '1.2.0',
+    description:
+      'major.minor.patch only (no +build; the build number is not enforced). null = no minimum.',
+  })
+  minVersion!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'https://play.google.com/store/apps/details?id=com.example.app',
+    description: 'https store page for the Update button; null when not configured.',
+  })
+  storeUrl!: string | null;
 }
 
 class SupportContactView {
@@ -98,8 +112,8 @@ export class MetaController {
       'An app older than `minVersion` for its kind should force an update; `maintenance: true` means show the maintenance screen.',
   })
   appConfig(): {
-    customer: { minVersion: string | null };
-    worker: { minVersion: string | null };
+    customer: { minVersion: string | null; storeUrl: string | null };
+    worker: { minVersion: string | null; storeUrl: string | null };
     maintenance: boolean;
     support: { phone: string | null; email: string | null };
     legal: ReturnType<LegalService['current']>;
@@ -107,8 +121,14 @@ export class MetaController {
   } {
     const policy = this.config.appPolicy;
     return {
-      customer: { minVersion: policy.minVersionCustomer ?? null },
-      worker: { minVersion: policy.minVersionWorker ?? null },
+      customer: {
+        minVersion: policy.minVersionCustomer ?? null,
+        storeUrl: policy.storeUrlCustomer ?? null,
+      },
+      worker: {
+        minVersion: policy.minVersionWorker ?? null,
+        storeUrl: policy.storeUrlWorker ?? null,
+      },
       maintenance: policy.maintenance,
       support: { phone: policy.supportPhone ?? null, email: policy.supportEmail ?? null },
       legal: this.legal.current(),

@@ -6,6 +6,7 @@ process.env.PENDING_PAYMENT_AUTO_CANCEL_HOURS = '3';
 process.env.SUPPORT_SLA_HOURS_DEFAULT = '4';
 process.env.SUPPORT_SLA_HOURS_HIGH = '1';
 process.env.APP_MIN_VERSION_CUSTOMER = '1.2.0';
+process.env.APP_STORE_URL_CUSTOMER = 'https://play.google.com/store/apps/details?id=test.customer';
 process.env.SUPPORT_CONTACT_PHONE = '+911234567890';
 
 import { randomUUID } from 'node:crypto';
@@ -956,8 +957,11 @@ describe('Gap closing (integration)', () => {
     it('serves public, cacheable start-up configuration without secrets', async () => {
       const res = await api.http().get('/api/v1/app-config').expect(200);
       expect(res.body).toMatchObject({
-        customer: { minVersion: '1.2.0' },
-        worker: { minVersion: null },
+        customer: {
+          minVersion: '1.2.0',
+          storeUrl: 'https://play.google.com/store/apps/details?id=test.customer',
+        },
+        worker: { minVersion: null, storeUrl: null },
         maintenance: false,
         support: { phone: '+911234567890', email: null },
         legal: { acceptanceRequired: false, terms: null, privacy: null },

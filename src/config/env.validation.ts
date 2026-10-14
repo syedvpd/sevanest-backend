@@ -581,6 +581,15 @@ export class EnvironmentVariables {
   APP_MAINTENANCE_MODE: boolean = false;
 
   @IsOptional()
+  /** Store page the "Update required" button opens (https). Unset = the app hides the button. */
+  @IsOptional()
+  @Matches(/^https:\/\/\S+$/, { message: 'APP_STORE_URL_CUSTOMER must be an https URL' })
+  APP_STORE_URL_CUSTOMER?: string;
+
+  @IsOptional()
+  @Matches(/^https:\/\/\S+$/, { message: 'APP_STORE_URL_WORKER must be an https URL' })
+  APP_STORE_URL_WORKER?: string;
+
   @IsString()
   SUPPORT_CONTACT_PHONE?: string;
 
