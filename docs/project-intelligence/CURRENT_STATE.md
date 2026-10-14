@@ -63,3 +63,6 @@ Not built (decision/input needed): FAQ, ticket photos, preferences, delete, reop
 
 ## 2026-10-14 admin session and permission consistency
 Admin login now returns `user.permissions`; admin token refresh returns `user.roles` and `user.permissions` (both read from the database, additive fields). Authorization was already correct (permissions read per request, none in the JWT). Likely frontend cause: it checks `workers.view`, the catalog code is `worker.view`. Live Verification Executive mapping not checked. Details `docs/qa/admin-session-permissions.md`; tests `test/integration/admin.session.permissions.int-spec.ts` (16). No migration.
+
+## 2026-10-14 staging demo OTP (accept-any)
+Added `DEMO_OTP_ACCEPT_ANY` (staging only, refused at startup in production, readiness WARNING): OTP request sends no SMS (no 503) and OTP verify accepts any code for any valid number, so apps can show their own demo OTP and still get a real session. Unit/typecheck/lint checked; no integration run for this flag. Turn off when an SMS provider is live.

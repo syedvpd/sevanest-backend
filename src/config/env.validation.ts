@@ -618,6 +618,15 @@ export class EnvironmentVariables {
   @Matches(/^\d{4,10}$/, { message: 'TEST_OTP_CODE must be 4 to 10 digits' })
   TEST_OTP_CODE?: string;
 
+  /**
+   * STAGING/DEMO ONLY, refused when NODE_ENV=production. When true, OTP request never sends an SMS (so it never answers 503) and OTP
+   * verify accepts ANY code for ANY valid mobile number: the apps show their own demo OTP and the backend still issues a real session.
+   * Anyone who knows a number can log in as it. Use until an SMS provider exists, then turn it off.
+   */
+  @Transform(toBoolean)
+  @IsBoolean()
+  DEMO_OTP_ACCEPT_ANY: boolean = false;
+
   /** Number of reverse-proxy hops in front of the API (0 = none). Needed for correct client IPs behind a load balancer. */
   @Type(() => Number)
   @IsInt()
@@ -656,6 +665,17 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
         cause: error,
       });
     }
+  }
+  if (config.DEMO_OTP_ACCEPT_ANY) {
+    if (config.NODE_ENV === NodeEnv.Production) {
+      throw new Error(
+        'Invalid environment configuration: DEMO_OTP_ACCEPT_ANY=true is not allowed with NODE_ENV=production (staging must run NODE_ENV=development)',
+      );
+    }
+    process.emitWarning(
+      'DEMO_OTP_ACCEPT_ANY=true: ANY code logs in ANY mobile number and no SMS is sent. Staging/demo only - turn it off for real users',
+      'ConfigWarning',
+    );
   }
   if (config.ALLOW_TEST_OTP) {
     // D-70: a fixed login code must never reach real users, so production refuses to start with it (fail closed).

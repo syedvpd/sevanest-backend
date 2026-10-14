@@ -155,6 +155,14 @@ export class ReadinessService {
         ? 'ALLOW_TEST_OTP is on: listed test numbers log in with a fixed code. Turn it off before real users arrive'
         : 'Test OTP login is off',
     );
+    add(
+      'demo_otp_accept_any',
+      'WARNING',
+      !this.config.demoOtpAcceptAny,
+      this.config.demoOtpAcceptAny
+        ? 'DEMO_OTP_ACCEPT_ANY is on: ANY code logs in ANY mobile number. Turn it off before real users arrive'
+        : 'Accept-any demo OTP is off',
+    );
 
     const eventsWithTemplate = new Set(templates.map((t) => t.eventCode));
     // Staff alerts are shown in the admin alert inbox, which needs no template.

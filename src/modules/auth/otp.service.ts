@@ -55,6 +55,13 @@ export class OtpService {
    * Applies lock, per-IP, resend-cooldown and per-mobile limits, creates the OTP and sends it.
    */
   async issue(mobile: string, clientIp: string): Promise<OtpIssueResult> {
+    // Staging/demo only (DEMO_OTP_ACCEPT_ANY): the app shows its own code, nothing is stored or sent.
+    if (this.config.demoOtpAcceptAny) {
+      return {
+        expiresInSeconds: this.settings.ttlSeconds,
+        resendAfterSeconds: this.settings.resendCooldownSeconds,
+      };
+    }
     await this.redis.ensureConnected();
     const redis = this.redis.client;
     const keys = this.keys(mobile, clientIp);
@@ -147,6 +154,10 @@ export class OtpService {
 
   /** Single-use check. Throws a DomainException for every failure; returns normally only for a valid OTP. */
   async verify(mobile: string, code: string): Promise<void> {
+    if (this.config.demoOtpAcceptAny) {
+      this.logger.warn('Demo OTP accepted without checking the code (DEMO_OTP_ACCEPT_ANY)');
+      return;
+    }
     await this.redis.ensureConnected();
     const keys = this.keys(mobile, '');
     await this.assertNotLocked(keys.lock);

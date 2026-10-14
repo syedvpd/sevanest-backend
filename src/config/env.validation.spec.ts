@@ -314,6 +314,29 @@ describe('validateEnvironment', () => {
       });
     });
 
+    describe('staging accept-any demo OTP', () => {
+      it('is off by default, works outside production and is refused in production', () => {
+        expect(validateEnvironment(production).DEMO_OTP_ACCEPT_ANY).toBe(false);
+        const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+        try {
+          expect(
+            validateEnvironment({ ...valid, DEMO_OTP_ACCEPT_ANY: 'true' }).DEMO_OTP_ACCEPT_ANY,
+          ).toBe(true);
+        } finally {
+          warn.mockRestore();
+        }
+        for (const flag of ['true', '1', 'yes', true]) {
+          expect(() =>
+            validateEnvironment({
+              ...production,
+              NODE_ENV: 'production',
+              DEMO_OTP_ACCEPT_ANY: flag,
+            }),
+          ).toThrow();
+        }
+      });
+    });
+
     describe('staging test OTP', () => {
       const on = {
         ...valid,

@@ -98,6 +98,10 @@ export class AppConfigService {
   get testOtpEnabled(): boolean {
     return this.get('ALLOW_TEST_OTP');
   }
+  /** Staging/demo: accept any OTP for any number, send no SMS (see DEMO_OTP_ACCEPT_ANY). Never honoured in production. */
+  get demoOtpAcceptAny(): boolean {
+    return !this.isProduction && this.get('DEMO_OTP_ACCEPT_ANY');
+  }
   /** Staging/demo login for allow-listed numbers (see ALLOW_TEST_OTP). Returns the fixed code for such a number, else null. */
   testOtpCodeFor(mobile: string): string | null {
     // Defence in depth (D-70): startup already refuses the flag in production; the runtime path never honours it there either.
