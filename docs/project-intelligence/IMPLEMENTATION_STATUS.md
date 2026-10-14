@@ -7,7 +7,7 @@ Verified 2026-10-08. Evidence for every "VERIFIED" row is in CURRENT_STATE.md.
 | Toolchain (Node 24, Nest 11, TS 5.9.3, Prisma 7.10.0, Jest 30) | VERIFIED, exact-pinned, unchanged |
 | Foundation (config, errors, request id, validation, logging, health, OpenAPI, guards, audit, Redis, BullMQ, Docker, CI) | VERIFIED, unchanged apart from the additive items below |
 | **Module 1 Auth** | DONE for the supported requirements: OTP request/verify, rate limits, lockout, sessions, refresh rotation + replay detection, logout, session list/revoke, device tokens, admin login + brute-force protection. Real SMS delivery BLOCKED (no vendor, Q-36) |
-| **Module 2 Users** | DONE: identity, status (ACTIVE/SUSPENDED), admin creation, suspension with session revocation, RBAC seed (Super Admin only mapped; Q-33) |
+| **Module 2 Users** | DONE: identity, status (ACTIVE/SUSPENDED), admin creation, suspension with session revocation, RBAC seed (Super Admin full; D-71 least-privilege starting sets for the other roles, 2026-10-14) |
 | **Module 3 Customers** | DONE: profile, addresses (default consistency, soft removal), admin list/detail/status/notes. Verification promotion rule OPEN (Q-26) |
 | Database: 2 migrations (foundation + `20261008120000_auth_users_customers`) | VERIFIED on dev DB, test DB and an empty CI-style DB; no drift |
 | Docker image / compose with the new modules | NOT re-run after Modules 1-3 (Dockerfile unchanged; `npm run build` includes `dist/seed.js`) |
@@ -136,3 +136,5 @@ Traceability, API/RBAC audit, journeys, performance and production-readiness evi
 | Availability edge cases (buffer, races, releases) | IMPLEMENTED and tested (scheduling.buffer.int-spec) |
 | Provider check command | IMPLEMENTED; run locally: storage OK, others not configured |
 | Decisions | `docs/qa/decision-register.md` |
+| Worker photo pipeline (2026-10-14) | DONE: WebP renditions without metadata, optional malware scan, stable cache key (D-69) |
+| Receipt PDF (2026-10-14) | DONE: `GET /payments/{id}/receipt/pdf`, plain receipt, not a GST invoice (Q-100 open) |

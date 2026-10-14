@@ -27,6 +27,16 @@ export interface StorageProvider {
     objectKey: string,
     maxBytes: number,
   ): Promise<{ bytes: Buffer; truncated: boolean } | null>;
+  /**
+   * Writes an object produced by the server itself (e.g. resized images). Never used for client uploads, which go through
+   * signed URLs. `cacheControl` is stored with the object and returned on download.
+   */
+  putObject(input: {
+    objectKey: string;
+    body: Buffer;
+    contentType: string;
+    cacheControl?: string;
+  }): Promise<void>;
   /** Removes an object. Idempotent: a missing object is not an error. */
   deleteObject(objectKey: string): Promise<void>;
   /** First `length` bytes of the stored object, for server-side file-signature checks. null = no such object. */

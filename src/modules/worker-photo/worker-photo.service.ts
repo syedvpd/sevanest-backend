@@ -4,6 +4,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { AppConfigService } from '../../config/app-config.service';
+import { MALWARE_SCANNER, type MalwareScanner } from '../../integrations/malware/malware-scanner';
 import { ProviderError } from '../../integrations/provider-error';
 import {
   STORAGE_PROVIDER,
@@ -12,6 +13,14 @@ import {
 import { matchesDeclaredType, SIGNATURE_BYTES } from '../../integrations/storage/file-signature';
 import { WorkersService } from '../workers/workers.service';
 import type { PhotoLink, PhotoUploadResponse, RequestPhotoUploadDto } from './dto/worker-photo.dto';
+import {
+  makeRenditions,
+  RENDITION_CACHE_CONTROL,
+  RENDITION_CONTENT_TYPE,
+  renditionKeys,
+  UnreadableImageError,
+  type Renditions,
+} from './photo-renditions';
 import { WorkerPhotoRepository } from './worker-photo.repository';
 
 export const PhotoErrorCode = {
@@ -20,6 +29,7 @@ export const PhotoErrorCode = {
   PHOTO_NOT_FOUND: 'PHOTO_NOT_FOUND',
   PHOTO_NOT_UPLOADED: 'PHOTO_NOT_UPLOADED',
   PHOTO_CONTENT_MISMATCH: 'PHOTO_CONTENT_MISMATCH',
+  PHOTO_MALWARE_DETECTED: 'PHOTO_MALWARE_DETECTED',
   TOO_MANY_PENDING_PHOTOS: 'TOO_MANY_PENDING_PHOTOS',
   STORAGE_NOT_CONFIGURED: 'STORAGE_NOT_CONFIGURED',
 } as const;
@@ -31,7 +41,7 @@ const MAX_PENDING = 5;
 /**
  * Worker profile photo (FR-WON-002, FRD FM-04). Private object storage only; the client uploads to a short-lived signed URL, then
  * confirms. Confirmation checks the real size and the file signature (JPEG/PNG) server-side before the photo becomes current.
- * There is NO malware scanning (no scanner is integrated). The size limit is business configuration (PROFILE_PHOTO_MAX_BYTES):
+ * When a malware scanner is configured (CLAMAV_HOST) the whole image is scanned too, exactly like KYC documents. The size limit is business configuration (PROFILE_PHOTO_MAX_BYTES):
  * until it is set the feature answers 503 rather than guessing one.
  */
 @Injectable()
@@ -44,6 +54,7 @@ export class WorkerPhotoService {
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    @Inject(MALWARE_SCANNER) private readonly scanner: MalwareScanner,
   ) {}
 
   async requestUpload(userId: string, dto: RequestPhotoUploadDto): Promise<PhotoUploadResponse> {
@@ -125,34 +136,56 @@ export class WorkerPhotoService {
 
     const info = await this.storageCall(() => this.storage.getObjectInfo(photo.objectKey));
     if (!info || info.sizeBytes <= 0 || info.sizeBytes > Math.min(photo.sizeBytes, maxBytes)) {
-      throw new DomainException(
-        PhotoErrorCode.PHOTO_NOT_UPLOADED,
-        'The image has not been uploaded, or its size does not match',
-        HttpStatus.UNPROCESSABLE_ENTITY,
-      );
+      // A concurrent confirmation may have finished and removed the original already.
+      if ((await this.repository.find(photo.id))?.status === 'READY') {
+        return { photoId, status: 'READY' };
+      }
+      throw this.notUploaded();
     }
     const head = await this.storageCall(() =>
       this.storage.readObjectHead(photo.objectKey, SIGNATURE_BYTES),
     );
     if (!head || !matchesDeclaredType(photo.contentType, head)) {
-      await this.audit.record({
-        action: 'worker.photo_content_rejected',
-        entityType: 'worker_profile_photo',
-        entityId: photo.id,
-        actorId: userId,
-        metadata: { workerId: ref.workerId },
-      });
-      throw new DomainException(
-        PhotoErrorCode.PHOTO_CONTENT_MISMATCH,
-        'The uploaded file is not of the declared type',
-        HttpStatus.UNPROCESSABLE_ENTITY,
-      );
+      throw await this.contentRejected(userId, ref.workerId, photo.id);
     }
+    const object = await this.storageCall(() => this.storage.readObject(photo.objectKey, maxBytes));
+    if (!object || object.truncated) throw this.notUploaded();
+    if (this.scanner.enabled) await this.scan(userId, ref.workerId, photo.id, object.bytes);
+
+    // D-69: customers only ever download server-made WebP renditions without camera metadata.
+    let renditions: Renditions;
+    try {
+      renditions = await makeRenditions(object.bytes);
+    } catch (error) {
+      if (error instanceof UnreadableImageError) {
+        throw await this.contentRejected(userId, ref.workerId, photo.id);
+      }
+      throw error;
+    }
+    const keys = renditionKeys(photo.objectKey);
+    await this.storageCall(() =>
+      Promise.all([
+        this.storage.putObject({
+          objectKey: keys.card,
+          body: renditions.card,
+          contentType: RENDITION_CONTENT_TYPE,
+          cacheControl: RENDITION_CACHE_CONTROL,
+        }),
+        this.storage.putObject({
+          objectKey: keys.large,
+          body: renditions.large,
+          contentType: RENDITION_CONTENT_TYPE,
+          cacheControl: RENDITION_CACHE_CONTROL,
+        }),
+      ]),
+    );
+
+    let confirmedNow = false;
     await this.repository.transaction(async (tx) => {
       await this.repository.lockWorker(ref.workerId, tx);
       const current = (await this.repository.find(photo.id, tx))!;
       if (current.status === 'READY') return;
-      await this.repository.markReady(photo.id, tx);
+      await this.repository.markReady(photo.id, keys, tx);
       await this.workers.setPhotoRef(ref.workerId, photo.objectKey, tx);
       await this.audit.record(
         {
@@ -160,12 +193,84 @@ export class WorkerPhotoService {
           entityType: 'worker_profile_photo',
           entityId: photo.id,
           actorId: userId,
-          metadata: { workerId: ref.workerId },
+          metadata: {
+            workerId: ref.workerId,
+            originalBytes: object.bytes.length,
+            cardBytes: renditions.card.length,
+            largeBytes: renditions.large.length,
+          },
         },
         tx,
       );
+      confirmedNow = true;
     });
+    if (confirmedNow) {
+      // The original may carry the phone's GPS position; nothing serves it any more, so it is removed (best effort).
+      await this.storage.deleteObject(photo.objectKey).catch(() => {
+        this.logger.warn(`Could not remove the original of photo ${photo.id}; it is never served`);
+      });
+    }
     return { photoId, status: 'READY' };
+  }
+
+  /**
+   * Same policy as KYC documents: a scanner that cannot answer leaves the photo unconfirmed (never accepted unscanned) so the
+   * worker can retry; a detection is audited and refused.
+   */
+  private async scan(
+    userId: string,
+    workerId: string,
+    photoId: string,
+    bytes: Buffer,
+  ): Promise<void> {
+    const verdict = await this.scanner.scan(bytes).catch((error: unknown) => {
+      this.logger.error(`Malware scan unavailable: ${(error as Error).message}`);
+      throw new DomainException(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        'The image could not be checked right now: try confirming again shortly',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    });
+    if (verdict.clean) return;
+    await this.audit.record({
+      action: 'worker.photo_malware_rejected',
+      entityType: 'worker_profile_photo',
+      entityId: photoId,
+      actorId: userId,
+      metadata: { workerId, signature: verdict.signature ?? null },
+    });
+    throw new DomainException(
+      PhotoErrorCode.PHOTO_MALWARE_DETECTED,
+      'The uploaded file was rejected by the security check',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
+  }
+
+  private async contentRejected(
+    userId: string,
+    workerId: string,
+    photoId: string,
+  ): Promise<DomainException> {
+    await this.audit.record({
+      action: 'worker.photo_content_rejected',
+      entityType: 'worker_profile_photo',
+      entityId: photoId,
+      actorId: userId,
+      metadata: { workerId },
+    });
+    return new DomainException(
+      PhotoErrorCode.PHOTO_CONTENT_MISMATCH,
+      'The uploaded file is not of the declared type',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
+  }
+
+  private notUploaded(): DomainException {
+    return new DomainException(
+      PhotoErrorCode.PHOTO_NOT_UPLOADED,
+      'The image has not been uploaded, or its size does not match',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
   }
 
   /** The signed-in worker's own current photo, or 404 when there is none. */
@@ -185,9 +290,18 @@ export class WorkerPhotoService {
     const ttlSeconds = this.config.profilePhoto.signedUrlTtlSeconds;
     const links = new Map<string, PhotoLink>();
     await Promise.all(
-      [...keys].map(async ([workerId, objectKey]) => {
+      [...keys].map(async ([workerId, photo]) => {
         try {
-          links.set(workerId, await this.storage.createDownloadUrl({ objectKey, ttlSeconds }));
+          const [card, large] = await Promise.all([
+            this.storage.createDownloadUrl({ objectKey: photo.cardKey, ttlSeconds }),
+            this.storage.createDownloadUrl({ objectKey: photo.largeKey, ttlSeconds }),
+          ]);
+          links.set(workerId, {
+            url: card.url,
+            largeUrl: large.url,
+            expiresAt: card.expiresAt < large.expiresAt ? card.expiresAt : large.expiresAt,
+            cacheKey: photo.photoId,
+          });
         } catch (error) {
           this.logger.warn(
             `Could not sign a photo link: ${error instanceof ProviderError ? 'storage unavailable' : 'unexpected error'}`,

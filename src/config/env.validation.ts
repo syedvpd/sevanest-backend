@@ -581,7 +581,7 @@ export class EnvironmentVariables {
   FCM_SERVICE_ACCOUNT_JSON?: string;
 
   /**
-   * STAGING/DEMO ONLY. When true, the mobile numbers in TEST_OTP_NUMBERS log in with the fixed TEST_OTP_CODE and no SMS is sent
+   * STAGING/DEMO ONLY, refused when NODE_ENV=production (D-70). When true, the mobile numbers in TEST_OTP_NUMBERS log in with the fixed TEST_OTP_CODE and no SMS is sent
    * (so the apps can be tested before an SMS provider exists). Every other number behaves exactly as without it. Everything else
    * about the OTP (cooldown, attempt limit, lockout, expiry, single use) is unchanged. Never enable it for real users.
    */
@@ -644,6 +644,12 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     }
   }
   if (config.ALLOW_TEST_OTP) {
+    // D-70: a fixed login code must never reach real users, so production refuses to start with it (fail closed).
+    if (config.NODE_ENV === NodeEnv.Production) {
+      throw new Error(
+        'Invalid environment configuration: ALLOW_TEST_OTP=true is not allowed with NODE_ENV=production (staging must run NODE_ENV=development)',
+      );
+    }
     if (config.TEST_OTP_CODE!.length !== config.OTP_LENGTH) {
       throw new Error(
         'Invalid environment configuration: TEST_OTP_CODE must have exactly OTP_LENGTH digits',
@@ -668,6 +674,22 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     // notifications are refused. Production should set it so a lost client report is caught in real time.
     process.emitWarning(
       'RAZORPAY_WEBHOOK_SECRET is not set: Razorpay webhooks are rejected; payments rely on client verification and the periodic recovery check',
+      'ConfigWarning',
+    );
+  }
+  // Payments silently answering 503 because the gateway was configured under the wrong name is easy to miss on a dashboard.
+  if (
+    typeof raw.PAYMENT_GATEWAY === 'string' &&
+    raw.PAYMENT_GATEWAY !== String(config.PAYMENT_PROVIDER)
+  ) {
+    process.emitWarning(
+      `PAYMENT_GATEWAY is not read: the gateway is chosen by PAYMENT_PROVIDER (now ${config.PAYMENT_PROVIDER}). Set PAYMENT_PROVIDER=${raw.PAYMENT_GATEWAY}`,
+      'ConfigWarning',
+    );
+  }
+  if (!isRazorpay(config) && (raw.RAZORPAY_KEY_ID || raw.RAZORPAY_KEY_SECRET)) {
+    process.emitWarning(
+      `Razorpay keys are set but PAYMENT_PROVIDER=${config.PAYMENT_PROVIDER}: they are ignored. Set PAYMENT_PROVIDER=razorpay to use them`,
       'ConfigWarning',
     );
   }

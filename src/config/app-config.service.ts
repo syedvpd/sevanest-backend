@@ -95,9 +95,13 @@ export class AppConfigService {
   get paymentFakeWebhookSecret(): string {
     return this.get('PAYMENT_FAKE_WEBHOOK_SECRET') ?? '';
   }
+  get testOtpEnabled(): boolean {
+    return this.get('ALLOW_TEST_OTP');
+  }
   /** Staging/demo login for allow-listed numbers (see ALLOW_TEST_OTP). Returns the fixed code for such a number, else null. */
   testOtpCodeFor(mobile: string): string | null {
-    if (!this.get('ALLOW_TEST_OTP')) return null;
+    // Defence in depth (D-70): startup already refuses the flag in production; the runtime path never honours it there either.
+    if (this.isProduction || !this.get('ALLOW_TEST_OTP')) return null;
     const numbers = (this.get('TEST_OTP_NUMBERS') ?? '').split(',').map((n) => n.trim());
     return numbers.includes(mobile) ? (this.get('TEST_OTP_CODE') ?? null) : null;
   }

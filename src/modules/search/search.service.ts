@@ -214,7 +214,7 @@ export class SearchService {
         rating: rating
           ? { average: Math.round((rating.sum / rating.count) * 100) / 100, count: rating.count }
           : null,
-        photo: photo ? { url: photo.url, expiresAt: photo.expiresAt } : null,
+        photo: photo ?? null,
       };
     });
   }

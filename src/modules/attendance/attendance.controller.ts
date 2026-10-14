@@ -50,7 +50,7 @@ export class WorkerAttendanceController {
   @ApiOperation({
     summary: "Record today's attendance status for my active booking",
     description:
-      '201 on first record; repeating the same status changes nothing (200); a different status for the same day is 409 ATTENDANCE_ALREADY_RECORDED (staff correct it). 409 BOOKING_NOT_ACTIVE; 404 for a booking that is not mine.',
+      '201 on first record; repeating the same status also answers 201 and changes nothing (one entry per day); a different status for the same day is 409 ATTENDANCE_ALREADY_RECORDED (staff correct it). 409 BOOKING_NOT_ACTIVE; 404 for a booking that is not mine.',
   })
   async record(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,

@@ -79,6 +79,11 @@ Updated 2026-10-13 (second remediation run). One entry per finding of the PRD au
 | P1 | 2 | 4 | 0 | 2 | 1 |
 | P1 (product) | 0 | 4 | 0 | 0 | 0 |
 | P2 | 18 | 1 | 0 | 0 | 4 |
+| WAB-01 | Demo OTP session cannot authenticate server-side | Worker-app blockers 2026-10-14 | P0 | Fallback is frontend-only; server needs signed JWT + live session | Negative-path tests; test OTP refused in production (D-70) | env.validation.spec, worker.app.blockers.int-spec | worker.app.blockers (18) | Frontend must keep demo session out of release builds | FIXED_VERIFIED |
+| WAB-02 | Authenticated worker flows verified over HTTP | same | P1 | Only 401s had been observed | HTTP walk with persistence, ownership, errors; attendance repeat documented as 201 | attendance.controller (doc), worker.app.blockers.int-spec | worker.app.blockers | - | FIXED_VERIFIED |
+| WAB-03 | Opportunity detail route | same | P1 | Detail already exists as the booking detail | Canonical route documented (D-74); equality and privacy tests | booking.controller (OpenAPI text) | worker.app.blockers | - | FIXED_VERIFIED |
+| WAB-04 | Categories and areas need login | same | P2 | Onboarding runs after OTP (D-75) | Kept protected; access matrix tests | controllers (OpenAPI text) | worker.app.blockers | - | FIXED_VERIFIED |
+| WAB-05 | Support ticket subject | same | P2 | Contract had no subject | Optional `subject` (D-73), additive migration 20261026090000 | support dto/repository/service, schema, migration | support.api (subject block), worker.app.blockers | - | FIXED_VERIFIED |
 
 ## Found and fixed during remediation (not in the first audit)
 

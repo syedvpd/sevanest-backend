@@ -30,6 +30,9 @@ async function seed(): Promise<void> {
     console.log(
       `RBAC reference data ensured: ${summary.roles} roles, ${summary.permissions} permissions, ${summary.superAdminPermissions} mapped to SUPER_ADMIN`,
     );
+    if (summary.rolesGivenDefaults.length > 0) {
+      console.log(`Starting permissions applied (D-71): ${summary.rolesGivenDefaults.join(', ')}`);
+    }
 
     const createdCategories = await app.get(CategorySeedService).ensureInitialCategories();
     console.log(

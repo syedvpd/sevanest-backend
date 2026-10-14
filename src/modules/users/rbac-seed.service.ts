@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   ADMIN_ROLES,
   AdminRoleCode,
+  DEFAULT_ROLE_PERMISSIONS,
   PERMISSION_CATALOG,
   SUPER_ADMIN_PERMISSION_CODES,
 } from './rbac.constants';
@@ -12,11 +13,13 @@ export interface SeedSummary {
   roles: number;
   permissions: number;
   superAdminPermissions: number;
+  /** Roles that received their D-71 starting permissions in this run (they held none before). */
+  rolesGivenDefaults: string[];
 }
 
 /**
- * Reproducible reference data for RBAC: the four admin roles (PRD), the permission codes Modules 1-3 need, and the
- * Super Admin mapping. The remaining role-to-permission mappings are an OPEN decision (Q-11) and are deliberately absent.
+ * Reproducible reference data for RBAC: the four admin roles (PRD), the permission catalog, the Super Admin mapping and the
+ * D-71 least-privilege starting sets of the other roles (applied only to a role that holds no permission yet).
  */
 @Injectable()
 export class RbacSeedService {
@@ -25,7 +28,7 @@ export class RbacSeedService {
     private readonly users: UsersService,
   ) {}
 
-  async ensureReferenceData(): Promise<SeedSummary> {
+  async ensureReferenceData(options: { roleDefaults?: boolean } = {}): Promise<SeedSummary> {
     const roleIds = new Map<string, string>();
     for (const role of ADMIN_ROLES) {
       roleIds.set(role.code, await this.repository.upsertRole(role.code, role.name));
@@ -42,10 +45,23 @@ export class RbacSeedService {
       superAdminRoleId,
       SUPER_ADMIN_PERMISSION_CODES.map((code) => permissionIds.get(code)!),
     );
+    const rolesGivenDefaults: string[] = [];
+    if (options.roleDefaults !== false) {
+      for (const [code, permissionCodes] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+        const roleId = roleIds.get(code)!;
+        if ((await this.repository.countRolePermissions(roleId)) > 0) continue;
+        await this.repository.ensureRolePermissions(
+          roleId,
+          permissionCodes.map((permissionCode) => permissionIds.get(permissionCode)!),
+        );
+        rolesGivenDefaults.push(code);
+      }
+    }
     return {
       roles: roleIds.size,
       permissions: permissionIds.size,
       superAdminPermissions: SUPER_ADMIN_PERMISSION_CODES.length,
+      rolesGivenDefaults,
     };
   }
 

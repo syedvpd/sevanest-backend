@@ -105,6 +105,10 @@ export class UsersRepository {
     return permission.id;
   }
 
+  countRolePermissions(roleId: string): Promise<number> {
+    return this.prisma.rolePermission.count({ where: { roleId } });
+  }
+
   async ensureRolePermissions(roleId: string, permissionIds: string[]): Promise<void> {
     await this.prisma.rolePermission.createMany({
       data: permissionIds.map((permissionId) => ({ roleId, permissionId })),

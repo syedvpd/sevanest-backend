@@ -74,7 +74,7 @@ export class WorkerOpportunitiesController {
   @ApiOperation({
     summary: 'Jobs matched to me that wait for my accept or decline (newest first, paginated)',
     description:
-      'Each item is the privacy-safe requirement summary with respondBy (when staff configured a deadline). Accept or decline through POST /workers/me/bookings/{id}/accept|decline.',
+      'Each item is the privacy-safe requirement summary with respondBy (when staff configured a deadline). An opportunity is a booking offered to me: its id is the booking id, and the full detail is GET /workers/me/bookings/{id} (same fields; there is no separate /opportunities/{id}). Accept or decline through POST /workers/me/bookings/{id}/accept|decline.',
   })
   async list(
     @Query() query: PageQueryDto,
@@ -210,7 +210,12 @@ export class WorkerBookingsController {
 
   @Get(':bookingId')
   @ApiModelResponse(WorkerBookingView)
-  @ApiOperation({ summary: 'One booking offered to or held by me (404 for any other)' })
+  @ApiOperation({
+    summary:
+      'One booking offered to or held by me (404 for any other) - also the opportunity detail',
+    description:
+      'Canonical detail for an item of GET /workers/me/opportunities (same id and fields): available while the offer is open, after I accept it, and for a cancelled one (status CANCELLED). 404 BOOKING_NOT_FOUND for another worker, an unknown id, or after I declined. Requirement summary only: no customer identity, address or contact.',
+  })
   async get(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @CurrentUser() user: AuthenticatedUser,

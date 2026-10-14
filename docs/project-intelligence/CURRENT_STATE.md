@@ -44,3 +44,12 @@ Built: worker reviews list for customers (`GET /search/workers/{id}/ratings`), `
 
 ## 2026-10-13 customer-app blockers
 Built: `GET /pricing/guidance` (+ admin `PUT/GET/DELETE /admin/pricing-guidance`), `GET /locations/service-area` (+ optional centre/radius on service areas), `GET /search/workers/{id}/slots`, `GET /interviews`, `GET /customers/me/home`, `allowedActions`/`timeline` on interviews, typed schemas. Search returns page and total in one statement; `SEARCH_CACHE_TTL_SECONDS` (default 0) enables a per-instance page cache. Migrations `20261023090000`, `20261023100000`. See `docs/qa/customer-app-*.md`. Load test (100k users) partly run: search was the bottleneck (about 36 req/s alone on a laptop-class DB, about 200 req/s mixed after the fix); capacity assessment document still to be written.
+
+## 2026-10-14 app payment blockers
+Answered in `docs/qa/customer-app-integration-handoff.md` (fake gateway is backend-test only; Razorpay test keys reported set on staging Render by the user, not inspected; test OTP setup; receipt PDF waits for Q-100). Added `scripts/staging-payment-smoke.mjs` (manual live check of POST /payments, wrong-signature refusal and, with `--checkout`, a full Razorpay test-mode payment). Real Razorpay test-mode payment verified end to end on a local API with the staging test keys (14/14). Added `GET /payments/{id}/receipt/pdf` (plain receipt, not a GST invoice; Q-100 open) and config warnings for `PAYMENT_GATEWAY` / unused Razorpay keys. No schema change.
+
+## 2026-10-14 external audit triage and photo pipeline
+Audit verdicts in `docs/qa/antigravity-audit-triage.md`. Built: D-69 WebP photo renditions (sharp 0.34.4, migration `20261025090000_worker_photo_variants`, original deleted, EXIF stripped) and ClamAV scan of photos; D-70 test OTP refused in production; D-71 least-privilege starting permissions for the three non-Super roles (seed applies to empty roles only); D-72 readiness checks for Super Admin, empty roles, test OTP, plus readiness problems in the API startup log. Q-34 and Q-70 closed. Not changed by decision: OTP messages, booking fee and verification requirements (admin-configured).
+
+## 2026-10-14 worker-app blockers
+Verified and closed the five worker-app backend blockers (`docs/qa/worker-app-blockers-audit.md`, closure rows WAB-01..05): demo OTP is frontend-only and cannot authenticate server-side; opportunity detail = `GET /workers/me/bookings/{id}` (D-74); categories/areas stay behind login (D-75); optional ticket `subject` (D-73, migration `20261026090000`, 22 migrations in total).

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MalwareModule } from '../../integrations/malware/malware.module';
 import { StorageModule } from '../../integrations/storage/storage.module';
 import { WorkersModule } from '../workers/workers.module';
 import { WorkerPhotoController } from './worker-photo.controller';
@@ -11,7 +12,7 @@ import { WorkerPhotoService } from './worker-photo.service';
  * `WorkerPhotoService.linksFor` to show a photo to customers.
  */
 @Module({
-  imports: [WorkersModule, StorageModule],
+  imports: [WorkersModule, StorageModule, MalwareModule],
   controllers: [WorkerPhotoController],
   providers: [WorkerPhotoRepository, WorkerPhotoService],
   exports: [WorkerPhotoService],

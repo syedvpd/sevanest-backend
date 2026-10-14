@@ -126,6 +126,28 @@ export class S3StorageProvider implements StorageProvider {
     }
   }
 
+  async putObject(input: {
+    objectKey: string;
+    body: Buffer;
+    contentType: string;
+    cacheControl?: string;
+  }): Promise<void> {
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.settings.bucket,
+          Key: input.objectKey,
+          Body: input.body,
+          ContentType: input.contentType,
+          ContentLength: input.body.length,
+          CacheControl: input.cacheControl,
+        }),
+      );
+    } catch (error) {
+      throw this.toProviderError(error);
+    }
+  }
+
   async deleteObject(objectKey: string): Promise<void> {
     try {
       // S3 answers 204 whether or not the key existed.

@@ -46,7 +46,7 @@ Owner: C=client/business, U=user(tech lead), L=legal, V=vendor. "Blocks" = earli
 | Q-31 | Default address: should the first address auto-default; after removing the default, promote another? | C | Neither; default is explicit only. |
 | Q-32 | Supported language list; maximum saved addresses; field length limits (refines Q-12) | C | Language: format check + optional SUPPORTED_LANGUAGES allow-list; no address cap; technical length caps only. |
 | Q-33 | Role-to-permission matrix (Q-11): only Super Admin is mapped (5 permission codes). | C | Other three admin roles hold no permissions yet. |
-| Q-34 | Is revealing "registered but suspended" at OTP request acceptable (user-friendly message vs enumeration)? | C | Revealed (FRD FM-01 asks for a clear message). |
+| Q-34 (CLOSED 2026-10-14: D-72) | Is revealing "registered but suspended" at OTP request acceptable (user-friendly message vs enumeration)? | C | Revealed (FRD FM-01 asks for a clear message). |
 | Q-35 | Masking/audit policy for admin access to customer personal data (mobile shown in full in customer detail; detail views not audited) | C+L | List masked, detail full, no read audit. |
 | Q-36 | SMS vendor (Q-08) and sender/template registration (Q-24) | C+V | Interface + `disabled` + test-only `memory` adapter; real OTP delivery impossible until chosen. |
 
@@ -102,7 +102,7 @@ Owner: C=client/business, U=user(tech lead), L=legal, V=vendor. "Blocks" = earli
 | Q-67 | Deployment topology for rate limits: number of API replicas, reverse-proxy depth (`TRUST_PROXY_HOPS`), `THROTTLE_STORAGE` (extends S-04, S-05) | U | `THROTTLE_STORAGE=memory` is the default (per process); `redis` is available and tested; production start-up warns when the proxy depth is 0 or the storage is `memory` |
 | Q-68 | Who may retry failed notifications; how long failed rows and BullMQ failed jobs are kept; does a failed critical message need paging (extends Q-57, Q-63) | C+U | `notification.manage` holders may retry a FAILED notification (audited); nothing is deleted; no paging |
 | Q-69 | KYC upload content rules: malware-scan vendor and fail-closed policy, whether further types (e.g. HEIC) are accepted, bucket-side size cap (extends Q-50, S-08) | C+V | Content is verified against the file signature for PDF/JPEG/PNG; a mismatch is refused and audited; no scanner; a presigned PUT cannot cap size at the bucket |
-| Q-70 | Approve, amend or replace the PROPOSED (NOT applied) admin permission matrix in `docs/qa/backend-gap-remediation.md` section 4 (extends Q-11, Q-33, Q-49, Q-62) | C | The seed still maps only SUPER_ADMIN |
+| Q-70 (CLOSED 2026-10-14: D-71) | Approve, amend or replace the PROPOSED (NOT applied) admin permission matrix in `docs/qa/backend-gap-remediation.md` section 4 (extends Q-11, Q-33, Q-49, Q-62) | C | The seed still maps only SUPER_ADMIN |
 
 ## Raised by gap-remediation phase 2 - 2026-10-09
 | ID | Question | Owner | Current behaviour (no value invented) |
@@ -151,3 +151,4 @@ Owner: C=client/business, U=user(tech lead), L=legal, V=vendor. "Blocks" = earli
 * **Q-97 Customer photo**: is a customer profile photo in V1? Safe now: not built (FR-CUS-001..006 do not list it). Impact: no "Add a photo".
 * **Q-98 Map provider / area boundaries**: polygons or a geocoder for exact area lookup. Safe now: admin-set centre and radius per area, then exact name. Impact: some positions need a manual area pick.
 * **Q-99 Interview length and horizon**: client sign-off on 60 minutes and 14 days (current defaults of `/slots`).
+* **Q-100 Receipt / invoice document**: is a downloadable receipt required in V1, and is it a GST tax invoice (legal entity name, GSTIN, address, SAC code, tax split, invoice numbering series) or a plain payment receipt? Safe now: `GET /payments/{id}/receipt` returns the data; no PDF is generated. Impact: the app renders the receipt on screen only. Owner: C (client finance).

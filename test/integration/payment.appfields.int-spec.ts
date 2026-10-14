@@ -114,6 +114,34 @@ describe('Payment contract for the customer app (integration)', () => {
       refundStatus: null,
     });
     expect(receipt.receiptNumber).toEqual(view.receiptNumber);
+
+    const pdf = await as(api, c)
+      .get(`${P}/${payment.id}/receipt/pdf`)
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(pdf.headers['content-type']).toContain('application/pdf');
+    expect(pdf.headers['content-disposition']).toContain(`${String(view.receiptNumber)}.pdf`);
+    const text = (pdf.body as Buffer).toString('latin1');
+    expect(text.startsWith('%PDF-')).toBe(true);
+    expect(text).toContain(String(view.receiptNumber));
+    expect(text).toContain('INR 500.00');
+    expect(text).toContain('not a tax invoice');
+    // someone else's receipt does not exist for them
+    await as(api, await customer())
+      .get(`${P}/${payment.id}/receipt/pdf`)
+      .expect(404);
+  });
+
+  it('refuses the PDF receipt before the payment succeeded', async () => {
+    const c = await customer();
+    const { payment } = await start(c);
+    const res = await as(api, c).get(`${P}/${payment.id}/receipt/pdf`).expect(409);
+    expect((res.body as { code: string }).code).toBe('RECEIPT_NOT_AVAILABLE');
   });
 
   it('exposes the gateway failure reason, and a retry creates a new payment', async () => {

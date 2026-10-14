@@ -17,12 +17,24 @@ export type TicketPriorityValue = (typeof TICKET_PRIORITIES)[number];
 
 /** Technical caps against abuse, not product rules (FRD FM-12 asks for a length limit without a value, Q-59). */
 export const DESCRIPTION_MAX_LENGTH = 4000;
+export const SUBJECT_MAX_LENGTH = 120;
 export const NOTE_MAX_LENGTH = 2000;
 
 export class CreateTicketDto {
   @ApiProperty({ description: 'An enabled support category (GET /support/categories).' })
   @IsUUID()
   categoryId!: string;
+
+  @ApiPropertyOptional({
+    maxLength: SUBJECT_MAX_LENGTH,
+    description:
+      'Optional one-line title, stored and returned separately from the description (D-73). Older clients may keep putting the title at the start of the description.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, SUBJECT_MAX_LENGTH)
+  subject?: string;
 
   @ApiProperty({ maxLength: DESCRIPTION_MAX_LENGTH })
   @Transform(trim)
@@ -186,6 +198,8 @@ export class TicketView {
   @ApiProperty() id!: string;
   @ApiProperty({ type: SupportCategoryView }) category!: SupportCategoryView;
   @ApiProperty({ nullable: true, type: String }) bookingId!: string | null;
+  @ApiProperty({ nullable: true, type: String, description: 'null when none was given.' })
+  subject!: string | null;
   @ApiProperty() description!: string;
   @ApiProperty({ enum: TICKET_STATUSES }) status!: TicketStatusValue;
   @ApiProperty({ nullable: true, type: String }) resolution!: string | null;
@@ -209,6 +223,7 @@ export class AdminTicketView {
   @ApiProperty() creatorUserId!: string;
   @ApiProperty({ enum: ['CUSTOMER', 'WORKER'] }) creatorKind!: string;
   @ApiProperty({ nullable: true, type: String }) bookingId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) subject!: string | null;
   @ApiProperty() description!: string;
   @ApiProperty({ enum: TICKET_STATUSES }) status!: TicketStatusValue;
   @ApiProperty({ enum: TICKET_PRIORITIES, nullable: true }) priority!: TicketPriorityValue | null;

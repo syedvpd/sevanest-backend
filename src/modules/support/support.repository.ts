@@ -13,6 +13,7 @@ export interface TicketRecord {
   creatorKind: 'CUSTOMER' | 'WORKER' | 'ADMIN';
   bookingId: string | null;
   categoryId: string;
+  subject: string | null;
   description: string;
   priority: TicketPriorityValue | null;
   status: TicketStatusValue;
@@ -95,6 +96,7 @@ export class SupportRepository {
       creatorKind: 'CUSTOMER' | 'WORKER';
       bookingId: string | null;
       categoryId: string;
+      subject?: string | null;
       description: string;
       dueAt?: Date | null;
     },

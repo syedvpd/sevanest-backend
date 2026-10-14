@@ -11,6 +11,7 @@ import type { SignedUrl, StorageProvider } from './storage-provider.interface';
 export class InMemoryStorageProvider implements StorageProvider {
   private readonly objects = new Map<string, number>();
   private readonly contents = new Map<string, Buffer>();
+  private readonly contentTypes = new Map<string, string>();
   /** Keys removed through deleteObject (so tests can assert a rejected upload was discarded). */
   readonly deleted: string[] = [];
   /** Test switch: the next deleteObject fails like an unreachable storage. */
@@ -64,6 +65,18 @@ export class InMemoryStorageProvider implements StorageProvider {
         ? { bytes: content.subarray(0, maxBytes), truncated: true }
         : { bytes: content, truncated: false },
     );
+  }
+
+  putObject(input: { objectKey: string; body: Buffer; contentType: string }): Promise<void> {
+    this.objects.set(input.objectKey, input.body.length);
+    this.contents.set(input.objectKey, Buffer.from(input.body));
+    this.contentTypes.set(input.objectKey, input.contentType);
+    return Promise.resolve();
+  }
+
+  /** Test helper: the content type a server-side write stored. */
+  contentTypeOf(objectKey: string): string | undefined {
+    return this.contentTypes.get(objectKey);
   }
 
   deleteObject(objectKey: string): Promise<void> {

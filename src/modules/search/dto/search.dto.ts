@@ -106,9 +106,22 @@ export class RatingSummaryView {
 }
 
 export class PhotoLinkView {
-  @ApiProperty({ description: 'Short-lived link to the private image. Do not store it.' })
+  @ApiProperty({
+    description:
+      'Short-lived link to the small square WebP (320 px) for cards and lists. Do not store the link; cache the image by `cacheKey`.',
+  })
   url!: string;
+  @ApiProperty({
+    description:
+      'Short-lived link to the large WebP (longest side at most 1080 px) for the profile screen.',
+  })
+  largeUrl!: string;
   @ApiProperty() expiresAt!: Date;
+  @ApiProperty({
+    description:
+      'Stable while the photo is unchanged: use it as the image cache key, because the signed links change on every read.',
+  })
+  cacheKey!: string;
 }
 
 /**

@@ -41,7 +41,11 @@ export class ServiceCategoriesController {
 
   @Get()
   @ApiPageResponse(ServiceCategoryResponse)
-  @ApiOperation({ summary: 'List enabled service categories (paginated, by name)' })
+  @ApiOperation({
+    summary: 'List enabled service categories (paginated, by name)',
+    description:
+      'Needs a signed-in user (any app): onboarding happens after OTP login, so these reads are not public (401 without a token).',
+  })
   list(@Query() query: PageQueryDto): Promise<Page<ServiceCategoryResponse>> {
     return this.categories.listEnabled(query);
   }

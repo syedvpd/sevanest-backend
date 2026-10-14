@@ -8,11 +8,11 @@ import {
   setRequiredChecks,
   uploadDocument,
 } from '../support/workforce';
+import { SAMPLE_JPEG } from '../support/images';
 
 const C = '/api/v1/customers/me';
 const W = '/api/v1/workers/me';
 const A = '/api/v1/admin';
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]);
 
 interface Step {
   key: string;
@@ -371,7 +371,7 @@ describe('Onboarding, step by step (integration)', () => {
       const photo = await as(api, who)
         .post(`${W}/photo`, { contentType: 'image/jpeg', sizeBytes: 5000 })
         .expect(201);
-      api.storage.simulateUpload(api.storage.issuedUploads.at(-1)!.objectKey, 5000, JPEG);
+      api.storage.simulateUpload(api.storage.issuedUploads.at(-1)!.objectKey, 5000, SAMPLE_JPEG);
       await as(api, who).post(`${W}/photo/${photo.body.photoId}/confirm`).expect(200);
       p = await state(who);
       expect(step(p, 'PHOTO').done).toBe(true);

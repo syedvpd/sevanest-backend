@@ -377,4 +377,64 @@ describe('Support API (integration)', () => {
       ).rejects.toThrow();
     });
   });
+  describe('subject (D-73)', () => {
+    it('stores the subject and the description separately and returns both to the creator and to staff', async () => {
+      const created = await raise({ subject: '  Worker did not arrive  ' }).expect(201);
+      expect(created.body).toMatchObject({
+        subject: 'Worker did not arrive',
+        description: 'The worker did not arrive',
+      });
+      const id = created.body.id as string;
+      const row = await api.prisma.supportTicket.findUniqueOrThrow({ where: { id } });
+      expect(row).toMatchObject({
+        subject: 'Worker did not arrive',
+        description: 'The worker did not arrive',
+      });
+      expect((await as(api, customer).get(`${T}/${id}`).expect(200)).body.subject).toBe(
+        'Worker did not arrive',
+      );
+      const mine = (await as(api, customer).get(T).expect(200)).body.data as Array<{
+        id: string;
+        subject: string | null;
+      }>;
+      expect(mine.find((t) => t.id === id)?.subject).toBe('Worker did not arrive');
+      expect((await as(api, manager).get(`${AT}/${id}`).expect(200)).body.subject).toBe(
+        'Worker did not arrive',
+      );
+    });
+
+    it('stays optional: an older client without a subject still works and gets subject null', async () => {
+      const created = await raise().expect(201);
+      expect(created.body.subject).toBeNull();
+      expect(created.body.description).toBe('The worker did not arrive');
+    });
+
+    it('refuses an empty, blank or oversized subject, and a missing description, before storing anything', async () => {
+      const before = await api.prisma.supportTicket.count();
+      expect((await raise({ subject: '' })).status).toBe(400);
+      expect((await raise({ subject: '   ' })).status).toBe(400);
+      expect((await raise({ subject: 'x'.repeat(121) })).status).toBe(400);
+      expect((await raise({ subject: 42 })).status).toBe(400);
+      expect((await raise({ subject: 'ok', description: '' })).status).toBe(400);
+      expect(
+        (await as(api, customer).post(T, { categoryId, subject: 'No description' })).status,
+      ).toBe(400);
+      expect((await raise({ subject: 'x'.repeat(120) })).status).toBe(201);
+      expect(await api.prisma.supportTicket.count()).toBe(before + 1);
+    });
+
+    it('does not weaken ownership, category or booking checks when a subject is sent', async () => {
+      const other = await loginWithOtp(api, { appType: 'CUSTOMER' });
+      const id = await ticketId({ subject: 'Private title' });
+      expect((await as(api, other).get(`${T}/${id}`)).status).toBe(404);
+      expect((await raise({ subject: 's', categoryId: UNKNOWN_ID })).status).toBe(422);
+      const foreign = await makeBooking(api, admin, other, area.id, 'MATCHED');
+      const res = await raise({ subject: 's', bookingId: foreign.id });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('BOOKING_NOT_FOUND');
+      expect(
+        (await api.http().post(T).send({ categoryId, description: 'x', subject: 's' })).status,
+      ).toBe(401);
+    });
+  });
 });

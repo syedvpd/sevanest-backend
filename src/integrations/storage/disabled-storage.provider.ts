@@ -23,6 +23,12 @@ export class DisabledStorageProvider implements StorageProvider {
     );
   }
 
+  putObject(): Promise<void> {
+    return Promise.reject(
+      new ProviderError('storage', 'Document storage is not configured', false),
+    );
+  }
+
   deleteObject(): Promise<void> {
     return Promise.reject(
       new ProviderError('storage', 'Document storage is not configured', false),

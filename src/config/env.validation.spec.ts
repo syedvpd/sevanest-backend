@@ -102,6 +102,32 @@ describe('validateEnvironment', () => {
       );
     });
 
+    it('warns when the gateway is set under PAYMENT_GATEWAY or Razorpay keys are set without PAYMENT_PROVIDER=razorpay', () => {
+      const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+      try {
+        validateEnvironment({
+          ...valid,
+          PAYMENT_PROVIDER: 'disabled',
+          PAYMENT_GATEWAY: 'razorpay',
+          RAZORPAY_KEY_ID: 'rzp_test_abcdefgh',
+          RAZORPAY_KEY_SECRET: 's'.repeat(24),
+        });
+        const messages = warn.mock.calls.map((c) => String(c[0]));
+        expect(messages.some((m) => m.includes('Set PAYMENT_PROVIDER=razorpay'))).toBe(true);
+        expect(messages.some((m) => m.startsWith('PAYMENT_GATEWAY is not read'))).toBe(true);
+        expect(messages.some((m) => m.startsWith('Razorpay keys are set'))).toBe(true);
+        warn.mockClear();
+        validateEnvironment(valid);
+        expect(
+          warn.mock.calls
+            .map((c) => String(c[0]))
+            .some((m) => /PAYMENT_GATEWAY|Razorpay keys/.test(m)),
+        ).toBe(false);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     it('needs the webhook secret only for the fake payment adapter', () => {
       const { PAYMENT_FAKE_WEBHOOK_SECRET: _omit, ...withoutSecret } = valid as Record<
         string,
@@ -290,7 +316,7 @@ describe('validateEnvironment', () => {
 
     describe('staging test OTP', () => {
       const on = {
-        ...production,
+        ...valid,
         ALLOW_TEST_OTP: 'true',
         TEST_OTP_NUMBERS: '+919999900001, +919999900002',
         TEST_OTP_CODE: '123456',
@@ -308,6 +334,32 @@ describe('validateEnvironment', () => {
           'TEST_OTP_NUMBERS',
         );
         expect(() => validateEnvironment({ ...on, TEST_OTP_CODE: '12345' })).toThrow('OTP_LENGTH');
+      });
+
+      it('refuses to start in production (fail closed, D-70)', () => {
+        expect(() => validateEnvironment({ ...production, ...on, NODE_ENV: 'production' })).toThrow(
+          'ALLOW_TEST_OTP=true is not allowed with NODE_ENV=production',
+        );
+      });
+
+      it('no spelling of the flag turns test login on in production', () => {
+        for (const flag of ['true', 'TRUE', 'True', '1', 'yes', 'on', true]) {
+          expect(() =>
+            validateEnvironment({
+              ...production,
+              ...on,
+              NODE_ENV: 'production',
+              ALLOW_TEST_OTP: flag,
+            }),
+          ).toThrow();
+        }
+        // production with the flag off or absent starts, and leaves no fixed code active
+        const env = validateEnvironment({
+          ...production,
+          TEST_OTP_NUMBERS: '+919999900001',
+          TEST_OTP_CODE: '123456',
+        });
+        expect(env.ALLOW_TEST_OTP).toBe(false);
       });
 
       it('warns loudly when on', () => {

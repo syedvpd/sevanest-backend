@@ -174,5 +174,52 @@ export const SUPER_ADMIN_ONLY_PERMISSION_CODES: readonly string[] = [
   PermissionCode.ADMIN_MANAGE_USERS,
 ];
 
+/**
+ * Least-privilege starting permissions for the other admin roles (D-71, user-approved 2026-10-14; the Q-70 proposal with its
+ * open cells settled as: the Verification Executive decides KYC (FRD FM-05), the Operations Admin does not, refunds stay with
+ * the Super Admin (Q-17)). The seed applies a role's set only while that role holds no permission at all, so a mapping changed
+ * through PUT /admin/roles/{code}/permissions is never overwritten. Super-Admin-only codes never appear here.
+ */
+export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  [AdminRoleCode.OPERATIONS_ADMIN]: [
+    PermissionCode.BOOKING_VIEW,
+    PermissionCode.BOOKING_MANAGE,
+    PermissionCode.CUSTOMER_VIEW,
+    PermissionCode.CUSTOMER_MANAGE,
+    PermissionCode.WORKER_VIEW,
+    PermissionCode.WORKER_MANAGE,
+    PermissionCode.MATCHING_RUN,
+    PermissionCode.REPLACEMENT_VIEW,
+    PermissionCode.REPLACEMENT_MANAGE,
+    PermissionCode.ATTENDANCE_VIEW,
+    PermissionCode.ATTENDANCE_MANAGE,
+    PermissionCode.PAYMENT_VIEW,
+    PermissionCode.SUPPORT_VIEW,
+    PermissionCode.RATING_VIEW,
+    PermissionCode.RATING_MODERATE,
+    PermissionCode.REPORT_VIEW,
+    PermissionCode.NOTIFICATION_MANAGE,
+    PermissionCode.CATEGORY_MANAGE,
+    PermissionCode.AREA_MANAGE,
+    PermissionCode.USER_VIEW,
+    PermissionCode.ALERT_VIEW,
+    PermissionCode.ALERT_MANAGE,
+  ],
+  [AdminRoleCode.VERIFICATION_EXECUTIVE]: [
+    PermissionCode.WORKER_VIEW,
+    PermissionCode.VERIFICATION_REVIEW,
+    PermissionCode.VERIFICATION_DOCUMENT_VIEW,
+    PermissionCode.VERIFICATION_DECIDE,
+  ],
+  [AdminRoleCode.SUPPORT_EXECUTIVE]: [
+    PermissionCode.BOOKING_VIEW,
+    PermissionCode.CUSTOMER_VIEW,
+    PermissionCode.WORKER_VIEW,
+    PermissionCode.SUPPORT_VIEW,
+    PermissionCode.SUPPORT_MANAGE,
+    PermissionCode.RATING_VIEW,
+  ],
+};
+
 /** Permissions given to SUPER_ADMIN by the seed (FRD §2: Super Admin has full access to every capability). */
 export const SUPER_ADMIN_PERMISSION_CODES = PERMISSION_CATALOG.map((p) => p.code);

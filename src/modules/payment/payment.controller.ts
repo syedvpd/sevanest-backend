@@ -13,9 +13,17 @@ import {
   Put,
   Query,
   Req,
+  StreamableFile,
 } from '@nestjs/common';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
-import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExcludeEndpoint,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
@@ -108,6 +116,27 @@ export class PaymentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ReceiptView> {
     return this.payments.receiptMine(user.userId, paymentId);
+  }
+
+  @Get('payments/:paymentId/receipt/pdf')
+  @Header('Cache-Control', 'private, no-store')
+  @ApiProduces('application/pdf')
+  @ApiOkResponse({ description: 'The receipt as a one-page PDF (binary).' })
+  @ApiOperation({
+    summary: 'Receipt of one of my paid payments as a PDF',
+    description:
+      'Same data and errors as GET /payments/{id}/receipt (409 RECEIPT_NOT_AVAILABLE before payment, 404 for anyone else). A payment receipt, not a GST tax invoice (format not approved, Q-100).',
+  })
+  async receiptPdf(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<StreamableFile> {
+    const { fileName, pdf } = await this.payments.receiptPdfMine(user.userId, paymentId);
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: `inline; filename="${fileName}"`,
+      length: pdf.length,
+    });
   }
 
   @Get('payments/:paymentId')

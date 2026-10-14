@@ -43,7 +43,11 @@ export class ServiceAreasController {
 
   @Get()
   @ApiPageResponse(ServiceAreaResponse)
-  @ApiOperation({ summary: 'List enabled service areas (paginated; optional city filter)' })
+  @ApiOperation({
+    summary: 'List enabled service areas (paginated; optional city filter)',
+    description:
+      'Needs a signed-in user (any app): onboarding happens after OTP login, so these reads are not public (401 without a token).',
+  })
   list(@Query() query: ServiceAreaListQuery): Promise<Page<ServiceAreaResponse>> {
     return this.areas.listEnabled(query);
   }

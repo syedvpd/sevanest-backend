@@ -1,4 +1,5 @@
 import { csvCell } from '../../common/csv/csv';
+import { buildTextPdf, type PdfLine } from '../../common/pdf/simple-pdf';
 import { randomBytes } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
@@ -310,6 +311,52 @@ export class PaymentService {
       status: payment.status,
       refundStatus: view.refundStatus,
       refundedAt: payment.refundedAt,
+    };
+  }
+
+  /**
+   * The same receipt as a one-page PDF. Deliberately a plain payment receipt, NOT a GST tax invoice: the invoice format (legal
+   * entity, GSTIN, SAC, tax split, numbering) is not approved (Q-100), so the document says so instead of inventing it.
+   */
+  async receiptPdfMine(
+    customerUserId: string,
+    paymentId: string,
+  ): Promise<{ fileName: string; pdf: Buffer }> {
+    const r = await this.receiptMine(customerUserId, paymentId);
+    const paidAt = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(r.paidAt);
+    const amount = `${r.currency} ${(r.amountMinor / 100).toFixed(2)}`;
+    const method = [r.paymentMethod, r.paymentMethodDetail].filter(Boolean).join(' - ');
+    const row = (label: string, value: string | null): PdfLine => ({
+      text: `${label}:  ${value ?? '-'}`,
+    });
+    const lines: PdfLine[] = [
+      { text: 'SevaNest', size: 20, bold: true },
+      { text: 'Payment receipt', size: 14, bold: true, gapBefore: 4 },
+      { text: 'This is a payment receipt, not a tax invoice.', size: 9, gapBefore: 2 },
+      { ...row('Receipt number', r.receiptNumber), gapBefore: 18 },
+      row('Paid on', `${paidAt} IST`),
+      { text: `Amount paid:  ${amount}`, bold: true, size: 13, gapBefore: 6 },
+      {
+        ...row('Paid for', r.feeCode === BOOKING_FEE_CODE ? 'Booking fee' : r.feeCode),
+        gapBefore: 6,
+      },
+      row('Booking ID', r.bookingId),
+      row('Payment ID', r.paymentId),
+      row('Payment method', method || null),
+      row('Gateway reference', r.gatewayReference),
+      row('Status', r.status),
+    ];
+    if (r.refundStatus) {
+      lines.push({ ...row('Refund', r.refundStatus), gapBefore: 6 });
+      if (r.refundedAt) lines.push(row('Refunded on', r.refundedAt.toISOString()));
+    }
+    return {
+      fileName: `${r.receiptNumber}.pdf`,
+      pdf: buildTextPdf(lines, `Receipt ${r.receiptNumber}`),
     };
   }
 

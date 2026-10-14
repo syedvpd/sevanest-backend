@@ -9,6 +9,7 @@ import {
   WhatsAppProviderKind,
 } from '../../config/env.validation';
 import { HeartbeatService } from '../../infrastructure/cache/heartbeat.service';
+import { AdminRoleCode } from '../users/rbac.constants';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 
 export interface ReadinessCheck {
@@ -50,19 +51,38 @@ export class ReadinessService {
   ) {}
 
   async report(): Promise<ReadinessReport> {
-    const [areas, categories, requirements, fee, supportCategories, templates, alive] =
-      await Promise.all([
-        this.prisma.serviceArea.count({ where: { isEnabled: true } }),
-        this.prisma.serviceCategory.count({ where: { isEnabled: true } }),
-        this.prisma.verificationRequirement.count(),
-        this.prisma.feeConfig.findUnique({ where: { code: 'BOOKING_FEE' } }),
-        this.prisma.supportCategory.count({ where: { isEnabled: true } }),
-        this.prisma.notificationTemplate.findMany({
-          where: { isActive: true },
-          select: { eventCode: true, channel: true },
-        }),
-        this.heartbeat.alive(),
-      ]);
+    const [
+      areas,
+      categories,
+      requirements,
+      fee,
+      supportCategories,
+      templates,
+      alive,
+      roles,
+      superAdmins,
+    ] = await Promise.all([
+      this.prisma.serviceArea.count({ where: { isEnabled: true } }),
+      this.prisma.serviceCategory.count({ where: { isEnabled: true } }),
+      this.prisma.verificationRequirement.count(),
+      this.prisma.feeConfig.findUnique({ where: { code: 'BOOKING_FEE' } }),
+      this.prisma.supportCategory.count({ where: { isEnabled: true } }),
+      this.prisma.notificationTemplate.findMany({
+        where: { isActive: true },
+        select: { eventCode: true, channel: true },
+      }),
+      this.heartbeat.alive(),
+      this.prisma.role.findMany({
+        where: { code: { in: Object.values(AdminRoleCode) } },
+        select: { code: true, _count: { select: { permissions: true } } },
+      }),
+      this.prisma.user.count({
+        where: {
+          status: 'ACTIVE',
+          roles: { some: { role: { code: AdminRoleCode.SUPER_ADMIN } } },
+        },
+      }),
+    ]);
     const checks: ReadinessCheck[] = [];
     const add = (
       key: string,
@@ -110,6 +130,32 @@ export class ReadinessService {
         : 'No support category: tickets cannot be raised',
     );
 
+    add(
+      'super_admin',
+      'BLOCKER',
+      superAdmins > 0,
+      superAdmins > 0
+        ? `${superAdmins} active Super Admin(s)`
+        : 'No active Super Admin: run `npm run bootstrap:admin` on the server',
+    );
+    const emptyRoles = roles.filter((r) => r._count.permissions === 0).map((r) => r.code);
+    add(
+      'admin_role_permissions',
+      'WARNING',
+      emptyRoles.length === 0,
+      emptyRoles.length === 0
+        ? 'Every admin role has permissions'
+        : `Admin roles without any permission: ${emptyRoles.join(', ')}. Staff holding them can do nothing. Run \`npm run seed\` to apply the D-71 starting sets, or set them with PUT /admin/roles/{code}/permissions`,
+    );
+    add(
+      'test_otp',
+      'WARNING',
+      !this.config.testOtpEnabled,
+      this.config.testOtpEnabled
+        ? 'ALLOW_TEST_OTP is on: listed test numbers log in with a fixed code. Turn it off before real users arrive'
+        : 'Test OTP login is off',
+    );
+
     const eventsWithTemplate = new Set(templates.map((t) => t.eventCode));
     // Staff alerts are shown in the admin alert inbox, which needs no template.
     const staffOnly = new Set(['PAYMENT_EXCEPTION_ALERT']);
@@ -149,8 +195,8 @@ export class ReadinessService {
       'WARNING',
       this.config.clamav !== null,
       this.config.clamav !== null
-        ? 'Uploaded documents are scanned (ClamAV)'
-        : 'Uploaded documents are checked for type, size and content but NOT scanned for malware (set CLAMAV_HOST)',
+        ? 'Uploaded documents and photos are scanned (ClamAV)'
+        : 'Uploaded documents and photos are checked for type, size and content but NOT scanned for malware (set CLAMAV_HOST)',
     );
     add(
       'provider_push',

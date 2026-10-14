@@ -9,12 +9,16 @@ import {
   OnboardedWorker,
   setRequiredChecks,
 } from '../support/workforce';
+import { SAMPLE_JPEG, SAMPLE_PNG } from '../support/images';
+import {
+  MALWARE_SCANNER,
+  type MalwareScanner,
+} from '../../src/integrations/malware/malware-scanner';
 
 const PROFILE = '/api/v1/search/workers';
 const SHORTLIST = '/api/v1/shortlist';
 const PHOTO = '/api/v1/workers/me/photo';
 const UNKNOWN_ID = '00000000-0000-7000-8000-000000000000';
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]);
 
 /** Customer-safe profile, shortlist and worker photo against the real database (phase 2). */
 describe('Worker profile, shortlist and photo (integration)', () => {
@@ -249,7 +253,7 @@ describe('Worker profile, shortlist and photo (integration)', () => {
       ).toBe(1);
       expect((await as(api, visible).get(PHOTO)).status).toBe(404);
 
-      api.storage.simulateUpload(key, 5000, JPEG);
+      api.storage.simulateUpload(key, 5000, SAMPLE_JPEG);
       const results = await Promise.all([confirm(), confirm(), confirm()]);
       expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
       expect(
@@ -258,8 +262,21 @@ describe('Worker profile, shortlist and photo (integration)', () => {
         }),
       ).toBe(1);
 
+      // D-69: WebP renditions are stored and the original (which may carry GPS metadata) is gone
+      expect(api.storage.contentTypeOf(`${key}.card.webp`)).toBe('image/webp');
+      expect(api.storage.contentTypeOf(`${key}.large.webp`)).toBe('image/webp');
+      expect(api.storage.has(key)).toBe(false);
+      expect(
+        await api.prisma.workerProfilePhoto.findUniqueOrThrow({ where: { id: created.photoId } }),
+      ).toMatchObject({ cardObjectKey: `${key}.card.webp`, largeObjectKey: `${key}.large.webp` });
+
       const mine = await as(api, visible).get(PHOTO);
       expect(mine.status).toBe(200);
+      expect(mine.body).toMatchObject({ cacheKey: created.photoId });
+      expect((mine.body as { url: string }).url).toContain(encodeURIComponent(`${key}.card.webp`));
+      expect((mine.body as { largeUrl: string }).largeUrl).toContain(
+        encodeURIComponent(`${key}.large.webp`),
+      );
       expect((mine.body as { url: string }).url).toContain(encodeURIComponent(key));
       const profile = await as(api, customer).get(`${PROFILE}/${visible.workerId}`);
       expect((profile.body as { photo: { url: string } | null }).photo?.url).toContain(
@@ -269,6 +286,45 @@ describe('Worker profile, shortlist and photo (integration)', () => {
       expect((me.body as { hasProfilePhoto: boolean }).hasProfilePhoto).toBe(true);
       // the storage key itself is never returned to a customer
       expect(JSON.stringify(profile.body)).not.toContain(`photos/${visible.workerId}`);
+    });
+
+    it('scans the photo when a scanner is configured: unavailable -> 503 and retry, infected -> 422', async () => {
+      const scanner = api.app.get<MalwareScanner>(MALWARE_SCANNER);
+      const enabled = jest.replaceProperty(scanner, 'enabled', true);
+      const scan = jest.spyOn(scanner, 'scan');
+      try {
+        const res = await request(unverified, { contentType: 'image/jpeg', sizeBytes: 5000 });
+        const { photoId } = res.body as { photoId: string };
+        const key = api.storage.issuedUploads.at(-1)!.objectKey;
+        api.storage.simulateUpload(key, 5000, SAMPLE_JPEG);
+        const confirm = () => as(api, unverified).post(`${PHOTO}/${photoId}/confirm`);
+
+        scan.mockRejectedValueOnce(new Error('clamd down'));
+        const down = await confirm();
+        expect(down.status).toBe(503);
+        expect(api.storage.has(key)).toBe(true); // left in place for a retry
+
+        scan.mockResolvedValueOnce({ clean: false, signature: 'Eicar-Test-Signature' });
+        const infected = await confirm();
+        expect(infected.status).toBe(422);
+        expect((infected.body as { code: string }).code).toBe('PHOTO_MALWARE_DETECTED');
+        expect(
+          await api.prisma.auditLog.count({
+            where: { action: 'worker.photo_malware_rejected', entityId: photoId },
+          }),
+        ).toBe(1);
+        expect(
+          (await api.prisma.workerProfilePhoto.findUniqueOrThrow({ where: { id: photoId } }))
+            .status,
+        ).toBe('PENDING_UPLOAD');
+
+        scan.mockResolvedValueOnce({ clean: true });
+        expect((await confirm()).status).toBe(200);
+        expect(scan).toHaveBeenCalledTimes(3);
+      } finally {
+        scan.mockRestore();
+        enabled.restore();
+      }
     });
 
     it('refuses wrong types, oversized images and an unconfigured limit', async () => {
@@ -298,11 +354,7 @@ describe('Worker profile, shortlist and photo (integration)', () => {
     it("hides another worker's photo and enforces roles, ids and the pending cap", async () => {
       const mine = await request(draft, { contentType: 'image/png', sizeBytes: 100 });
       const photoId = (mine.body as { photoId: string }).photoId;
-      api.storage.simulateUpload(
-        api.storage.issuedUploads.at(-1)!.objectKey,
-        100,
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-      );
+      api.storage.simulateUpload(api.storage.issuedUploads.at(-1)!.objectKey, 100, SAMPLE_PNG);
       const stolen = await as(api, unverified).post(`${PHOTO}/${photoId}/confirm`);
       const unknown = await as(api, unverified).post(`${PHOTO}/${UNKNOWN_ID}/confirm`);
       expect(stolen.status).toBe(404);

@@ -21,6 +21,7 @@ money-holding payment per booking; CHECK constraints tie SUCCEEDED to time, rece
 | CUSTOMER | `POST /payments` `{bookingId}`                           | Start or resume payment of my PENDING_PAYMENT booking; amount from the fee config |
 | CUSTOMER | `POST /payments/{id}/verify`                             | Report a finished checkout; the server verifies it with the gateway               |
 | CUSTOMER | `GET /payments[/{id}]`                                   | Transaction history, receipt, refund status                                       |
+| CUSTOMER | `GET /payments/{id}/receipt[/pdf]`                        | Receipt as JSON or a one-page PDF (payment receipt, not a GST invoice: Q-100)     |
 | GATEWAY  | `POST /webhooks/payments`                                | Public route; authenticated only by the adapter's signature check on the raw body |
 | ADMIN    | `GET /admin/payments[/{id}]` (`payment.view`)            | With gateway references                                                           |
 | ADMIN    | `POST /admin/payments/{id}/reconcile` (`payment.manage`) | Ask the gateway and apply the outcome                                             |

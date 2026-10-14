@@ -1116,6 +1116,11 @@ describe('Gap closing (integration)', () => {
       expect(byKey.provider_sms).toMatchObject({ ok: false, level: 'BLOCKER' }); // tests run with a memory adapter
       expect(byKey.booking_fee.ok).toBe(true);
       expect(byKey.verification_requirements.ok).toBe(true);
+      expect(byKey.super_admin).toMatchObject({ ok: true, level: 'BLOCKER' });
+      expect(byKey.test_otp).toMatchObject({ ok: true, level: 'WARNING' });
+      // the shared test database keeps the three non-Super roles empty (D-71 defaults are tested in users.api)
+      expect(byKey.admin_role_permissions).toMatchObject({ ok: false, level: 'WARNING' });
+      expect(byKey.admin_role_permissions.message).toContain('SUPPORT_EXECUTIVE');
       expect(before.ready).toBe(false);
       expect(JSON.stringify(before)).not.toMatch(/secret|password|apikey/i);
 

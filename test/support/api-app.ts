@@ -58,7 +58,8 @@ export async function createApiApp(options: { smsProvider?: SmsProvider } = {}):
   await app.init();
   // Tests fire many parallel requests at one in-process server; that is not a listener leak.
   app.getHttpServer().setMaxListeners(100);
-  await app.get(RbacSeedService).ensureReferenceData();
+  // Suites test permissions with explicit test roles; the D-71 starting sets have their own test (users.api).
+  await app.get(RbacSeedService).ensureReferenceData({ roleDefaults: false });
   await app.get(CategorySeedService).ensureInitialCategories();
 
   return {

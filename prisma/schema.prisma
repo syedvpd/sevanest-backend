@@ -1119,6 +1119,8 @@ model SupportTicket {
   creatorKind      ActorKind       @map("creator_kind")
   bookingId        String?         @map("booking_id") @db.Uuid
   categoryId       String          @map("category_id") @db.Uuid
+  /// Optional one-line title the user typed (D-73). Null for tickets raised without one.
+  subject          String?
   description      String
   priority         TicketPriority?
   status           TicketStatus    @default(OPEN)
@@ -1176,14 +1178,17 @@ enum PhotoStatus {
 
 /// Worker profile photo uploads (FR-WON-002). Private object; the current photo is the newest READY row.
 model WorkerProfilePhoto {
-  id          String      @id @default(uuid(7)) @db.Uuid
-  workerId    String      @map("worker_id") @db.Uuid
-  objectKey   String      @unique @map("object_key")
-  contentType String      @map("content_type")
-  sizeBytes   Int         @map("size_bytes")
-  status      PhotoStatus @default(PENDING_UPLOAD)
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  confirmedAt DateTime?   @map("confirmed_at") @db.Timestamptz(6)
+  id             String      @id @default(uuid(7)) @db.Uuid
+  workerId       String      @map("worker_id") @db.Uuid
+  objectKey      String      @unique @map("object_key")
+  contentType    String      @map("content_type")
+  sizeBytes      Int         @map("size_bytes")
+  status         PhotoStatus @default(PENDING_UPLOAD)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  confirmedAt    DateTime?   @map("confirmed_at") @db.Timestamptz(6)
+  /// Server-made WebP renditions (small for cards, large for the profile). Null for photos confirmed before D-69.
+  cardObjectKey  String?     @map("card_object_key")
+  largeObjectKey String?     @map("large_object_key")
 
   worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Restrict)
 

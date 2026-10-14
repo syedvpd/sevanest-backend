@@ -12,7 +12,12 @@ import {
   randomMobile,
   unique,
 } from '../support/api-app';
-import { AdminRoleCode, PERMISSION_CATALOG } from '../../src/modules/users/rbac.constants';
+import {
+  AdminRoleCode,
+  DEFAULT_ROLE_PERMISSIONS,
+  PERMISSION_CATALOG,
+  SUPER_ADMIN_ONLY_PERMISSION_CODES,
+} from '../../src/modules/users/rbac.constants';
 import { RbacSeedService } from '../../src/modules/users/rbac-seed.service';
 
 const UNKNOWN_ID = '00000000-0000-7000-8000-000000000000';
@@ -427,15 +432,15 @@ describe('Users API (integration)', () => {
       ).toBe(1);
     });
 
-    it('seeds RBAC reference data idempotently and only maps SUPER_ADMIN', async () => {
+    it('seeds RBAC reference data idempotently; without role defaults only SUPER_ADMIN is mapped', async () => {
       const seed = api.app.get(RbacSeedService);
       const before = await Promise.all([
         api.prisma.role.count(),
         api.prisma.permission.count(),
         api.prisma.rolePermission.count(),
       ]);
-      await seed.ensureReferenceData();
-      await seed.ensureReferenceData();
+      await seed.ensureReferenceData({ roleDefaults: false });
+      await seed.ensureReferenceData({ roleDefaults: false });
       const after = await Promise.all([
         api.prisma.role.count(),
         api.prisma.permission.count(),
@@ -450,10 +455,100 @@ describe('Users API (integration)', () => {
       expect(roles.map((r) => r.code).sort()).toEqual(Object.values(AdminRoleCode).sort());
       const byCode = Object.fromEntries(roles.map((r) => [r.code, r.permissions.length]));
       expect(byCode.SUPER_ADMIN).toBe(PERMISSION_CATALOG.length);
-      // Everything else is an OPEN decision (Q-11): not mapped.
       expect(byCode.OPERATIONS_ADMIN).toBe(0);
       expect(byCode.VERIFICATION_EXECUTIVE).toBe(0);
       expect(byCode.SUPPORT_EXECUTIVE).toBe(0);
+    });
+
+    describe('D-71 least-privilege starting permissions', () => {
+      const roleCodes = async (code: string): Promise<string[]> =>
+        (
+          await api.prisma.rolePermission.findMany({
+            where: { role: { code } },
+            select: { permission: { select: { code: true } } },
+          })
+        )
+          .map((r) => r.permission.code)
+          .sort();
+      const empty = (code: string) =>
+        api.prisma.rolePermission.deleteMany({ where: { role: { code } } });
+      const others = [
+        AdminRoleCode.OPERATIONS_ADMIN,
+        AdminRoleCode.VERIFICATION_EXECUTIVE,
+        AdminRoleCode.SUPPORT_EXECUTIVE,
+      ];
+
+      // The shared test database keeps these roles empty for the other suites.
+      afterEach(async () => {
+        for (const code of others) await empty(code);
+      });
+
+      it('applies the matrix to empty roles only, never Super-Admin-only codes, and never overwrites a changed role', async () => {
+        const seed = api.app.get(RbacSeedService);
+        for (const code of others) await empty(code);
+        const first = await seed.ensureReferenceData();
+        expect(first.rolesGivenDefaults.sort()).toEqual([...others].sort());
+        for (const code of others) {
+          expect(await roleCodes(code)).toEqual([...DEFAULT_ROLE_PERMISSIONS[code]].sort());
+          for (const only of SUPER_ADMIN_ONLY_PERMISSION_CODES) {
+            expect(await roleCodes(code)).not.toContain(only);
+          }
+        }
+        expect(await roleCodes(AdminRoleCode.OPERATIONS_ADMIN)).not.toContain('payment.refund');
+        expect(await roleCodes(AdminRoleCode.OPERATIONS_ADMIN)).not.toContain(
+          'verification.decide',
+        );
+
+        // an administrator narrows a role; the next seed run keeps that choice
+        await empty(AdminRoleCode.SUPPORT_EXECUTIVE);
+        await api.prisma.rolePermission.create({
+          data: {
+            role: { connect: { code: AdminRoleCode.SUPPORT_EXECUTIVE } },
+            permission: { connect: { code: 'support.view' } },
+          },
+        });
+        expect((await seed.ensureReferenceData()).rolesGivenDefaults).toEqual([]);
+        expect(await roleCodes(AdminRoleCode.SUPPORT_EXECUTIVE)).toEqual(['support.view']);
+      });
+
+      it('grants each role its work and denies the rest', async () => {
+        await api.app.get(RbacSeedService).ensureReferenceData();
+        const ops = await loginAdmin(api, AdminRoleCode.OPERATIONS_ADMIN);
+        const verifier = await loginAdmin(api, AdminRoleCode.VERIFICATION_EXECUTIVE);
+        const support = await loginAdmin(api, AdminRoleCode.SUPPORT_EXECUTIVE);
+        const get = (who: { accessToken: string }, path: string) =>
+          api.http().get(path).set('Authorization', bearer(who));
+        const post = (who: { accessToken: string }, path: string, body: object = {}) =>
+          api.http().post(path).set('Authorization', bearer(who)).send(body);
+        const approve = `/api/v1/admin/verification/checks/${UNKNOWN_ID}/approve`;
+        const refund = `/api/v1/admin/payments/${UNKNOWN_ID}/refund`;
+
+        // Operations Admin: bookings and payments view yes; KYC decisions, refunds, roles and audit no
+        expect((await get(ops, '/api/v1/admin/bookings')).status).toBe(200);
+        expect((await get(ops, '/api/v1/admin/payments')).status).toBe(200);
+        expect((await post(ops, approve)).status).toBe(403);
+        expect((await post(ops, refund, { reason: 'x' })).status).toBe(403);
+        expect((await get(ops, '/api/v1/admin/roles')).status).toBe(403);
+        expect((await get(ops, '/api/v1/admin/verification/queue')).status).toBe(403);
+
+        // Verification Executive: the KYC queue and decisions only
+        expect((await get(verifier, '/api/v1/admin/verification/queue')).status).toBe(200);
+        expect((await post(verifier, approve)).status).toBe(404); // allowed; the check does not exist
+        expect((await get(verifier, '/api/v1/admin/bookings')).status).toBe(403);
+        expect((await get(verifier, '/api/v1/admin/payments')).status).toBe(403);
+        expect((await get(verifier, '/api/v1/admin/support/tickets')).status).toBe(403);
+
+        // Support Executive: tickets yes; KYC, payments and booking changes no
+        expect((await get(support, '/api/v1/admin/support/tickets')).status).toBe(200);
+        expect((await get(support, '/api/v1/admin/bookings')).status).toBe(200);
+        expect((await post(support, approve)).status).toBe(403);
+        expect((await get(support, '/api/v1/admin/payments')).status).toBe(403);
+        expect((await get(support, '/api/v1/admin/verification/queue')).status).toBe(403);
+        expect(
+          (await post(support, `/api/v1/admin/bookings/${UNKNOWN_ID}/cancel`, { reason: 'x' }))
+            .status,
+        ).toBe(403);
+      });
     });
 
     it('does not bootstrap a second Super Admin', async () => {
