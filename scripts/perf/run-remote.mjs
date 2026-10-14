@@ -165,7 +165,11 @@ for (const role of Object.keys(sessions)) {
   for (const { template } of getOps.filter((o) => roleOf(o.template) === role && !o.template.includes('{') && itemParam.has(o.template))) {
     const r = await call('GET', template, { token: sessions[role].token, record: false, q: 'limit=20' });
     const first = r.json?.data?.[0] ?? (Array.isArray(r.json) ? r.json[0] : null);
-    if (first?.id) pool[role][itemParam.get(template)] = first.id;
+    if (first?.id) {
+      // remember the id for ITS route first ("/admin/support/categories|categoryId"), then as the generic value for that name if none yet
+      pool[role][`${template}|${itemParam.get(template)}`] = first.id;
+      pool[role][itemParam.get(template)] ??= first.id;
+    }
     if (first?.workerId && !pool[role].workerId) pool[role].workerId = first.workerId;
   }
 }
@@ -196,7 +200,8 @@ const queryFor = (op) => (op.parameters ?? []).filter((p) => p.in === 'query' &&
 const fill = (template, role) => {
   let missing = false;
   const path = template.replace(/\{(\w+)\}/g, (_m, k) => {
-    const v = pool[role]?.[k] ?? (k === 'report' ? 'booking-funnel' : k === 'roleCode' ? 'SUPPORT_EXECUTIVE' : k === 'checkType' ? 'IDENTITY' : undefined);
+    const prefix = template.slice(0, template.indexOf(`{${k}}`) - 1);
+    const v = pool[role]?.[`${prefix}|${k}`] ?? pool[role]?.[k] ?? (k === 'report' ? 'booking-funnel' : k === 'roleCode' ? 'SUPPORT_EXECUTIVE' : k === 'checkType' ? 'IDENTITY' : undefined);
     if (v === undefined) missing = true;
     return v ?? 'MISSING';
   });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Turns the raw timings of the performance journeys (test/perf/out/journeys.json) into docs/qa/performance-test-results.md and a CSV.
- * Usage: node scripts/perf/report.mjs [outDir=test/perf/out] [docsDir=docs/qa]
+ * Usage: node scripts/perf/report.mjs [outDir=test/perf/out] [docsDir=docs/qa] [fileBase=performance-test-results]
  * Percentiles use the nearest-rank method. With 15 iterations p95 and p99 are the 15th-ranked sample, i.e. the slowest one: they are a
  * "worst of 15" figure, not a statistical tail; raise PERF_ITERATIONS for finer tails.
  */
@@ -11,6 +11,7 @@ import os from 'node:os';
 
 const outDir = process.argv[2] ?? 'test/perf/out';
 const docsDir = process.argv[3] ?? 'docs/qa';
+const fileBase = process.argv[4] ?? 'performance-test-results';
 const run = JSON.parse(readFileSync(join(outDir, 'journeys.json'), 'utf8'));
 const spec = JSON.parse(readFileSync(join(outDir, 'openapi.json'), 'utf8'));
 
@@ -54,7 +55,7 @@ const uncovered = run.operationsInApi.filter((o) => !hit.has(o));
 
 const modules = [...new Set(rows.map((r) => r.module))].sort();
 let md = `# Backend performance test results\n\n`;
-md += `Generated ${run.generatedAt}. **Performance, not load**: one client, strictly sequential, ${run.iterations} full iterations of every module's lifecycle.\n\n`;
+md += `Generated ${run.generatedAt}. **Performance, not load**: one client, strictly sequential, ${run.iterations} iterations${run.target ? ' of a sweep over every readable operation' : " of every module's lifecycle"}.\n\n`;
 md += `## How it was measured\n\n`;
 const remote = Boolean(run.target);
 md += remote
@@ -82,12 +83,26 @@ md += `| Operations whose status was not the expected one | ${rows.filter((r) =>
 // the four password-hashing endpoints are slow on purpose (a deliberately expensive hash); show the picture without them as well
 const hashing = rows.filter((r) => r.p50 > 300).map((r) => r.key);
 const withoutHashing = run.samples.filter((s) => !hashing.includes(`${s.method} ${s.template}`)).flatMap((s) => s.ms).sort((a, b) => a - b);
+if (run.target) {
+  const live = run.samples.find((x) => x.template === '/health/live');
+  const baseline = live ? pct([...live.ms].sort((a, b) => a - b), 50) : NaN;
+  const spikes = rows.filter((r) => r.max > 5 * r.p50 && r.max > 400 && r.n > 3);
+  const failed = rows.filter((r) => r.unexpected);
+  md += `### Reading the numbers\n\n`;
+  md += `* **Network baseline**: GET /health/live (no database work) has a p50 of ${fmt(baseline)} ms from this machine, so about that much of every call is network, TLS and routing. A typical read costs ${fmt(pct(all, 50) - baseline)} ms more than that.\n`;
+  md += `* **Cold start**: the first request of the run answered in ${fmt(run.samples.find((x) => x.template === '/health/live')?.ms[0] ?? NaN)} ms${(run.samples.find((x) => x.template === '/health/live')?.ms[0] ?? 0) > 3000 ? ', so the service was asleep (free-tier cold start)' : ', so the service was awake; run again after about 15 minutes idle to measure a cold start'}.\n`;
+  md += `* **Spikes**: ${spikes.length} operations have a slowest call more than 5 times their median (and above 400 ms): ${spikes.slice(0, 8).map((r) => r.key).join(', ') || 'none'}. Single slow calls spread over unrelated endpoints point at shared infrastructure (a throttled free-tier CPU, the database pooler, a noisy network) rather than at one query.\n`;
+  md += `* **Password hashing**: ${hashing.length ? hashing.join(', ') + ` (n=${run.samples.find((x) => hashing.includes(x.method + ' ' + x.template))?.ms.length}) is slow by design and slower on a small CPU` : 'no operation above 300 ms median'}.\n`;
+  md += `* **Not 2xx** (${failed.length}): ${failed.map((r) => `${r.key} ${r.statuses}`).join('; ') || 'none'}. Statuses such as 404 or 409 for a missing rating or an unpaid receipt are correct empty-state answers; a 500 is not and needs the server log for its request id.\n\n`;
+} else {
 md += `### Reading the numbers\n\n`;
 md += `* Operations whose median is above 300 ms: ${hashing.length ? hashing.join(', ') : 'none'}. These verify or create a password hash, which is deliberately expensive; they set the overall p99.\n`;
 md += `* Without them: p50 / p95 / p99 = ${fmt(pct(withoutHashing, 50))} / ${fmt(pct(withoutHashing, 95))} / ${fmt(pct(withoutHashing, 99))} ms over ${withoutHashing.length} requests.\n`;
 md += `* Cold start is small: the 1st-hit median across operations is ${fmt(pct(firsts, 50))} ms against ${fmt(pct(seconds, 50))} ms for the 2nd hit; only a few operations lose more than 20 ms on their first call (table below).\n`;
 md += `* Read endpoints (GET) dominate the sample and answer in a few tens of milliseconds; the slowest non-hashing operations are state changes that write several rows, send outbox events and audit records in one transaction (interviews, bookings, replacements, payments).\n`;
 if (!remote) md += `* Run history: an earlier identical run was discarded because the host machine stalled for about 4 minutes during iteration 13 (one call took 266 s and two requests got 500 from connections broken by the stall; the database and Redis logs show no error). This is the clean rerun: no failed iteration, no unexpected status, no sample above 3 s.\n\n`;
+
+}
 
 const top = (list, key, n, title) => {
   let t = `### ${title}\n\n| Operation | 1st | 2nd | p50 | p95 | max |\n|---|---|---|---|---|---|\n`;
@@ -110,7 +125,7 @@ md += uncovered.length ? uncovered.map((o) => `* ${o}`).join('\n') + '\n\n' : 'N
 if (run.skipped.length) md += `Steps skipped because a prerequisite was missing in at least one iteration: ${run.skipped.join('; ')}.\n\n`;
 if (run.iterationErrors.length) md += `Iterations that stopped early: ${run.iterationErrors.join('; ')}.\n\n`;
 
-writeFileSync(join(docsDir, 'performance-test-results.md'), md);
+writeFileSync(join(docsDir, `${fileBase}.md`), md);
 const csv = ['operation,module,n,first_ms,second_ms,min_ms,avg_ms,p50_ms,p95_ms,p99_ms,max_ms,statuses', ...rows.map((r) => [r.key, r.module, r.n, r.first, r.second, r.min, r.avg, r.p50, r.p95, r.p99, r.max, r.statuses].map((v) => (typeof v === 'number' ? v.toFixed(3) : `"${v}"`)).join(','))].join('\n');
-writeFileSync(join(docsDir, 'performance-test-results.csv'), csv);
+writeFileSync(join(docsDir, `${fileBase}.csv`), csv);
 console.log(`report: ${rows.length} operations, ${all.length} requests, overall p50/p95/p99 ${fmt(pct(all, 50))}/${fmt(pct(all, 95))}/${fmt(pct(all, 99))} ms`);

@@ -1,6 +1,6 @@
 # Backend performance test results
 
-Generated 2026-10-14T10:34:26.233Z. **Performance, not load**: one client, strictly sequential, 15 full iterations of every module's lifecycle.
+Generated 2026-10-14T10:34:26.233Z. **Performance, not load**: one client, strictly sequential, 15 iterations of every module's lifecycle.
 
 ## How it was measured
 
