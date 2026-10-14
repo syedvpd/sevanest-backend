@@ -85,7 +85,16 @@ async function otpLogin(appType, mobile, code) {
   if (requested.status === 429) await sleep(31_000); // the per-number cooldown
   if (requested.status === 429) await call('POST', '/auth/otp/request', { body: { mobile, appType } });
   const verified = await call('POST', '/auth/otp/verify', { body: { mobile, appType, otp: code, deviceId: `perf-${appType.toLowerCase()}` } });
-  if (verified.status !== 200) throw new Error(`${appType} login failed (${verified.status}); is ALLOW_TEST_OTP on and the number in TEST_OTP_NUMBERS?`);
+  if (verified.status !== 200) {
+    const reason = verified.json?.code ?? 'no error code';
+    const hint =
+      reason === 'ACCOUNT_TYPE_MISMATCH'
+        ? 'that number is already registered for the OTHER app (customer vs worker): use a different test number for this role'
+        : reason === 'OTP_INVALID'
+          ? 'the OTP code is wrong, or the number is not in TEST_OTP_NUMBERS on that server'
+          : 'check ALLOW_TEST_OTP and TEST_OTP_NUMBERS on that server';
+    throw new Error(`${appType} login failed (${verified.status} ${reason}): ${hint}`);
+  }
   return { token: verified.json.accessToken, refresh: verified.json.refreshToken, userId: verified.json.user?.id };
 }
 
@@ -108,10 +117,17 @@ const spec = specRes.json;
 writeFileSync(join(OUT, 'openapi.json'), JSON.stringify(spec));
 
 const sessions = {};
-if (env.PERF_CUSTOMER_MOBILE && env.PERF_OTP_CODE) sessions.customer = await otpLogin('CUSTOMER', env.PERF_CUSTOMER_MOBILE, env.PERF_OTP_CODE);
+const tryLogin = async (role, appType, mobile) => {
+  try {
+    sessions[role] = await otpLogin(appType, mobile, env.PERF_OTP_CODE);
+  } catch (error) {
+    console.warn(`  ${error.message}; ${role} routes will be skipped`);
+  }
+};
+if (env.PERF_CUSTOMER_MOBILE && env.PERF_OTP_CODE) await tryLogin('customer', 'CUSTOMER', env.PERF_CUSTOMER_MOBILE);
 if (env.PERF_WORKER_MOBILE && env.PERF_OTP_CODE) {
   if (env.PERF_WORKER_MOBILE === env.PERF_CUSTOMER_MOBILE) console.warn('worker and customer numbers are the same: use two different test numbers');
-  else sessions.worker = await otpLogin('WORKER', env.PERF_WORKER_MOBILE, env.PERF_OTP_CODE);
+  else await tryLogin('worker', 'WORKER', env.PERF_WORKER_MOBILE);
 }
 if (env.PERF_ADMIN_EMAIL && env.PERF_ADMIN_PASSWORD) {
   const login = await call('POST', '/auth/admin/login', { body: { email: env.PERF_ADMIN_EMAIL, password: env.PERF_ADMIN_PASSWORD } });
