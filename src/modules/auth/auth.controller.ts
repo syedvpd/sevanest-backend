@@ -115,7 +115,15 @@ export class AuthController {
       refreshToken: issued.refreshToken,
       tokenType: 'Bearer',
       expiresIn: issued.expiresIn,
-      user: { id: issued.userId, type: issued.userType, isNewUser: false },
+      user: {
+        id: issued.userId,
+        type: issued.userType,
+        isNewUser: false,
+        ...(issued.access && {
+          roles: issued.access.roles,
+          permissions: issued.access.permissions,
+        }),
+      },
     };
   }
 

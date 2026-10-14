@@ -6,6 +6,7 @@ import { AppConfigService } from '../../config/app-config.service';
 import type { DevicePlatform, Prisma, UserType } from '../../generated/prisma/client';
 import { UserEvents } from '../users/user-events';
 import { UsersService } from '../users/users.service';
+import type { RoleAndPermissions } from '../users/users.types';
 import { AuthErrorCode } from './auth.errors';
 import { SessionRepository, SessionSummary } from './session.repository';
 import { TokenService } from './token.service';
@@ -93,7 +94,9 @@ export class SessionService implements OnModuleInit {
    * Exchanges a refresh token for a new pair. The old token stops working. Presenting an already-rotated token is
    * treated as possible theft: the session is revoked and an audit event is written (deterministic, no grace period).
    */
-  async refresh(refreshToken: string): Promise<IssuedTokens & { userType: UserType }> {
+  async refresh(
+    refreshToken: string,
+  ): Promise<IssuedTokens & { userType: UserType; access?: RoleAndPermissions }> {
     const oldHash = this.tokens.hashRefreshToken(refreshToken);
     const newToken = this.tokens.generateRefreshToken();
     const rotated = await this.repository.rotate(
@@ -133,10 +136,12 @@ export class SessionService implements OnModuleInit {
         HttpStatus.FORBIDDEN,
       );
     }
-    return {
-      ...(await this.issue(rotated.userId, rotated.sessionId, newToken)),
-      userType: user.type,
-    };
+    // Same shape as admin login: an admin's roles and permissions are re-read from the database at refresh time, never copied from the old token.
+    const [issued, access] = await Promise.all([
+      this.issue(rotated.userId, rotated.sessionId, newToken),
+      user.type === 'ADMIN' ? this.users.getAccess(user.id) : undefined,
+    ]);
+    return { ...issued, userType: user.type, access };
   }
 
   /** Logout / explicit revoke of the caller's current session. Idempotent. */

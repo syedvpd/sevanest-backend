@@ -120,7 +120,17 @@ export class AuthUserSummary {
     description: 'True when this verification created the account (continue to profile creation).',
   })
   isNewUser!: boolean;
-  @ApiPropertyOptional({ type: [String], description: 'Admin role codes.' }) roles?: string[];
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Admin role codes (admin login and admin token refresh).',
+  })
+  roles?: string[];
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Admin permission codes (admin login and admin token refresh), read from the database at that moment; the same set GET /users/me returns. Codes are exactly the catalog codes, e.g. worker.view, verification.review.',
+  })
+  permissions?: string[];
 }
 
 export class TokenResponse {

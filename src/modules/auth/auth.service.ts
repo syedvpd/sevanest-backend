@@ -13,7 +13,13 @@ import { DeviceInfo, IssuedTokens, SessionService } from './session.service';
 export type AppType = 'CUSTOMER' | 'WORKER';
 
 export interface LoginResult extends IssuedTokens {
-  user: { id: string; type: UserType; isNewUser: boolean; roles?: string[] };
+  user: {
+    id: string;
+    type: UserType;
+    isNewUser: boolean;
+    roles?: string[];
+    permissions?: string[];
+  };
 }
 
 /** Authentication use cases (FR-AUTH-001..005). Delegates storage to Users/Sessions; owns the login rules. */
@@ -119,7 +125,13 @@ export class AuthService {
     });
     return {
       ...tokens,
-      user: { id: user.id, type: user.type, isNewUser: false, roles: access.roles },
+      user: {
+        id: user.id,
+        type: user.type,
+        isNewUser: false,
+        roles: access.roles,
+        permissions: access.permissions,
+      },
     };
   }
 
