@@ -43,7 +43,8 @@ describe('Module boundaries (static)', () => {
       payment: ['booking', 'users'],
       notifications: ['users', 'auth'],
       attendance: ['booking', 'users', 'workers'],
-      replacement: ['booking', 'matching', 'users', 'workers'],
+      // Replacement shows customer-safe alternative worker cards through Search (read-only contract).
+      replacement: ['booking', 'matching', 'search', 'users', 'workers'],
       ratings: ['booking', 'users', 'workers'],
       support: ['booking', 'users', 'workers'],
       // Reports read other modules' tables with SELECTs only; the sole code it imports is Verification's SQL definition of "verified" and Users (permissions).
@@ -52,7 +53,8 @@ describe('Module boundaries (static)', () => {
       alerts: ['users'],
       legal: ['alerts', 'users'],
       safety: ['booking', 'workers', 'users', 'alerts'],
-      meta: ['booking', 'legal', 'safety', 'support', 'search'],
+      // Meta also publishes the fixed replacement reason list (a constant of the Replacement module).
+      meta: ['booking', 'legal', 'safety', 'support', 'search', 'replacement'],
       system: ['users'],
       // Home only composes read calls of other modules for the customer Home screen; nothing depends on it.
       home: ['booking', 'notifications', 'shortlist', 'users'],

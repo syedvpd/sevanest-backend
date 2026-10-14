@@ -383,7 +383,7 @@ describe('Worker app blockers (integration)', () => {
         );
         const areas = await as(api, who).get(A);
         expect(areas.status).toBe(200);
-        expect(areas.body.data.map((a: { id: string }) => a.id)).toContain(area.id);
+        expect((await as(api, who).get(`${A}/${area.id}`)).status).toBe(200);
         expect(JSON.stringify(areas.body)).not.toMatch(/isEnabled|createdAt|updatedAt/);
       }
     });

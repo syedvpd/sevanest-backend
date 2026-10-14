@@ -6,4 +6,6 @@ module.exports = {
   testEnvironment: 'node',
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.json' }] },
   testTimeout: 30000,
+  // Many suites start whole Nest apps with Redis, queue and database clients; the run must end when the tests do (CI had hung after the summary).
+  forceExit: true,
 };
