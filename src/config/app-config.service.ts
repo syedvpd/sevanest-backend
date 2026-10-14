@@ -152,8 +152,9 @@ export class AppConfigService {
       minVersionCustomer: this.get('APP_MIN_VERSION_CUSTOMER'),
       minVersionWorker: this.get('APP_MIN_VERSION_WORKER'),
       maintenance: this.get('APP_MAINTENANCE_MODE'),
-      supportPhone: this.get('SUPPORT_CONTACT_PHONE'),
-      supportEmail: this.get('SUPPORT_CONTACT_EMAIL'),
+      // A blank value counts as not configured, so the app never shows an empty "Call support" target.
+      supportPhone: this.get('SUPPORT_CONTACT_PHONE')?.trim() || undefined,
+      supportEmail: this.get('SUPPORT_CONTACT_EMAIL')?.trim() || undefined,
     };
   }
   get fcmServiceAccountJson(): string {

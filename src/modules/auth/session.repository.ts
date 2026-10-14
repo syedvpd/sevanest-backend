@@ -144,6 +144,16 @@ export class SessionRepository {
     return rows.map((r) => r.token);
   }
 
+  /** Removes one push token (the provider reported it dead). Returns how many bindings went. */
+  async removeDeviceToken(token: string): Promise<number> {
+    return (await this.prisma.deviceToken.deleteMany({ where: { token } })).count;
+  }
+
+  /** Removes the push token bound to this session, only if it belongs to this user. */
+  async unbindDeviceTokenOfSession(userId: string, sessionId: string): Promise<number> {
+    return (await this.prisma.deviceToken.deleteMany({ where: { sessionId, userId } })).count;
+  }
+
   /** Binds a push token to exactly one session. A token already bound elsewhere (reinstall, other user) is moved. */
   async bindDeviceToken(
     input: { userId: string; sessionId: string; token: string; platform: DevicePlatform },

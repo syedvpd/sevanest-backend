@@ -43,6 +43,7 @@ const ANY_SIGNED_IN_ROUTES = [
   'GET /api/v1/notifications/unread-count',
   'POST /api/v1/notifications/read-all',
   'POST /api/v1/notifications/:notificationId/read',
+  'POST /api/v1/notifications/:notificationId/unread',
   'GET /api/v1/legal/status',
   'POST /api/v1/legal/accept',
   'GET /api/v1/me/deletion-request',

@@ -200,6 +200,16 @@ export class SessionService implements OnModuleInit {
     return this.repository.listDeviceTokens(userId);
   }
 
+  /** The push provider says this token is dead: drop its binding so nothing is sent to it again. */
+  removeDeviceToken(token: string): Promise<number> {
+    return this.repository.removeDeviceToken(token);
+  }
+
+  /** Drops the push token of the caller's current session only (other devices keep theirs). Idempotent. */
+  unbindDeviceToken(userId: string, sessionId: string): Promise<number> {
+    return this.repository.unbindDeviceTokenOfSession(userId, sessionId);
+  }
+
   /** Binds the push token to the caller's current session so pushes stop after logout. */
   async registerDeviceToken(
     userId: string,

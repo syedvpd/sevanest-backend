@@ -32,3 +32,24 @@ describe('AppConfigService.testOtpCodeFor', () => {
     expect(make({ ...base, NODE_ENV: 'production' }).testOtpCodeFor('+919999900001')).toBeNull();
   });
 });
+
+describe('AppConfigService.appPolicy support contact', () => {
+  it('passes configured values through trimmed', () => {
+    const policy = make({
+      SUPPORT_CONTACT_PHONE: ' +911234567890 ',
+      SUPPORT_CONTACT_EMAIL: 'help@example.test',
+    }).appPolicy;
+    expect(policy.supportPhone).toBe('+911234567890');
+    expect(policy.supportEmail).toBe('help@example.test');
+  });
+
+  it('leaves unset and blank values undefined (the API then answers null)', () => {
+    expect(make({}).appPolicy).toMatchObject({
+      supportPhone: undefined,
+      supportEmail: undefined,
+    });
+    const blank = make({ SUPPORT_CONTACT_PHONE: '  ', SUPPORT_CONTACT_EMAIL: '' }).appPolicy;
+    expect(blank.supportPhone).toBeUndefined();
+    expect(blank.supportEmail).toBeUndefined();
+  });
+});

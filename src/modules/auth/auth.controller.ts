@@ -158,11 +158,28 @@ export class AuthController {
   @RequireUserType('CUSTOMER', 'WORKER')
   @Put('device-token')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Bind the device push token to the current session' })
+  @ApiOperation({
+    summary: 'Bind the device push token to the current session',
+    description:
+      'One token per session, one session per device: a user with several devices has several bindings. A token already bound to another session (reinstall, another account on the same phone) moves to this one. The binding disappears when the session ends (logout, revoke, refresh-token replay).',
+  })
   async registerDeviceToken(
     @Body() dto: RegisterDeviceTokenDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.sessions.registerDeviceToken(user.userId, user.sessionId, dto.token, dto.platform);
+  }
+
+  @ApiBearerAuth()
+  @RequireUserType('CUSTOMER', 'WORKER')
+  @Delete('device-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Unbind the push token of the current session (keep the session)',
+    description:
+      "Only this session's binding is removed; other devices keep theirs. Repeating, or calling with no token bound, is harmless. POST /auth/logout already removes it together with the session.",
+  })
+  async unbindDeviceToken(@CurrentUser() user: AuthenticatedUser): Promise<void> {
+    await this.sessions.unbindDeviceToken(user.userId, user.sessionId);
   }
 }

@@ -148,7 +148,14 @@ export class SafetyService {
         tx,
       );
       if (dto.alsoBlock) {
-        await this.insertBlock(actor.userId, target.userId, dto.reasonCode, false, tx);
+        // `reason` is the text kept with the block (staff see it); without it the reason code is kept.
+        await this.insertBlock(
+          actor.userId,
+          target.userId,
+          dto.reason ?? dto.reasonCode,
+          false,
+          tx,
+        );
       }
       return { id: report.id, reasonCode: report.reasonCode, createdAt: report.createdAt };
     });
@@ -318,6 +325,8 @@ export class SafetyService {
         if (!booking || booking.customerUserId !== actor.userId || !booking.workerId) {
           throw this.targetNotFound();
         }
+        // Naming both: the worker must be the one working on that booking, otherwise it answers like an unknown target.
+        if (dto.workerId && dto.workerId !== booking.workerId) throw this.targetNotFound();
         const worker = await this.workers.requireRefById(booking.workerId);
         return { userId: worker.userId, workerId: booking.workerId };
       }

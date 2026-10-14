@@ -31,6 +31,7 @@ import {
   InboxQuery,
   TemplateListQuery,
   TemplateView,
+  UnreadCountView,
   UpdateTemplateDto,
 } from './dto/notifications.dto';
 import { HealthView, NotificationsService } from './notifications.service';
@@ -184,8 +185,12 @@ export class InboxController {
   }
 
   @Get('unread-count')
-  @ApiOperation({ summary: 'Number of unread in-app notifications (for the badge)' })
-  unread(@CurrentUser() user: AuthenticatedUser): Promise<{ unread: number }> {
+  @ApiModelResponse(UnreadCountView)
+  @ApiOperation({
+    summary: 'Number of unread in-app notifications (for the badge)',
+    description: 'Returns `{count, unread}` (identical values; `unread` is the older name).',
+  })
+  unread(@CurrentUser() user: AuthenticatedUser): Promise<UnreadCountView> {
     return this.notifications.unreadCount(user.userId);
   }
 
@@ -194,6 +199,20 @@ export class InboxController {
   @ApiOperation({ summary: 'Mark all my notifications read (repeating is harmless)' })
   readAll(@CurrentUser() user: AuthenticatedUser): Promise<{ updated: number }> {
     return this.notifications.markAllRead(user.userId);
+  }
+
+  @Post(':notificationId/unread')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Mark one of my notifications unread again',
+    description:
+      "404 for an unknown id and for someone else's notification. Repeating is harmless.",
+  })
+  async unreadOne(
+    @Param('notificationId', ParseUUIDPipe) notificationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.notifications.markUnread(user.userId, notificationId);
   }
 
   @Post(':notificationId/read')

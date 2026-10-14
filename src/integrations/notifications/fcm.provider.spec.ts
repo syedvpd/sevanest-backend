@@ -3,6 +3,7 @@ import { DEFAULT_IN_APP_TEMPLATES } from '../../modules/notifications/default-te
 import { EVENT_PARAMS } from '../../common/outbox/notification-events';
 import { placeholdersOf } from '../../modules/notifications/notifications.service';
 import { ProviderError } from '../provider-error';
+import { InvalidDeviceTokenError } from './notification-providers.interface';
 import { FcmPushProvider, parseFcmServiceAccount } from './fcm.provider';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', {
@@ -109,6 +110,50 @@ describe('FcmPushProvider', () => {
     expect(error.retryable).toBe(false);
     for (const secret of ['device-token-1', 'ya29.token', 'PRIVATE KEY']) {
       expect(error.message).not.toContain(secret);
+    }
+  });
+
+  it.each([
+    [404, { error: { status: 'NOT_FOUND', details: [{ errorCode: 'UNREGISTERED' }] } }],
+    [404, { error: { status: 'NOT_FOUND' } }],
+    [
+      400,
+      {
+        error: {
+          status: 'INVALID_ARGUMENT',
+          message: 'The registration token is not a valid FCM registration token',
+        },
+      },
+    ],
+  ])('classifies HTTP %s %j as a dead device token without echoing it', async (status, body) => {
+    replies = [
+      { status: 200, body: { access_token: 'ya29.token', expires_in: 3600 } },
+      { status, body },
+    ];
+    const error = (await new FcmPushProvider(settings)
+      .sendPush(push)
+      .catch((e: unknown) => e)) as ProviderError;
+    expect(error).toBeInstanceOf(InvalidDeviceTokenError);
+    expect(error.retryable).toBe(false);
+    expect(JSON.stringify(error.cause)).not.toContain('device-token-1');
+    expect(error.message).not.toContain('device-token-1');
+  });
+
+  it('does not call a token dead for other rejections (bad payload, wrong credentials, outage)', async () => {
+    for (const [status, body] of [
+      [400, { error: { status: 'INVALID_ARGUMENT', message: 'Invalid JSON payload' } }],
+      [403, { error: { status: 'PERMISSION_DENIED' } }],
+      [503, {}],
+    ] as const) {
+      replies = [
+        { status: 200, body: { access_token: 'ya29.token', expires_in: 3600 } },
+        { status, body },
+      ];
+      const error = (await new FcmPushProvider(settings)
+        .sendPush(push)
+        .catch((e: unknown) => e)) as ProviderError;
+      expect(error).toBeInstanceOf(ProviderError);
+      expect(error).not.toBeInstanceOf(InvalidDeviceTokenError);
     }
   });
 

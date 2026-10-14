@@ -1,3 +1,5 @@
+import { ProviderError } from '../provider-error';
+
 /**
  * Outbound messaging abstractions (FR-NOT-001..003). SMS and WhatsApp vendors are not yet selected (SRS §14 item 9);
  * push is Firebase Cloud Messaging. Foundation contracts: refine with the Notification module. Callers (queue handlers)
@@ -43,4 +45,20 @@ export interface PushProvider {
     /** Deep-link routing data only; never personal data. */
     data?: Record<string, string>;
   }): Promise<SendResult>;
+}
+
+/**
+ * The push provider says this device token will never work again (app uninstalled, token rotated, malformed). Permanent for that
+ * token: the caller removes the binding and does not retry it. Never carries the token.
+ */
+export class InvalidDeviceTokenError extends ProviderError {
+  constructor(provider: string, cause?: unknown) {
+    super(
+      provider,
+      `${provider} rejected the device token as invalid or unregistered`,
+      false,
+      cause,
+    );
+    this.name = 'InvalidDeviceTokenError';
+  }
 }

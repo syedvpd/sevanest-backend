@@ -295,7 +295,7 @@ describe('Worker scheduling and category engagements (integration)', () => {
       const other = await customer();
       for (const who of [c, c, other]) {
         await as(api, who)
-          .post('/api/v1/support/tickets', { categoryId, description: 'Late' })
+          .post('/api/v1/support/tickets', { categoryId, description: 'Worker arrived late' })
           .expect(201);
       }
       const mine = await as(api, admin).get(`${A}/support/tickets?creatorUserId=${c.userId}`);

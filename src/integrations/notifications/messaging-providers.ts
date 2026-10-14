@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ProviderError } from '../provider-error';
-import type {
-  PushProvider,
-  SendResult,
-  WhatsAppProvider,
+import {
+  InvalidDeviceTokenError,
+  type PushProvider,
+  type SendResult,
+  type WhatsAppProvider,
 } from './notification-providers.interface';
 
 /** Used while no push (FCM) credentials are configured: every send fails, permanently. */
@@ -27,6 +28,8 @@ export class DisabledWhatsAppProvider implements WhatsAppProvider {
 export interface CapturedMessage {
   to: string;
   title?: string;
+  /** Push only: the FCM data map exactly as it would be sent. */
+  data?: Record<string, string>;
   body: string;
   idempotencyKey?: string;
 }
@@ -36,10 +39,25 @@ export interface CapturedMessage {
 export class InMemoryPushProvider implements PushProvider {
   readonly sent: CapturedMessage[] = [];
   failWith: ProviderError | null = null;
+  /** Tokens the "provider" reports as unregistered (test seam for the invalid-token clean-up). */
+  readonly invalidTokens = new Set<string>();
 
-  sendPush(input: { deviceToken: string; title: string; body: string }): Promise<SendResult> {
+  sendPush(input: {
+    deviceToken: string;
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+  }): Promise<SendResult> {
+    if (this.invalidTokens.has(input.deviceToken)) {
+      return Promise.reject(new InvalidDeviceTokenError('push'));
+    }
     if (this.failWith) return Promise.reject(this.failWith);
-    this.sent.push({ to: input.deviceToken, title: input.title, body: input.body });
+    this.sent.push({
+      to: input.deviceToken,
+      title: input.title,
+      body: input.body,
+      data: input.data,
+    });
     return Promise.resolve({ providerMessageId: `push-${this.sent.length}` });
   }
 }

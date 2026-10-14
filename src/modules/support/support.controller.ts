@@ -64,7 +64,7 @@ export class SupportController {
   @ApiOperation({
     summary: 'Raise a support request or complaint',
     description:
-      '422 SUPPORT_CATEGORY_INVALID for an unknown or disabled category. A bookingId must be a booking the caller is a party to (the customer, or the booking worker), otherwise 404 BOOKING_NOT_FOUND.',
+      '422 SUPPORT_CATEGORY_INVALID for an unknown or disabled category. A bookingId must be a booking the caller is a party to (the customer, or the booking worker), otherwise 404 BOOKING_NOT_FOUND. The description (10 to 4000 characters) is kept on the ticket and is not copied into the message thread. Payment, replacement and interview problems are all raised against the booking they belong to (bookingId). Priority is set by staff only; the request cannot ask for one, and no response-time promise is made unless the business configured a resolution target (`dueAt`).',
   })
   create(
     @Body() dto: CreateTicketDto,
@@ -91,7 +91,7 @@ export class SupportController {
   @ApiOperation({
     summary: 'One of my tickets with its progress (404 for anyone else)',
     description:
-      'History shows what happened and when; staff notes and staff identities are never included.',
+      'Status: OPEN (raised), IN_PROGRESS (an owner was assigned), ESCALATED (staff escalated it internally; it is still being worked, not resolved), CLOSED (final; `resolution` holds the outcome written for the customer). History lines carry a type from a fixed set; staff notes, priority and staff identities are never included. A closed ticket cannot be reopened: raise a new one.',
   })
   get(
     @Param('ticketId', ParseUUIDPipe) ticketId: string,
@@ -123,6 +123,8 @@ export class SupportController {
   @ApiPageResponse(MessageView)
   @ApiOperation({
     summary: 'The conversation on one of my tickets (staff internal notes are never included)',
+    description:
+      'Oldest first, ordered by createdAt then id, so the order is the same on every call. The ticket description is not a message; show `description` from the ticket as the first entry.',
   })
   messages(
     @Param('ticketId', ParseUUIDPipe) ticketId: string,

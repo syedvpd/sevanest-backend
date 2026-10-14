@@ -2,7 +2,11 @@ import { createSign } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { providerRequest } from '../http/provider-http';
 import { ProviderError } from '../provider-error';
-import type { PushProvider, SendResult } from './notification-providers.interface';
+import {
+  InvalidDeviceTokenError,
+  type PushProvider,
+  type SendResult,
+} from './notification-providers.interface';
 
 export interface FcmServiceAccount {
   project_id: string;
@@ -35,6 +39,27 @@ export function parseFcmServiceAccount(json: string): FcmServiceAccount {
     );
   }
   return parsed as FcmServiceAccount;
+}
+
+/**
+ * FCM HTTP v1 errors that mean the registration token itself is dead: HTTP 404 / errorCode UNREGISTERED, or HTTP 400
+ * INVALID_ARGUMENT whose message names the registration token. Any other 4xx (bad credentials, bad payload, wrong sender) is a
+ * permanent failure of the request, not proof that the token is bad, so the binding is kept.
+ */
+export function isInvalidTokenRejection(error: ProviderError): boolean {
+  const cause = error.cause as { status?: number; json?: unknown } | undefined;
+  if (!cause || error.retryable) return false;
+  const body = cause.json as
+    | { error?: { status?: string; message?: string; details?: Array<{ errorCode?: string }> } }
+    | null
+    | undefined;
+  if (body?.error?.details?.some((d) => d?.errorCode === 'UNREGISTERED')) return true;
+  if (cause.status === 404) return true;
+  return (
+    cause.status === 400 &&
+    body?.error?.status === 'INVALID_ARGUMENT' &&
+    /registration token/i.test(body.error.message ?? '')
+  );
 }
 
 const b64url = (value: Buffer | string): string => Buffer.from(value).toString('base64url');
@@ -81,15 +106,25 @@ export class FcmPushProvider implements PushProvider {
     };
     let reply: { name?: unknown } | null;
     try {
-      reply = await send(await this.token());
-    } catch (error) {
-      // An expired or revoked access token: fetch a fresh one once and retry.
-      if (error instanceof ProviderError && !error.retryable && this.isUnauthorized(error)) {
-        this.accessToken = null;
+      try {
         reply = await send(await this.token());
-      } else {
-        throw error;
+      } catch (error) {
+        // An expired or revoked access token: fetch a fresh one once and retry.
+        if (error instanceof ProviderError && !error.retryable && this.isUnauthorized(error)) {
+          this.accessToken = null;
+          reply = await send(await this.token());
+        } else {
+          throw error;
+        }
       }
+    } catch (error) {
+      if (error instanceof ProviderError && isInvalidTokenRejection(error)) {
+        // Keep the status only: the cause also holds the response body.
+        throw new InvalidDeviceTokenError('fcm', {
+          status: (error.cause as { status?: number }).status,
+        });
+      }
+      throw error;
     }
     if (typeof reply?.name !== 'string') {
       throw new ProviderError('fcm', 'fcm did not accept the message', false);

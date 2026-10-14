@@ -17,6 +17,20 @@ export type TicketPriorityValue = (typeof TICKET_PRIORITIES)[number];
 
 /** Technical caps against abuse, not product rules (FRD FM-12 asks for a length limit without a value, Q-59). */
 export const DESCRIPTION_MAX_LENGTH = 4000;
+/** Smallest description accepted at creation (the customer app's own minimum; Q-45..54 #2). */
+export const DESCRIPTION_MIN_LENGTH = 10;
+
+/**
+ * The closed set of `history[].type` values the backend writes (one per call site in SupportService). A new value is a contract
+ * change and must be added here, to the OpenAPI enum and to docs/qa/customer-support-safety-notifications-api.md.
+ */
+export const TICKET_EVENT_TYPES = [
+  'CREATED',
+  'ASSIGNED',
+  'PRIORITY_SET',
+  'ESCALATED',
+  'CLOSED',
+] as const;
 export const SUBJECT_MAX_LENGTH = 120;
 export const NOTE_MAX_LENGTH = 2000;
 
@@ -36,10 +50,15 @@ export class CreateTicketDto {
   @Length(1, SUBJECT_MAX_LENGTH)
   subject?: string;
 
-  @ApiProperty({ maxLength: DESCRIPTION_MAX_LENGTH })
+  @ApiProperty({
+    minLength: DESCRIPTION_MIN_LENGTH,
+    maxLength: DESCRIPTION_MAX_LENGTH,
+    description:
+      'What happened, trimmed, 10 to 4000 characters. It is returned as `description` on the ticket and is NOT repeated as a message in the conversation.',
+  })
   @Transform(trim)
   @IsString()
-  @Length(1, DESCRIPTION_MAX_LENGTH)
+  @Length(DESCRIPTION_MIN_LENGTH, DESCRIPTION_MAX_LENGTH)
   description!: string;
 
   @ApiPropertyOptional({
@@ -183,7 +202,12 @@ export class AdminSupportCategoryView extends SupportCategoryView {
 
 /** One line of history as the ticket creator sees it: what happened and when, never who or the staff note. */
 export class TicketEventView {
-  @ApiProperty() type!: string;
+  @ApiProperty({
+    enum: TICKET_EVENT_TYPES,
+    description:
+      'What kind of change this line records. CREATED: ticket raised. ASSIGNED: an owner was set (the first one moves OPEN to IN_PROGRESS). PRIORITY_SET: staff changed the priority (status unchanged; the priority itself is not shown). ESCALATED: staff escalated it. CLOSED: closed with a resolution.',
+  })
+  type!: string;
   @ApiProperty({ enum: TICKET_STATUSES, nullable: true }) fromStatus!: TicketStatusValue | null;
   @ApiProperty({ enum: TICKET_STATUSES, nullable: true }) toStatus!: TicketStatusValue | null;
   @ApiProperty() createdAt!: Date;

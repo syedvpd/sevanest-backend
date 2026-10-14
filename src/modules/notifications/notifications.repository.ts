@@ -204,6 +204,20 @@ export class NotificationsRepository {
     return true;
   }
 
+  /** Marks one of the user's own inbox items unread. false = not theirs / not an inbox item / unknown. Repeating is harmless. */
+  async markUnread(userId: string, id: string): Promise<boolean> {
+    const found = await this.prisma.notification.findFirst({
+      where: { id, recipientUserId: userId, channel: 'IN_APP' },
+      select: { id: true },
+    });
+    if (!found) return false;
+    await this.prisma.notification.updateMany({
+      where: { id, readAt: { not: null } },
+      data: { readAt: null },
+    });
+    return true;
+  }
+
   async markAllRead(userId: string): Promise<number> {
     const result = await this.prisma.notification.updateMany({
       where: { recipientUserId: userId, channel: 'IN_APP', readAt: null },

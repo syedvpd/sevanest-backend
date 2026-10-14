@@ -15,6 +15,7 @@ import { OutboxService } from '../../common/outbox/outbox.service';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { ProviderError } from '../../integrations/provider-error';
 import {
+  InvalidDeviceTokenError,
   PUSH_PROVIDER,
   SMS_PROVIDER,
   WHATSAPP_PROVIDER,
@@ -34,6 +35,7 @@ import {
   InboxQuery,
   TemplateListQuery,
   TemplateView,
+  UnreadCountView,
   UpdateTemplateDto,
 } from './dto/notifications.dto';
 import { NOTIFICATION_QUEUE } from './notifications.constants';
@@ -237,6 +239,14 @@ export class NotificationsService {
     }
     try {
       const providerMessageId = await this.send(notification, target);
+      if (providerMessageId === null) {
+        // Every bound device token was rejected as dead (and has been removed): nothing can receive it.
+        await this.repository.finish(notification.id, {
+          status: 'SKIPPED',
+          lastError: 'NO_VALID_DEVICE',
+        });
+        return 'SKIPPED';
+      }
       await this.repository.markAttempt(notification.id, null);
       const done = await this.repository.finish(notification.id, {
         status: 'SENT',
@@ -288,7 +298,7 @@ export class NotificationsService {
   private async send(
     notification: NotificationRecord,
     target: { text: string; title: string; mobile: string | null; tokens: string[] },
-  ): Promise<string> {
+  ): Promise<string | null> {
     switch (notification.channel) {
       case 'SMS':
         return (
@@ -306,21 +316,44 @@ export class NotificationsService {
             idempotencyKey: notification.id,
           })
         ).providerMessageId;
-      default: {
-        let last = '';
-        for (const deviceToken of target.tokens) {
-          last = (
-            await this.push.sendPush({
-              deviceToken,
-              title: target.title,
-              body: target.text,
-              data: { notificationId: notification.id, event: notification.eventCode },
-            })
-          ).providerMessageId;
+      default:
+        return this.sendPush(notification, target);
+    }
+  }
+
+  /**
+   * FCM data payload (all values strings, ids only): notificationId, event, and - when the event names an entity - routeType and
+   * routeId (the same pair as `route` in the inbox). One failing device never blocks the others: a token the provider reports as
+   * dead is removed and skipped; any other failure is kept and, if no device at all was reached, rethrown so the queue retries or
+   * the notification fails. Returns null when every token was dead.
+   */
+  private async sendPush(
+    notification: NotificationRecord,
+    target: { text: string; title: string; tokens: string[] },
+  ): Promise<string | null> {
+    const route = routeFor(notification.params);
+    const data: Record<string, string> = {
+      notificationId: notification.id,
+      event: notification.eventCode,
+      ...(route ? { routeType: route.type, routeId: route.id } : {}),
+    };
+    let delivered: string | null = null;
+    let failure: Error | null = null;
+    for (const deviceToken of target.tokens) {
+      try {
+        delivered = (
+          await this.push.sendPush({ deviceToken, title: target.title, body: target.text, data })
+        ).providerMessageId;
+      } catch (error) {
+        if (error instanceof InvalidDeviceTokenError) {
+          await this.sessions.removeDeviceToken(deviceToken);
+        } else {
+          failure ??= error instanceof Error ? error : new Error('push delivery failed');
         }
-        return last;
       }
     }
+    if (delivered === null && failure) throw failure;
+    return delivered;
   }
 
   // --- admin: templates and delivery log --------------------------------------------------------------------
@@ -523,8 +556,20 @@ export class NotificationsService {
     };
   }
 
-  async unreadCount(userId: string): Promise<{ unread: number }> {
-    return { unread: await this.repository.unreadCount(userId) };
+  async unreadCount(userId: string): Promise<UnreadCountView> {
+    const count = await this.repository.unreadCount(userId);
+    return { count, unread: count };
+  }
+
+  /** Puts one of my own inbox items back to unread. Another user's notification answers like an unknown one. Repeating is harmless. */
+  async markUnread(userId: string, id: string): Promise<void> {
+    if (!(await this.repository.markUnread(userId, id))) {
+      throw new DomainException(
+        NotificationErrorCode.NOTIFICATION_NOT_FOUND,
+        'Notification not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
   }
 
   /** Another user's notification answers exactly like an unknown one. */

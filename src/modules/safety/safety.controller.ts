@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -38,6 +39,7 @@ import { SafetyActor, SafetyService, StaffActor } from './safety.service';
 export class SafetyController {
   constructor(private readonly safety: SafetyService) {}
 
+  @Idempotent()
   @Post('blocks')
   @ApiModelResponse(BlockView)
   @HttpCode(HttpStatus.OK)
@@ -70,12 +72,13 @@ export class SafetyController {
     await this.safety.unblock(this.actor(user), blockId);
   }
 
+  @Idempotent()
   @Post('reports')
   @ApiModelResponse(ReportView, { status: 201 })
   @ApiOperation({
     summary: 'Report a worker or customer (safety, misconduct, fraud ...)',
     description:
-      'Staff are alerted. `alsoBlock: true` blocks them as well. The note is free text for staff only.',
+      'Staff are alerted. `alsoBlock: true` blocks them as well. Send `Idempotency-Key` so a retry returns the first report (header `Idempotent-Replay: true`) instead of filing a second one. `reasonCode` is the machine-readable reason; `note` (max 1000) is the free-text account for staff; `reason` (max 500) is only the text kept with the block when `alsoBlock` is true (the reason code is kept if it is absent). The response `id` is the report id; no support ticket is created or linked. Customers name the worker with `workerId` and/or `bookingId`; if both are sent the worker must be the one on that booking, otherwise 404 SAFETY_TARGET_NOT_FOUND. Lateness, leaving early, wrong attendance and work quality are not safety reports: use a support ticket or the attendance flow.',
   })
   report(
     @Body() dto: CreateReportDto,

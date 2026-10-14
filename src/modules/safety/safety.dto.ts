@@ -36,7 +36,11 @@ export class CreateBlockDto {
   @IsUUID()
   bookingId?: string;
 
-  @ApiPropertyOptional({ maxLength: 500 })
+  @ApiPropertyOptional({
+    maxLength: 500,
+    description:
+      'The text kept with the block. On a report it applies only when `alsoBlock` is true.',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -50,7 +54,11 @@ export class CreateReportDto extends CreateBlockDto {
   @IsIn(REPORT_REASONS)
   reasonCode!: ReportReason;
 
-  @ApiPropertyOptional({ maxLength: 1000 })
+  @ApiPropertyOptional({
+    maxLength: 1000,
+    description:
+      "The reporter's own words about what happened. Staff only; never returned to the other person.",
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()

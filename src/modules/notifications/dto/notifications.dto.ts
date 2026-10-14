@@ -136,10 +136,22 @@ export class InboxItemView {
   @ApiProperty() event!: string;
   @ApiProperty({ nullable: true, type: String }) title!: string | null;
   @ApiProperty() body!: string;
-  @ApiProperty({ nullable: true, example: { type: 'booking', id: 'uuid' } })
+  @ApiProperty({
+    nullable: true,
+    example: { type: 'booking', id: 'uuid' },
+    description:
+      'Where a tap leads. `type` is one of booking | ticket | replacement | payment (the first id the event carries, in that order); `id` is that entity id. null when the event names no entity.',
+  })
   route!: { type: string; id: string } | null;
   @ApiProperty({ nullable: true, type: Date }) readAt!: Date | null;
   @ApiProperty() createdAt!: Date;
+}
+
+export class UnreadCountView {
+  @ApiProperty({ description: 'Unread in-app notifications of the signed-in user (the badge).' })
+  count!: number;
+  @ApiProperty({ description: 'Same number as `count`; kept for older clients.', deprecated: true })
+  unread!: number;
 }
 
 export class EventView {

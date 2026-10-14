@@ -19,8 +19,8 @@ FR-SUP-001..006, FR-ON-003, FR-WJ-010, FRD FM-12 (category from a configured lis
 
 ## Lifecycle
 
-`OPEN` -> `IN_PROGRESS` (first assignment) -> `ESCALATED` -> `CLOSED` (resolution required). A closed ticket is final (409 `TICKET_CLOSED`). Every change locks the ticket row, appends an immutable history line (database trigger blocks update/delete), writes an audit record and tells the creator (`TICKET_UPDATE` notification) in the same transaction. Database CHECKs keep CLOSED and "has resolution" equivalent.
+`OPEN` -> `IN_PROGRESS` (first assignment) -> `ESCALATED` -> `CLOSED` (resolution required). A closed ticket is final (409 `TICKET_CLOSED`); the customer raises a new one. `history[].type` is one of CREATED, ASSIGNED, PRIORITY_SET, ESCALATED, CLOSED; the description (10 to 4000 characters) is not a message; messages are oldest first. Every change locks the ticket row, appends an immutable history line (database trigger blocks update/delete), writes an audit record and tells the creator (`TICKET_UPDATE` notification) in the same transaction. Database CHECKs keep CLOSED and "has resolution" equivalent.
 
 ## Not built (the specs give no value or rule - Q-59)
 
-SLA targets and automatic escalation on breach, automatic owner assignment and priority rules, reopening, attachments, a chat thread, the effect of "report/block", the safety-incident route to Operations/Super Admin. Priority is a PROPOSED LOW/MEDIUM/HIGH set by staff only. Categories are admin data and none are seeded, so no ticket can be raised until an administrator adds one.
+SLA targets and automatic escalation on breach, automatic owner assignment and priority rules, reopening, attachments (Q-107), "waiting for you"/"resolved" states (Q-108), the effect of "report/block", the safety-incident route to Operations/Super Admin. Priority is a PROPOSED LOW/MEDIUM/HIGH set by staff only. Categories are admin data and none are seeded, so no ticket can be raised until an administrator adds one.
