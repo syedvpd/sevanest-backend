@@ -39,3 +39,4 @@ pgdata/
 
 # performance run output (raw samples, throwaway local tokens)
 test/perf/out/
+test/perf/out-remote/

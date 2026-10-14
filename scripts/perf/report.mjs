@@ -56,9 +56,14 @@ const modules = [...new Set(rows.map((r) => r.module))].sort();
 let md = `# Backend performance test results\n\n`;
 md += `Generated ${run.generatedAt}. **Performance, not load**: one client, strictly sequential, ${run.iterations} full iterations of every module's lifecycle.\n\n`;
 md += `## How it was measured\n\n`;
-md += `* Target: the real API on a real HTTP port (loopback), NestJS ${'11'}, on a fresh local PostgreSQL 17 and Redis 7 (Docker), same machine as the client. Numbers include JSON parsing, guards, validation, database and audit writes; they exclude network latency and TLS, so a hosted deployment adds its round trip.\n`;
+const remote = Boolean(run.target);
+md += remote
+  ? `* Target: ${run.target} (${run.mode}), measured from the machine below over the network, so the numbers INCLUDE network latency and TLS. Only public API calls were used; ids come from the target's own data. The first request of the run is GET /health/live, so a sleeping free-tier service shows its cold start as that operation's 1st hit.\n`
+  : `* Target: the real API on a real HTTP port (loopback), NestJS 11, on a fresh local PostgreSQL 17 and Redis 7 (Docker), same machine as the client. Numbers include JSON parsing, guards, validation, database and audit writes; they exclude network latency and TLS, so a hosted deployment adds its round trip.\n`;
 md += `* Machine: ${os.cpus()[0].model.trim()}, ${os.cpus().length} logical CPUs, ${(os.totalmem() / 2 ** 30).toFixed(0)} GB RAM, Node ${process.version}, ${os.platform()}.\n`;
-md += `* Each iteration creates fresh users and data and walks the modules in lifecycle order: create, read, list, update, state changes, delete. The same operation is therefore hit once per iteration.\n`;
+md += remote
+  ? `* Each iteration calls every read (GET) operation it can fill in, in the role the route belongs to${run.mode.includes('writes') ? ', plus a few reversible write lifecycles that clean up after themselves' : ''}. The same operation is therefore hit once per iteration.\n`
+  : `* Each iteration creates fresh users and data and walks the modules in lifecycle order: create, read, list, update, state changes, delete. The same operation is therefore hit once per iteration.\n`;
 md += `* **1st hit** = iteration 1 (first call after the process started: cold caches, query plans, JIT). **2nd hit** = iteration 2. p50/p95/p99, min, avg, max use all ${run.iterations} samples (nearest-rank; with ${run.iterations} samples p95 and p99 equal the slowest sample).\n`;
 md += `* Times are end-to-end milliseconds for the HTTP call including reading the whole body.\n\n`;
 md += `## Summary\n\n`;
@@ -82,7 +87,7 @@ md += `* Operations whose median is above 300 ms: ${hashing.length ? hashing.joi
 md += `* Without them: p50 / p95 / p99 = ${fmt(pct(withoutHashing, 50))} / ${fmt(pct(withoutHashing, 95))} / ${fmt(pct(withoutHashing, 99))} ms over ${withoutHashing.length} requests.\n`;
 md += `* Cold start is small: the 1st-hit median across operations is ${fmt(pct(firsts, 50))} ms against ${fmt(pct(seconds, 50))} ms for the 2nd hit; only a few operations lose more than 20 ms on their first call (table below).\n`;
 md += `* Read endpoints (GET) dominate the sample and answer in a few tens of milliseconds; the slowest non-hashing operations are state changes that write several rows, send outbox events and audit records in one transaction (interviews, bookings, replacements, payments).\n`;
-md += `* Run history: an earlier identical run was discarded because the host machine stalled for about 4 minutes during iteration 13 (one call took 266 s and two requests got 500 from connections broken by the stall; the database and Redis logs show no error). This is the clean rerun: no failed iteration, no unexpected status, no sample above 3 s.\n\n`;
+if (!remote) md += `* Run history: an earlier identical run was discarded because the host machine stalled for about 4 minutes during iteration 13 (one call took 266 s and two requests got 500 from connections broken by the stall; the database and Redis logs show no error). This is the clean rerun: no failed iteration, no unexpected status, no sample above 3 s.\n\n`;
 
 const top = (list, key, n, title) => {
   let t = `### ${title}\n\n| Operation | 1st | 2nd | p50 | p95 | max |\n|---|---|---|---|---|---|\n`;

@@ -35,6 +35,43 @@ Notes
 * Never point it at staging or production: it creates users, bookings and payments, and the database guard refuses anything that is not a
   disposable `*_ci` / `*_test` database.
 
+## 1b. Run the same kind of test against Render (or any URL)
+
+The harness above builds its own data in a local database, so it cannot target a hosted server. `run-remote.mjs` is the version for a
+deployed API: it needs only the URL and a test login, uses the public API only, and writes the same file the report understands.
+
+```bash
+export PERF_BASE_URL=https://sevanest-backend.onrender.com
+export PERF_CUSTOMER_MOBILE=+919999900001      # a test number in TEST_OTP_NUMBERS on that server
+export PERF_WORKER_MOBILE=+919999900002        # a second test number (optional: worker routes are skipped without it)
+export PERF_OTP_CODE=123456                    # the server's TEST_OTP_CODE
+export PERF_ADMIN_EMAIL=...                    # a staff account (optional: admin routes are skipped without it)
+export PERF_ADMIN_PASSWORD=...
+export PERF_ITERATIONS=15
+# export PERF_WRITES=1                         # optional: also run reversible write lifecycles (never on production)
+
+node scripts/perf/run-remote.mjs
+node scripts/perf/report.mjs test/perf/out-remote docs/qa      # writes docs/qa/performance-test-results.md and .csv
+```
+
+What it does: times `GET /health/live` first (on Render's free tier a sleeping service shows its cold start there), signs in once per role
+with the staging test OTP and the admin login, finds real ids through the list endpoints, then repeats a sweep of every GET operation it can
+fill in, in the right role, `PERF_ITERATIONS` times, and records each call. With `PERF_WRITES=1` it also creates and removes an address,
+adds and removes a shortlist entry, sets and clears a device token and marks notifications read, so create, update and delete are timed too.
+It never creates bookings, payments, tickets or users, so a hosted database is not filled with test records.
+
+Limits to know
+
+* It measures the full path: your network, TLS, Render and the database. Run it from the place your users are (or from your laptop and from a
+  server in the same region) and say which when you quote numbers. Render free instances sleep after idle time: run it twice, once cold and
+  once warm.
+* Booking, payment, interview, attendance, replacement and rating flows need a real worker, a real payment and real time to pass, so the
+  deployed run times their read endpoints against your existing data; the full state-changing lifecycles are covered by section 1 on a local
+  database, and by the Postman collection below for manual runs.
+* The OpenAPI document must be reachable (`SWAGGER_ENABLED=true`, as on staging), or save a copy and set `PERF_OPENAPI=path/to/openapi.json`.
+* OTP resend cooldown is 30 s per number, so the first login may wait that long if you just logged in.
+* Credentials are only read from the environment and never printed or stored.
+
 ## 2. Postman collection
 
 `postman/SevaNest.postman_collection.json` (every operation, 54 module folders, lifecycle order) and
