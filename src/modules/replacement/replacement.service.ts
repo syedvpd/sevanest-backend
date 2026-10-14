@@ -11,12 +11,16 @@ import { BookingLifecycleHooks } from '../booking/booking-hooks';
 import { BookingActor, BookingService } from '../booking/booking.service';
 import { MatchCandidatesResponse } from '../matching/dto/matching.dto';
 import { MatchingService } from '../matching/matching.service';
+import { WorkerCard } from '../search/dto/search.dto';
+import { SearchService } from '../search/search.service';
 import { WorkersService } from '../workers/workers.service';
 import {
   AdminReplacementListQuery,
   AdminReplacementView,
   CreateReplacementDto,
+  ReplacementDetailView,
   ReplacementListQuery,
+  ReplacementTimelineEntry,
   ReplacementView,
 } from './dto/replacement.dto';
 import { REPLACEMENT_POLICY, type ReplacementPolicy } from './replacement.policy';
@@ -49,6 +53,7 @@ export class ReplacementService implements OnModuleInit {
     private readonly bookings: BookingService,
     private readonly hooks: BookingLifecycleHooks,
     private readonly matching: MatchingService,
+    private readonly search: SearchService,
     private readonly workers: WorkersService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
@@ -131,7 +136,7 @@ export class ReplacementService implements OnModuleInit {
     query: ReplacementListQuery,
   ): Promise<Page<ReplacementView>> {
     const { items, total } = await this.repository.list(
-      { requestedByUserId: customerUserId, status: query.status },
+      { requestedByUserId: customerUserId, status: query.status, bookingId: query.bookingId },
       skipFor(query),
       query.limit,
     );
@@ -141,10 +146,47 @@ export class ReplacementService implements OnModuleInit {
     };
   }
 
-  async getMine(customerUserId: string, id: string): Promise<ReplacementView> {
+  async getMine(customerUserId: string, id: string): Promise<ReplacementDetailView> {
     const request = await this.repository.findById(id);
     if (!request || request.requestedByUserId !== customerUserId) throw this.notFound();
-    return this.view(request);
+    return { ...this.view(request), timeline: await this.timeline(request) };
+  }
+
+  /**
+   * Workers the customer may pick once staff approved the request: the staff candidate eligibility (never the worker being
+   * replaced) as customer-safe worker cards. Selection checks again, including booking conflicts.
+   */
+  async alternatives(
+    customerUserId: string,
+    id: string,
+    page: number,
+    limit: number,
+  ): Promise<Page<WorkerCard>> {
+    const request = await this.repository.findById(id);
+    if (!request || request.requestedByUserId !== customerUserId) throw this.notFound();
+    if (request.status !== 'APPROVED') throw this.invalidTransition(request);
+    const requirement = await this.bookings.getRequirement(request.bookingId);
+    const { items, total } = await this.search.findEligible(
+      {
+        category: requirement.category,
+        areaId: requirement.areaId,
+        engagement: requirement.engagement,
+        availableFrom: requirement.availableFrom,
+        availableTo: requirement.availableTo,
+        excludeWorkerId: requirement.workerId ?? undefined,
+        forCustomerUserId: customerUserId,
+      },
+      'SUBMITTED_ASC',
+      { skip: skipFor({ page, limit }), limit },
+    );
+    const cards = await this.search.getVisibleCards(
+      items.map((w) => w.id),
+      customerUserId,
+    );
+    return {
+      data: items.map((w) => cards.get(w.id)).filter((c): c is WorkerCard => c !== undefined),
+      meta: { page, limit, total },
+    };
   }
 
   /** Withdraws an open request; the booking returns to ACTIVE. Repeating is harmless. */
@@ -387,6 +429,40 @@ export class ReplacementService implements OnModuleInit {
 
   private requireOpen(request: ReplacementRecord): void {
     if (!['REQUESTED', 'APPROVED'].includes(request.status)) throw this.invalidTransition(request);
+  }
+
+  /** Status history from the audit trail, which is written in the same transaction as every change. */
+  private async timeline(r: ReplacementRecord): Promise<ReplacementTimelineEntry[]> {
+    const { items } = await this.audit.search(
+      { entityType: 'replacement_request', entityId: r.id, actionPrefix: 'replacement.' },
+      0,
+      50,
+    );
+    const status: Record<string, ReplacementTimelineEntry['status']> = {
+      'replacement.request': 'REQUESTED',
+      'replacement.approve': 'APPROVED',
+      'replacement.reject': 'REJECTED',
+      'replacement.cancel': 'CANCELLED',
+      'replacement.complete': 'COMPLETED',
+    };
+    return items
+      .filter((row) => status[row.action])
+      .reverse()
+      .map((row) => {
+        const to = status[row.action];
+        const cause = (row.metadata as { cause?: string } | null)?.cause;
+        const actor: ReplacementTimelineEntry['actor'] = cause
+          ? 'SYSTEM'
+          : row.actorId === r.requestedByUserId
+            ? 'CUSTOMER'
+            : 'STAFF';
+        return {
+          status: to,
+          at: row.createdAt,
+          actor,
+          remarks: to === 'APPROVED' || to === 'REJECTED' ? r.decisionRemarks : null,
+        };
+      });
   }
 
   private view(r: ReplacementRecord): ReplacementView {

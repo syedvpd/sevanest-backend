@@ -18,6 +18,7 @@ import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { PageQueryDto } from '../../common/pagination/pagination';
 import type { Page } from '../../common/pagination/pagination';
 import { MatchCandidatesResponse } from '../matching/dto/matching.dto';
+import { WorkerCard } from '../search/dto/search.dto';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import {
@@ -25,6 +26,7 @@ import {
   AdminReplacementView,
   CreateReplacementDto,
   DecisionDto,
+  ReplacementDetailView,
   ReplacementListQuery,
   ReplacementView,
   SelectReplacementWorkerDto,
@@ -65,13 +67,32 @@ export class ReplacementsController {
   }
 
   @Get(':requestId')
-  @ApiModelResponse(ReplacementView)
-  @ApiOperation({ summary: 'One of my requests (404 for anyone else)' })
+  @ApiModelResponse(ReplacementDetailView)
+  @ApiOperation({
+    summary: 'One of my requests with its status timeline (404 for anyone else)',
+    description:
+      '`decisionRemarks` is the staff remark, returned as written. `timeline` is the persisted status history, oldest first.',
+  })
   get(
     @Param('requestId', ParseUUIDPipe) requestId: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ReplacementView> {
+  ): Promise<ReplacementDetailView> {
     return this.replacements.getMine(user.userId, requestId);
+  }
+
+  @Get(':requestId/alternatives')
+  @ApiPageResponse(WorkerCard)
+  @ApiOperation({
+    summary: 'Workers I can choose from once the request is APPROVED',
+    description:
+      'Same eligibility as selection, never the worker being replaced. 409 INVALID_TRANSITION unless the request is APPROVED; 404 for anyone else. Selection checks again, so a listed worker can still be refused with WORKER_NOT_ELIGIBLE (422) or WORKER_UNAVAILABLE (409).',
+  })
+  alternatives(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Query() query: PageQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Page<WorkerCard>> {
+    return this.replacements.alternatives(user.userId, requestId, query.page, query.limit);
   }
 
   @Idempotent()

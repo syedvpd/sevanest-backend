@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BookingModule } from '../booking/booking.module';
 import { MatchingModule } from '../matching/matching.module';
+import { SearchModule } from '../search/search.module';
 import { UsersModule } from '../users/users.module';
 import { WorkersModule } from '../workers/workers.module';
 import { AdminReplacementsController, ReplacementsController } from './replacement.controller';
@@ -14,7 +15,7 @@ import { ReplacementService } from './replacement.service';
  * importing this module. Eligibility is the REPLACEMENT_POLICY boundary (Q-09).
  */
 @Module({
-  imports: [BookingModule, MatchingModule, UsersModule, WorkersModule],
+  imports: [BookingModule, MatchingModule, SearchModule, UsersModule, WorkersModule],
   controllers: [ReplacementsController, AdminReplacementsController],
   providers: [
     ReplacementRepository,

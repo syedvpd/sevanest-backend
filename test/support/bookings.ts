@@ -33,9 +33,10 @@ export async function makeBooking(
   customer: Caller & { userId: string },
   areaId: string,
   stage: Stage,
+  existingWorker?: OnboardedWorker,
 ): Promise<TestBooking> {
-  const worker = await onboardWorker(api, { areaIds: [areaId] });
-  await approveCheck(api, admin, worker, 'IDENTITY');
+  const worker = existingWorker ?? (await onboardWorker(api, { areaIds: [areaId] }));
+  if (!existingWorker) await approveCheck(api, admin, worker, 'IDENTITY');
   const c = as(api, customer);
   const created = await c.post('/api/v1/bookings', {
     category: 'HOUSE_MAID',

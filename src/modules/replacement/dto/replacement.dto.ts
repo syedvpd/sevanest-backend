@@ -60,14 +60,14 @@ export class ReplacementListQuery extends PageQueryDto {
   @IsOptional()
   @IsEnum(REPLACEMENT_STATUSES)
   status?: ReplacementStatusValue;
-}
 
-export class AdminReplacementListQuery extends ReplacementListQuery {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Only the requests made for this booking.' })
   @IsOptional()
   @IsUUID()
   bookingId?: string;
 }
+
+export class AdminReplacementListQuery extends ReplacementListQuery {}
 
 export class ReplacementView {
   @ApiProperty() id!: string;
@@ -93,4 +93,30 @@ export class AdminReplacementView extends ReplacementView {
   @ApiProperty({ nullable: true, type: String }) decidedByUserId!: string | null;
   @ApiProperty({ nullable: true, description: 'The worker being replaced.', type: String })
   currentWorkerId!: string | null;
+}
+
+export class ReplacementTimelineEntry {
+  @ApiProperty({ enum: REPLACEMENT_STATUSES, description: 'The status the request moved to.' })
+  status!: ReplacementStatusValue;
+  @ApiProperty() at!: Date;
+  @ApiProperty({
+    enum: ['CUSTOMER', 'STAFF', 'SYSTEM'],
+    description: 'SYSTEM = closed because the booking itself was cancelled.',
+  })
+  actor!: 'CUSTOMER' | 'STAFF' | 'SYSTEM';
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Staff remarks, on the APPROVED / REJECTED entry only.',
+  })
+  remarks!: string | null;
+}
+
+export class ReplacementDetailView extends ReplacementView {
+  @ApiProperty({
+    type: [ReplacementTimelineEntry],
+    description:
+      'Persisted status history, oldest first. There is no review ETA: no review-time rule is defined (Q-107).',
+  })
+  timeline!: ReplacementTimelineEntry[];
 }

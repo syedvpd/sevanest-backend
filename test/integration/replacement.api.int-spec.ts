@@ -365,6 +365,164 @@ describe('Replacement API (integration)', () => {
     });
   });
 
+  describe('customer workflow (requests 37-44)', () => {
+    const history = async (id: string) =>
+      (await as(api, customer).get(`${R}/${id}`).expect(200)).body as {
+        status: string;
+        decisionRemarks: string | null;
+        timeline: Array<{ status: string; actor: string; remarks: string | null; at: string }>;
+      };
+
+    it('finds the requests of one booking and shows the persisted timeline', async () => {
+      const b = await active();
+      const other = await active();
+      const first = (await request(b.id)).body.id as string;
+      await request(other.id);
+      const byBooking = await as(api, customer).get(`${R}?bookingId=${b.id}`).expect(200);
+      expect(byBooking.body.data.map((r: { id: string }) => r.id)).toEqual([first]);
+      expect(byBooking.body.meta.total).toBe(1);
+      expect((await as(api, customer).get(`${R}?bookingId=nope`)).status).toBe(400);
+      const stranger = await loginWithOtp(api, { appType: 'CUSTOMER' });
+      expect((await as(api, stranger).get(`${R}?bookingId=${b.id}`)).body.data).toEqual([]);
+
+      await as(api, admin).post(`${A}/${first}/approve`, { remarks: 'Eligible' }).expect(200);
+      const detail = await history(first);
+      expect(detail.timeline.map((t) => [t.status, t.actor, t.remarks])).toEqual([
+        ['REQUESTED', 'CUSTOMER', null],
+        ['APPROVED', 'STAFF', 'Eligible'],
+      ]);
+      expect(detail).not.toHaveProperty('reviewEta');
+      const rows = await api.prisma.auditLog.findMany({
+        where: { entityId: first, action: { startsWith: 'replacement.' } },
+      });
+      expect(rows).toHaveLength(2);
+    });
+
+    it('lists alternatives only for the owner of an APPROVED request, and selection uses one of them', async () => {
+      const b = await active();
+      const id = (await request(b.id)).body.id as string;
+      const eligible = await alternative();
+      const unverified = await onboardWorker(api, { areaIds: [area.id] });
+      const url = `${R}/${id}/alternatives`;
+      // Not approved yet.
+      const early = await as(api, customer).get(url);
+      expect(early.status).toBe(409);
+      expect(early.body.code).toBe('INVALID_TRANSITION');
+      await as(api, admin).post(`${A}/${id}/approve`, {}).expect(200);
+
+      const res = await as(api, customer).get(`${url}?limit=100`).expect(200);
+      const ids = res.body.data.map((c: { workerId: string }) => c.workerId);
+      expect(ids).toContain(eligible.workerId);
+      expect(ids).not.toContain(b.worker.workerId);
+      expect(ids).not.toContain(unverified.workerId);
+      expect(res.body.data[0]).not.toHaveProperty('userId');
+      expect(res.body.data[0]).not.toHaveProperty('name');
+      expect(res.body.meta.total).toBeGreaterThanOrEqual(1);
+
+      const stranger = await loginWithOtp(api, { appType: 'CUSTOMER' });
+      expect((await as(api, stranger).get(url)).status).toBe(404);
+      expect((await as(api, b.worker).get(url)).status).toBe(403);
+      expect((await as(api, admin).get(url)).status).toBe(403);
+      expect((await api.http().get(url)).status).toBe(401);
+      expect((await as(api, customer).get(`${R}/${UNKNOWN_ID}/alternatives`)).status).toBe(404);
+
+      const done = await as(api, customer)
+        .post(`${R}/${id}/select`, { workerId: eligible.workerId })
+        .expect(200);
+      const detail = await history(id);
+      expect(detail.timeline.map((t) => [t.status, t.actor])).toEqual([
+        ['REQUESTED', 'CUSTOMER'],
+        ['APPROVED', 'STAFF'],
+        ['COMPLETED', 'CUSTOMER'],
+      ]);
+      // Closed requests no longer list alternatives.
+      expect((await as(api, customer).get(url)).status).toBe(409);
+
+      // Post-selection state: a NEW booking at MATCHED with no payment, the old one REPLACED and linked.
+      const created = await api.prisma.booking.findUniqueOrThrow({
+        where: { id: done.body.replacementBookingId },
+      });
+      expect(created).toMatchObject({ status: 'MATCHED', replacesBookingId: b.id });
+      expect(
+        await api.prisma.payment.count({ where: { bookingId: done.body.replacementBookingId } }),
+      ).toBe(0);
+      expect((await api.prisma.booking.findUniqueOrThrow({ where: { id: b.id } })).status).toBe(
+        'REPLACED',
+      );
+    });
+
+    it('a rejection is final for that request, is explained to the customer, and a new request is allowed', async () => {
+      const b = await active();
+      const id = (await request(b.id)).body.id as string;
+      await as(api, admin)
+        .post(`${A}/${id}/reject`, { remarks: 'Not enough evidence' })
+        .expect(200);
+      const detail = await history(id);
+      expect(detail.decisionRemarks).toBe('Not enough evidence');
+      expect(detail.timeline.map((t) => [t.status, t.actor, t.remarks])).toEqual([
+        ['REQUESTED', 'CUSTOMER', null],
+        ['REJECTED', 'STAFF', 'Not enough evidence'],
+      ]);
+      const alt = await alternative();
+      for (const call of [
+        () => as(api, customer).get(`${R}/${id}/alternatives`),
+        () => as(api, customer).post(`${R}/${id}/select`, { workerId: alt.workerId }),
+        () => as(api, customer).post(`${R}/${id}/cancel`),
+        () => as(api, admin).post(`${A}/${id}/approve`, {}),
+      ]) {
+        const res = await call();
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('INVALID_TRANSITION');
+      }
+      expect(await bookingStatus(b.id)).toBe('ACTIVE');
+      expect((await request(b.id)).status).toBe(201);
+    });
+
+    it('uses stable error codes for duplicate, ineligible, unavailable and stale operations', async () => {
+      const { b, id } = await approved();
+      const dup = await request(b.id);
+      expect(dup.status).toBe(409);
+      expect(dup.body.code).toBe('REPLACEMENT_ALREADY_OPEN');
+
+      const unverified = await onboardWorker(api, { areaIds: [area.id] });
+      const ineligible = await as(api, customer).post(`${R}/${id}/select`, {
+        workerId: unverified.workerId,
+      });
+      expect([ineligible.status, ineligible.body.code]).toEqual([422, 'WORKER_NOT_ELIGIBLE']);
+
+      // A worker who is eligible but already booked for the same hours.
+      const busy = await alternative();
+      const otherCustomer = await loginWithOtp(api, { appType: 'CUSTOMER' });
+      await makeBooking(api, admin, otherCustomer, area.id, 'ACTIVE', busy);
+      const unavailable = await as(api, customer).post(`${R}/${id}/select`, {
+        workerId: busy.workerId,
+      });
+      expect([unavailable.status, unavailable.body.code]).toEqual([409, 'WORKER_UNAVAILABLE']);
+      expect(await bookingStatus(b.id)).toBe('REPLACEMENT_REQUESTED');
+
+      // Cancel is allowed while open, then stale for every later action.
+      await as(api, customer).post(`${R}/${id}/cancel`).expect(200);
+      const detail = await history(id);
+      expect(detail.timeline.map((t) => t.status)).toEqual(['REQUESTED', 'APPROVED', 'CANCELLED']);
+      const alt = await alternative();
+      const stale = await as(api, customer).post(`${R}/${id}/select`, { workerId: alt.workerId });
+      expect([stale.status, stale.body.code]).toEqual([409, 'INVALID_TRANSITION']);
+    });
+
+    it('records a booking cancellation as a SYSTEM timeline entry', async () => {
+      const b = await active();
+      const id = (await request(b.id)).body.id as string;
+      await as(api, customer)
+        .post(`/api/v1/bookings/${b.id}/cancel`, { reason: 'No longer needed' })
+        .expect(200);
+      const detail = await history(id);
+      expect(detail.timeline.map((t) => [t.status, t.actor])).toEqual([
+        ['REQUESTED', 'CUSTOMER'],
+        ['CANCELLED', 'SYSTEM'],
+      ]);
+    });
+  });
+
   describe('database invariants', () => {
     it('refuses a second open request and an inconsistent completion', async () => {
       const b = await active();

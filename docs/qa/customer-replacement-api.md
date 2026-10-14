@@ -1,0 +1,16 @@
+# Customer replacement requests: requests 37-44 (2026-10-14)
+
+Base `/api/v1/replacement-requests`, customer token. Tests: `test/integration/replacement.api.int-spec.ts` (23/23; the "customer workflow" block covers this page). Test accounts: the specs create a synthetic customer, an ACTIVE booking and eligible workers on a `_test`/`_ci` database; nothing is seeded on staging or Supabase.
+
+| # | Ask | Result |
+|---|---|---|
+| 37 | Alternatives | **Fixed.** `GET /replacement-requests/{id}/alternatives?page&limit` returns customer-safe worker cards (no name, no user id; same shape as search) for an APPROVED request of the caller. Same eligibility as the staff candidate list, never the worker being replaced. Not APPROVED: 409 `INVALID_TRANSITION`; not yours: 404 `REPLACEMENT_NOT_FOUND`. Select still re-checks. |
+| 38 | Reasons / notes | **Blocked by decision (Q-107).** No reason list is approved (Q-54), so `reason` stays free text (1-1000). `notes` max stays **2000** (not changed to 500 without a decision). |
+| 39 | `neededFrom` | **Blocked by decision (Q-108).** No approved rule uses it (the replacement works from today), so it is not accepted or stored. No migration. |
+| 40 | Booking link | **Fixed.** `GET /replacement-requests?bookingId=` (own requests only). `replacementRequestId` is not added to `BookingView`. |
+| 41 | Timeline / ETA | **Fixed (timeline); ETA blocked (Q-109).** `GET /replacement-requests/{id}` now has `timeline: [{status, at, actor: CUSTOMER\|STAFF\|SYSTEM, remarks}]`, oldest first, from the audit trail (written in the same transaction). `remarks` only on APPROVED/REJECTED. No ETA field: no review-time rule exists. |
+| 42 | Status rules | **Confirmed.** APPROVED allows alternatives and select. REJECTED is final for that request (alternatives/select/cancel/approve all 409 `INVALID_TRANSITION`); the booking returns to ACTIVE and the customer may open a new request. `decisionRemarks` is returned to the customer exactly as staff wrote it (Q-110: confirm staff know it is customer-visible). |
+| 43 | After selection | **Documented, as built.** Select creates a NEW booking (same requirement, chosen worker) in `MATCHED` with `replacesBookingId`; the old booking becomes `REPLACED`; request `COMPLETED` with `replacementBookingId`. The new booking then follows the normal lifecycle (worker accept, interview/trial, confirm worker, booking fee payment). No payment or price is copied from the old booking (test asserts 0 payments). Whether a replacement should skip interview/fee or keep the old price is **not decided** (Q-111); nothing was invented. |
+| 44 | Error codes | **Confirmed and tested.** Duplicate open request: 409 `REPLACEMENT_ALREADY_OPEN`. Ineligible worker: 422 `WORKER_NOT_ELIGIBLE`. Worker busy for those hours: 409 `WORKER_UNAVAILABLE`. Same worker: 422 `SAME_WORKER`. Cancel / select / approve when no longer open: 409 `INVALID_TRANSITION` (repeating cancel on a CANCELLED request is a harmless 200). Booking not yours: 404 `BOOKING_NOT_FOUND`; not eligible: 422 `REPLACEMENT_NOT_ELIGIBLE`. |
+
+Open questions (numbers proposed; not yet added to `OPEN_QUESTIONS.md`): Q-107 reason list and notes limit; Q-108 `neededFrom`; Q-109 review ETA rule; Q-110 customer visibility of staff remarks; Q-111 post-selection interview/fee/price.
