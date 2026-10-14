@@ -211,4 +211,111 @@ describe('Published OpenAPI matches the real success responses (integration)', (
 
     expect(failures).toEqual([]);
   });
+
+  it('the active-service, history, rating and rebook endpoints answer what their schemas promise', async () => {
+    await setRequiredChecks(api, admin, ['IDENTITY']);
+    await ensureFee(api, admin);
+    const area = await createArea(api, admin);
+    const customer = await loginWithOtp(api, { appType: 'CUSTOMER' });
+    const c = as(api, customer);
+    const failures: string[] = [];
+    const shape = async (
+      template: string,
+      path: string,
+      status = 200,
+      method: 'get' | 'post' = 'get',
+      body: object = {},
+      headers: Record<string, string> = {},
+    ): Promise<Json> => {
+      const req = method === 'get' ? c.get(path) : c.post(path, body);
+      const res = await req.set(headers);
+      if (res.status !== status)
+        failures.push(`${method} ${path}: ${res.status} ${JSON.stringify(res.body).slice(0, 200)}`);
+      else failures.push(...check(template, method, status, res.body));
+      return res.body as Json;
+    };
+
+    const active = await makeBooking(api, admin, customer, area.id, 'ACTIVE');
+    const done = await makeBooking(api, admin, customer, area.id, 'ACTIVE');
+    await c.post(`/api/v1/bookings/${done.id}/complete`).expect(200);
+    await as(api, active.worker)
+      .post(`/api/v1/workers/me/attendance/bookings/${active.id}/check-in`)
+      .expect(201);
+    const month = new Date().toISOString().slice(0, 7);
+
+    // worker-side responses carry the new attendance fields too
+    const w = as(api, active.worker);
+    const workerRes = await w.get(`/api/v1/workers/me/attendance/bookings/${active.id}`);
+    failures.push(
+      ...check('/api/v1/workers/me/attendance/bookings/{bookingId}', 'get', 200, workerRes.body),
+    );
+    const checkOut = await w.post(`/api/v1/workers/me/attendance/bookings/${active.id}/check-out`);
+    failures.push(
+      ...check(
+        '/api/v1/workers/me/attendance/bookings/{bookingId}/check-out',
+        'post',
+        201,
+        checkOut.body,
+      ),
+    );
+
+    await shape(
+      '/api/v1/attendance/bookings/{bookingId}',
+      `/api/v1/attendance/bookings/${active.id}`,
+    );
+    await shape(
+      '/api/v1/attendance/bookings/{bookingId}/summary',
+      `/api/v1/attendance/bookings/${active.id}/summary?month=${month}`,
+    );
+    await shape(
+      '/api/v1/attendance/bookings/{bookingId}/summary',
+      `/api/v1/attendance/bookings/${done.id}/summary?month=${month}`,
+    );
+    await shape('/api/v1/bookings', '/api/v1/bookings');
+    await shape('/api/v1/bookings/{bookingId}', `/api/v1/bookings/${active.id}`);
+    await shape('/api/v1/customers/me/booking-history', '/api/v1/customers/me/booking-history');
+    await shape(
+      '/api/v1/customers/me/booking-history/summary',
+      '/api/v1/customers/me/booking-history/summary',
+    );
+    await shape(
+      '/api/v1/ratings/bookings/{bookingId}/eligibility',
+      `/api/v1/ratings/bookings/${done.id}/eligibility`,
+    );
+    await shape('/api/v1/reference-data', '/api/v1/reference-data');
+    const key = { 'Idempotency-Key': `contract-${unique()}` };
+    await shape(
+      '/api/v1/bookings/rebook',
+      '/api/v1/bookings/rebook',
+      201,
+      'post',
+      { bookingId: done.id },
+      key,
+    );
+    await shape('/api/v1/ratings', '/api/v1/ratings', 201, 'post', {
+      bookingId: done.id,
+      score: 5,
+      review: 'Very good',
+    });
+    await shape(
+      '/api/v1/ratings/bookings/{bookingId}/eligibility',
+      `/api/v1/ratings/bookings/${done.id}/eligibility`,
+    );
+
+    // the customer exception: a day before the start is refused, so use an earlier start
+    await api.prisma.booking.update({
+      where: { id: active.id },
+      data: { startDate: new Date(Date.now() - 3 * 86_400_000) },
+    });
+    const day = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    await shape(
+      '/api/v1/attendance/bookings/{bookingId}/exceptions',
+      `/api/v1/attendance/bookings/${active.id}/exceptions`,
+      201,
+      'post',
+      { date: day, note: 'Not recorded' },
+    );
+
+    expect(failures).toEqual([]);
+  });
 });

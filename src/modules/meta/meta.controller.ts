@@ -59,6 +59,12 @@ export class ReferenceDataView {
       'Reviews are whole numbers from 1 to this value (RATING_SCALE_MAX). `rating.average` is on the same scale.',
   })
   ratingScaleMax!: number;
+  @ApiProperty({
+    example: 300,
+    description:
+      'Longest review text the server accepts (RATING_REVIEW_MAX_LENGTH, default 300). Rating tags are not part of V1: no tag catalogue is defined (Q-103), so none is returned or accepted.',
+  })
+  ratingReviewMax!: number;
   @ApiProperty({ type: [String] }) languages!: string[];
   @ApiProperty({ type: StatusLabelsView }) statusLabels!: StatusLabelsView;
 }
@@ -114,6 +120,8 @@ export class MetaController {
     ticketPriorities: readonly string[];
     /** Reviews are whole numbers from 1 to this value (RATING_SCALE_MAX). `rating.average` is on the same scale. */
     ratingScaleMax: number;
+    /** Longest review text accepted (RATING_REVIEW_MAX_LENGTH). */
+    ratingReviewMax: number;
     languages: string[];
     statusLabels: { booking: Record<string, string>; interview: Record<string, string> };
   } {
@@ -123,6 +131,7 @@ export class MetaController {
       reportReasons: REPORT_REASONS,
       ticketPriorities: TICKET_PRIORITIES,
       ratingScaleMax: this.config.ratingScaleMax,
+      ratingReviewMax: this.config.ratingReviewMax,
       languages: this.languages(),
       statusLabels: { booking: BOOKING_STATUS_LABELS, interview: INTERVIEW_STATUS_LABELS },
     };

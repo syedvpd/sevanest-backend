@@ -2,12 +2,16 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsOptional, IsString, Length, Matches } from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
+import { WorkerDisplayView } from '../../booking/dto/booking.dto';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-/** FRD FM-09: present, absent, exception ("configurable" - kept as a fixed set until the client defines more, Q-53). */
-export const ATTENDANCE_STATUSES = ['PRESENT', 'ABSENT', 'EXCEPTION'] as const;
+/**
+ * FRD FM-09: present, absent, exception, "configurable". LATE (worked, arrived late) and LEAVE (announced leave, not a worked day)
+ * were added for the customer app design (D-76); only a worker (today) or staff record them, a customer can only raise EXCEPTION.
+ */
+export const ATTENDANCE_STATUSES = ['PRESENT', 'ABSENT', 'EXCEPTION', 'LATE', 'LEAVE'] as const;
 export type AttendanceStatusValue = (typeof ATTENDANCE_STATUSES)[number];
 export type ActorKindValue = 'WORKER' | 'CUSTOMER' | 'ADMIN';
 
@@ -101,7 +105,27 @@ export class AttendanceSummaryView {
   @ApiProperty() present!: number;
   @ApiProperty() absent!: number;
   @ApiProperty() exception!: number;
-  @ApiProperty({ description: 'present + absent + exception' }) recorded!: number;
+  @ApiProperty({ description: 'Worked, arrived late.' }) late!: number;
+  @ApiProperty({ description: 'Announced leave of the worker (not a worked day).' }) leave!: number;
+  @ApiProperty({ description: 'present + absent + exception + late + leave' }) recorded!: number;
+  @ApiProperty({
+    type: () => ScheduledWindowView,
+    nullable: true,
+    description: "The booking's own time window (the customer's requested hours), never a default.",
+  })
+  scheduledWindow!: ScheduledWindowView | null;
+  @ApiPropertyOptional({
+    type: () => WorkerDisplayView,
+    nullable: true,
+    description:
+      'Customer view only: the worker of the booking (display name and safe photo link).',
+  })
+  worker?: WorkerDisplayView | null;
+}
+
+export class ScheduledWindowView {
+  @ApiProperty({ example: '08:00' }) from!: string;
+  @ApiProperty({ example: '12:00' }) to!: string;
 }
 
 /** The same record for worker and customer (FRD FM-09: "customer and worker see the same recorded status"). */
@@ -111,6 +135,15 @@ export class AttendanceView {
   @ApiProperty({ example: '2026-11-03' }) date!: string;
   @ApiProperty({ enum: ATTENDANCE_STATUSES }) status!: AttendanceStatusValue;
   @ApiProperty({ nullable: true, type: String }) note!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description:
+      'Stamped by the server when the worker checked in; null when nobody did (never inferred from the status).',
+  })
+  checkInAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date, description: 'Stamped by the server at check-out.' })
+  checkOutAt!: Date | null;
   @ApiProperty({ enum: ['WORKER', 'CUSTOMER', 'ADMIN'] }) recordedBy!: ActorKindValue;
   @ApiProperty() updatedAt!: Date;
 }

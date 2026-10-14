@@ -350,6 +350,20 @@ export class EnvironmentVariables {
   @Max(10)
   RATING_SCALE_MAX!: number;
 
+  /** Longest review a customer may write (FRD FM-10 asks for a limit without a value; the app design says 300). Business value, D-80. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(2000)
+  RATING_REVIEW_MAX_LENGTH?: number;
+
+  /** true = a REPLACED booking ("ended early") may be rated like a COMPLETED one. Off until the client decides (Q-102). */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  RATING_ALLOW_ENDED_EARLY?: boolean;
+
   @Type(() => Number)
   @IsInt()
   @Min(4)

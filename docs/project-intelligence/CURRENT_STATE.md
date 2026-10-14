@@ -53,3 +53,6 @@ Audit verdicts in `docs/qa/antigravity-audit-triage.md`. Built: D-69 WebP photo 
 
 ## 2026-10-14 worker-app blockers
 Verified and closed the five worker-app backend blockers (`docs/qa/worker-app-blockers-audit.md`, closure rows WAB-01..05): demo OTP is frontend-only and cannot authenticate server-side; opportunity detail = `GET /workers/me/bookings/{id}` (D-74); categories/areas stay behind login (D-75); optional ticket `subject` (D-73, migration `20261026090000`, 22 migrations in total).
+
+## 2026-10-14 customer Active Service / History / Rating
+Implemented the eight customer-app asks (`docs/qa/customer-active-service-api-traceability.md`, `docs/qa/customer-history-rating-api-traceability.md`, closure rows CAS-01..08): attendance LATE/LEAVE, server-stamped check-in/out, scheduled window and worker identity; customer history list and totals; one server rating-eligibility rule, `allowedActions`, review limit 300, rebook; customer exception rules confirmed. Decisions D-76..D-83, open questions Q-101..Q-106. Migration `20261027090000_attendance_states_history` (23 in total). Tags are not built (no catalogue).

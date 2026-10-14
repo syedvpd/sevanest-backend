@@ -73,9 +73,41 @@ export class WorkerAttendanceController {
     return this.attendance.listForWorker(ref.workerId, bookingId, query);
   }
 
+  @Post('check-in')
+  @ApiModelResponse(AttendanceView, { status: 201 })
+  @ApiOperation({
+    summary: 'Check in for today (the server stamps the time)',
+    description:
+      "Creates today's PRESENT entry or stamps today's PRESENT/LATE one. Repeating it changes nothing. 409 ATTENDANCE_ALREADY_RECORDED when today is ABSENT, EXCEPTION or LEAVE; 409 BOOKING_NOT_ACTIVE; 404 for a booking that is not mine.",
+  })
+  async checkIn(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AttendanceView> {
+    const ref = await this.workers.requireRefByUserId(user.userId);
+    return this.attendance.workerCheck(user.userId, ref.workerId, bookingId, 'IN');
+  }
+
+  @Post('check-out')
+  @ApiModelResponse(AttendanceView, { status: 201 })
+  @ApiOperation({
+    summary: 'Check out for today (the server stamps the time)',
+    description:
+      '409 CHECK_IN_REQUIRED before a check-in today. Repeating it changes nothing. 409 BOOKING_NOT_ACTIVE; 404 for a booking that is not mine.',
+  })
+  async checkOut(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AttendanceView> {
+    const ref = await this.workers.requireRefByUserId(user.userId);
+    return this.attendance.workerCheck(user.userId, ref.workerId, bookingId, 'OUT');
+  }
+
   @Get('summary')
   @ApiModelResponse(AttendanceSummaryView)
-  @ApiOperation({ summary: 'Present / absent / exception counts for one month of my booking' })
+  @ApiOperation({
+    summary: 'Counts per status for one month of my booking, with the scheduled window',
+  })
   async summary(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Query() query: AttendanceSummaryQuery,
@@ -107,7 +139,9 @@ export class CustomerAttendanceController {
 
   @Get('summary')
   @ApiModelResponse(AttendanceSummaryView)
-  @ApiOperation({ summary: 'Present / absent / exception counts for one month of my booking' })
+  @ApiOperation({
+    summary: 'Counts per status for one month of my booking, with the scheduled window',
+  })
   summary(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Query() query: AttendanceSummaryQuery,

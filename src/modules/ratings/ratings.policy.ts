@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { AppConfigService } from '../../config/app-config.service';
+import { evaluateRatingEligibility } from '../../common/rating/rating-eligibility';
 
 export const RATING_POLICY = Symbol('RATING_POLICY');
 
@@ -7,6 +9,8 @@ export interface RatableBooking {
   status: string;
   customerUserId: string;
   workerId: string | null;
+  startDate: string | null;
+  alreadyRated: boolean;
 }
 
 export interface RatingVerdict {
@@ -27,10 +31,17 @@ export interface RatingPolicy {
 
 @Injectable()
 export class CompletedBookingRatingPolicy implements RatingPolicy {
+  constructor(private readonly config: AppConfigService) {}
+
   evaluate(booking: RatableBooking): Promise<RatingVerdict> {
-    if (booking.status !== 'COMPLETED' || booking.workerId === null) {
-      return Promise.resolve({ eligible: false, reason: 'Only a completed booking can be rated' });
-    }
-    return Promise.resolve({ eligible: true });
+    const verdict = evaluateRatingEligibility(booking, {
+      alreadyRated: booking.alreadyRated,
+      allowEndedEarly: this.config.ratingAllowEndedEarly,
+    });
+    return Promise.resolve(
+      verdict.eligible
+        ? { eligible: true }
+        : { eligible: false, reason: verdict.reason ?? undefined },
+    );
   }
 }

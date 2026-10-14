@@ -16,6 +16,11 @@ import {
 import { PageQueryDto } from '../../../common/pagination/pagination';
 import { TIME_OF_DAY } from '../../availability/domain/time-windows';
 import { ENGAGEMENTS, type Engagement } from '../../search/search.types';
+import { PhotoLinkView } from '../../search/dto/search.dto';
+import {
+  RATING_ELIGIBILITY_CODES,
+  type RatingEligibilityCode,
+} from '../../../common/rating/rating-eligibility';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -402,4 +407,163 @@ export class WorkerBookingView {
 export class AdminBookingView extends BookingDetailView {
   @ApiProperty() customerUserId!: string;
   @ApiProperty({ nullable: true, type: String }) cancelledByUserId!: string | null;
+}
+
+/**
+ * Actions the customer may take on a booking RIGHT NOW (stable codes, D-79). The state-machine ones are the POST /bookings/{id}/{action}
+ * routes; `pay` = POST /payments, `rate` = POST /ratings, `rebook` = POST /bookings/{id}/rebook, `report-attendance-exception` =
+ * POST /attendance/bookings/{id}/exceptions. The server re-checks every one of them when it is used.
+ */
+export const CUSTOMER_ALLOWED_ACTIONS = [
+  'schedule',
+  'reopen-matching',
+  'interview-complete',
+  'confirm-worker',
+  'start',
+  'complete',
+  'cancel',
+  'pay',
+  'rate',
+  'rebook',
+  'report-attendance-exception',
+] as const;
+export type CustomerAllowedAction = (typeof CUSTOMER_ALLOWED_ACTIONS)[number];
+
+/** Who served (or will serve) the customer, without anything private: no phone, address, documents or storage key (D-81). */
+export class WorkerDisplayView {
+  @ApiProperty({ example: 'Ramesh K.', description: 'First name and last initial.' })
+  displayName!: string;
+  @ApiProperty({ example: 'RK', description: 'Fallback for the avatar when there is no photo.' })
+  initials!: string;
+  @ApiProperty({
+    type: PhotoLinkView,
+    nullable: true,
+    description:
+      'Short-lived links to the current profile photo (small and large WebP); null when the worker has none or storage is unavailable. Cache by photo.cacheKey.',
+  })
+  photo!: PhotoLinkView | null;
+}
+
+export class BookingRatingView {
+  @ApiProperty({ description: 'This booking already has my rating.' }) rated!: boolean;
+  @ApiProperty({ description: 'POST /ratings would be accepted right now.' }) eligible!: boolean;
+  @ApiProperty({ enum: RATING_ELIGIBILITY_CODES }) code!: RatingEligibilityCode;
+}
+
+/** What the customer's own booking responses add to the common view. */
+export class CustomerBookingView extends BookingView {
+  @ApiProperty({
+    type: WorkerDisplayView,
+    nullable: true,
+    description:
+      'The worker, once the customer has reached the interview stage with them (INTERVIEW_TRIAL_SCHEDULED or later; never for a CANCELLED or earlier booking). null otherwise.',
+  })
+  worker!: WorkerDisplayView | null;
+  @ApiProperty({ enum: CUSTOMER_ALLOWED_ACTIONS, isArray: true })
+  allowedActions!: CustomerAllowedAction[];
+  @ApiProperty({ type: BookingRatingView }) rating!: BookingRatingView;
+}
+
+export class CustomerBookingDetailView extends CustomerBookingView {
+  @ApiProperty({ type: [TimelineEntry], description: 'Status timeline, oldest first (FR-BK-007).' })
+  timeline!: TimelineEntry[];
+}
+
+export const HISTORY_STATUSES = ['COMPLETED', 'REPLACED', 'CANCELLED'] as const;
+export type HistoryStatus = (typeof HISTORY_STATUSES)[number];
+
+export class BookingHistoryQuery extends PageQueryDto {
+  @ApiPropertyOptional({
+    example: 2026,
+    description:
+      'Year of the service: its start date, or the request date when it never started (India time).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  year?: number;
+
+  @ApiPropertyOptional({ example: 'HOUSE_MAID', description: 'Service category code.' })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(/^[A-Z][A-Z0-9_]{1,49}$/, { message: 'category must be a category code' })
+  category?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    description:
+      'Matches the category name, or the worker name for bookings where the worker is shown. Case-insensitive, plain text (no wildcards).',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 100)
+  search?: string;
+
+  @ApiPropertyOptional({
+    enum: HISTORY_STATUSES,
+    description: 'Default: all three (completed, ended early, cancelled).',
+  })
+  @IsOptional()
+  @IsIn(HISTORY_STATUSES)
+  status?: HistoryStatus;
+}
+
+export class BookingHistorySummaryQuery {
+  @ApiPropertyOptional({ example: 2026 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  year?: number;
+
+  @ApiPropertyOptional({ example: 'HOUSE_MAID' })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(/^[A-Z][A-Z0-9_]{1,49}$/, { message: 'category must be a category code' })
+  category?: string;
+}
+
+export class BookingHistoryItemView extends CustomerBookingView {
+  @ApiProperty({
+    description:
+      'Money for this booking that is still with the platform (successful payments and refunds not yet returned), in paise.',
+  })
+  amountPaidMinor!: number;
+  @ApiProperty({ example: 'INR' }) currency!: string;
+}
+
+export class BookingHistorySummaryView {
+  @ApiProperty({
+    description: 'Bookings that were delivered: COMPLETED or REPLACED (ended early).',
+  })
+  totalServices!: number;
+  @ApiProperty({ description: 'Different workers across those bookings.' })
+  distinctWorkers!: number;
+  @ApiProperty({
+    description:
+      'Paise the customer paid across ALL bookings matching the filters (including cancelled ones whose money was not refunded). Refunded money is not counted.',
+  })
+  totalSpentMinor!: number;
+  @ApiProperty({ example: 'INR' }) currency!: string;
+  @ApiProperty({ nullable: true, type: Number }) year!: number | null;
+  @ApiProperty({ nullable: true, type: String }) category!: string | null;
+}
+
+export class RebookDto {
+  @ApiProperty({ description: 'My COMPLETED booking whose worker I want to hire again.' })
+  @IsUUID()
+  bookingId!: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description:
+      'When the new service should begin (India date, today or later). Omit to leave it open.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startDate must be YYYY-MM-DD' })
+  startDate?: string;
 }

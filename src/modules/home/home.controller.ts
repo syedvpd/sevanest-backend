@@ -4,7 +4,7 @@ import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { ApiModelResponse } from '../../common/swagger/api-responses';
-import { BookingView } from '../booking/dto/booking.dto';
+import { CustomerBookingView } from '../booking/dto/booking.dto';
 import { InterviewView } from '../booking/dto/interview.dto';
 import { BookingService } from '../booking/booking.service';
 import { InterviewService } from '../booking/interview.service';
@@ -16,11 +16,11 @@ const PREVIEW_SIZE = 5;
 
 export class HomeView {
   @ApiProperty({
-    type: BookingView,
+    type: CustomerBookingView,
     nullable: true,
     description: 'Newest booking that is not finished.',
   })
-  activeBooking!: BookingView | null;
+  activeBooking!: CustomerBookingView | null;
   @ApiProperty({
     type: InterviewView,
     nullable: true,

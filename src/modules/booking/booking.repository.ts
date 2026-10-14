@@ -7,6 +7,27 @@ import type { BookingStatusValue, ScheduleTypeValue } from './dto/booking.dto';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
+/** A "service" in the history totals is a booking that was delivered: completed, or replaced after it started. */
+export const FINISHED_SERVICE_STATUSES = ['COMPLETED', 'REPLACED'];
+/** From the interview stage on the customer has met the worker, so name and photo may be shown (D-81). */
+export const WORKER_VISIBLE_STATUSES = [
+  'INTERVIEW_TRIAL_SCHEDULED',
+  'INTERVIEW_TRIAL_COMPLETED',
+  'PENDING_PAYMENT',
+  'CONFIRMED',
+  'ACTIVE',
+  'REPLACEMENT_REQUESTED',
+  'COMPLETED',
+  'REPLACED',
+];
+
+export interface HistoryFilter {
+  statuses: string[];
+  year?: number;
+  categoryCode?: string;
+  search?: string;
+}
+
 export interface BookingRecord {
   id: string;
   customerUserId: string;
@@ -354,6 +375,86 @@ export class BookingRepository {
       Prisma.sql`SELECT ${workerBusyCondition(Prisma.sql`${workerId}::uuid`, request)} AS busy`,
     );
     return rows[0]?.busy === true;
+  }
+
+  // --- customer history, rating state and spend (D-78) --------------------------------------------------------
+
+  /** A not-yet-finished booking of this customer with this worker and service (the same rule as the unique index). */
+  async hasLiveBookingWith(
+    customerUserId: string,
+    workerId: string,
+    categoryId: string,
+  ): Promise<boolean> {
+    const count = await this.prisma.booking.count({
+      where: {
+        customerUserId,
+        workerId,
+        categoryId,
+        status: { notIn: ['CANCELLED', 'COMPLETED', 'REPLACED'] },
+      },
+    });
+    return count > 0;
+  }
+
+  private historyWhere(customerUserId: string, f: HistoryFilter): Prisma.Sql {
+    const pattern = f.search ? `%${f.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+    return Prisma.sql`b.customer_user_id = ${customerUserId}::uuid
+      AND b.status::text = ANY(${f.statuses})
+      ${f.year ? Prisma.sql`AND EXTRACT(YEAR FROM COALESCE(b.start_date, (b.created_at AT TIME ZONE 'Asia/Kolkata')::date)) = ${f.year}` : Prisma.empty}
+      ${f.categoryCode ? Prisma.sql`AND c.code = ${f.categoryCode}` : Prisma.empty}
+      ${
+        pattern
+          ? Prisma.sql`AND (c.name ILIKE ${pattern} ESCAPE '\\'
+              OR (b.status::text = ANY(${WORKER_VISIBLE_STATUSES}) AND w.name ILIKE ${pattern} ESCAPE '\\'))`
+          : Prisma.empty
+      }`;
+  }
+
+  /** The customer's finished bookings, newest service first. Two statements: the page of ids and the total. */
+  async historyPage(
+    customerUserId: string,
+    f: HistoryFilter,
+    skip: number,
+    take: number,
+  ): Promise<{ items: BookingRecord[]; total: number }> {
+    const where = this.historyWhere(customerUserId, f);
+    const from = Prisma.sql`FROM bookings b
+      JOIN service_categories c ON c.id = b.category_id
+      LEFT JOIN worker_profiles w ON w.id = b.worker_id`;
+    const [ids, totals] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT b.id ${from} WHERE ${where}
+        ORDER BY COALESCE(b.start_date::timestamptz, b.created_at) DESC, b.id DESC
+        LIMIT ${take} OFFSET ${skip}`),
+      this.prisma.$queryRaw<Array<{ total: number }>>(
+        Prisma.sql`SELECT COUNT(*)::int AS total ${from} WHERE ${where}`,
+      ),
+    ]);
+    if (ids.length === 0) return { items: [], total: totals[0]?.total ?? 0 };
+    const rows = await this.prisma.booking.findMany({
+      where: { id: { in: ids.map((r) => r.id) } },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return {
+      items: ids.map((r) => toRecord(byId.get(r.id)!)),
+      total: totals[0]?.total ?? 0,
+    };
+  }
+
+  /** Services and distinct workers over delivered (COMPLETED or REPLACED) bookings matching the year and category. */
+  async historyCounts(
+    customerUserId: string,
+    f: { year?: number; categoryCode?: string },
+  ): Promise<{ totalServices: number; distinctWorkers: number }> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ services: number; workers: number }>
+    >(Prisma.sql`
+      SELECT COUNT(*)::int AS services, COUNT(DISTINCT b.worker_id)::int AS workers
+      FROM bookings b JOIN service_categories c ON c.id = b.category_id
+      WHERE b.customer_user_id = ${customerUserId}::uuid
+        AND b.status::text = ANY(${FINISHED_SERVICE_STATUSES})
+        ${f.year ? Prisma.sql`AND EXTRACT(YEAR FROM COALESCE(b.start_date, (b.created_at AT TIME ZONE 'Asia/Kolkata')::date)) = ${f.year}` : Prisma.empty}
+        ${f.categoryCode ? Prisma.sql`AND c.code = ${f.categoryCode}` : Prisma.empty}`);
+    return { totalServices: rows[0]?.services ?? 0, distinctWorkers: rows[0]?.workers ?? 0 };
   }
 
   async list(

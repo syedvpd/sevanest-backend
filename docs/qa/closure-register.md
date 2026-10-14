@@ -84,6 +84,14 @@ Updated 2026-10-13 (second remediation run). One entry per finding of the PRD au
 | WAB-03 | Opportunity detail route | same | P1 | Detail already exists as the booking detail | Canonical route documented (D-74); equality and privacy tests | booking.controller (OpenAPI text) | worker.app.blockers | - | FIXED_VERIFIED |
 | WAB-04 | Categories and areas need login | same | P2 | Onboarding runs after OTP (D-75) | Kept protected; access matrix tests | controllers (OpenAPI text) | worker.app.blockers | - | FIXED_VERIFIED |
 | WAB-05 | Support ticket subject | same | P2 | Contract had no subject | Optional `subject` (D-73), additive migration 20261026090000 | support dto/repository/service, schema, migration | support.api (subject block), worker.app.blockers | - | FIXED_VERIFIED |
+| CAS-01 | Customer reads attendance of own bookings | Customer-app request 2026-10-14 | P1 | Already implemented; no test data or ownership proof | Repeatable fixture and IDOR tests | - | customer.active-service (4) | - | FIXED_VERIFIED |
+| CAS-02 | Late, Leave, check-in/out times, scheduled window | same | P1 | Not in the model; specs leave statuses "configurable" (Q-101) | D-76, D-77; migration 20261027090000; worker check-in/out; summary window | attendance dto/repository/service/controller, schema | customer.active-service (4), attendance.api (adjusted) | Client sign-off Q-101 | FIXED_VERIFIED |
+| CAS-03 | Customer history, totals, filters, search | same | P1 | No history route | D-78; history and summary endpoints; index | booking repository/service/controller/dto | customer.history-rating (5), contract | Q-104 meaning of "spent" | FIXED_VERIFIED |
+| CAS-04 | Rating eligibility and allowedActions | same | P1 | No eligibility API; REPLACED unresolved | D-79; one shared rule; endpoint; booking fields; 409 on repeat | ratings/booking modules | customer.history-rating (4), rating-eligibility.spec (11) | Q-102 ended-early rating | FIXED_VERIFIED |
+| CAS-05 | Review limit and rating tags | same | P2 | Limit 2000 vs design 300; no tag catalogue | D-80; ratingReviewMax; tags not invented | ratings, meta | customer.history-rating (2) | Q-103 tags, Q-105 limit sign-off | PARTIALLY_FIXED (tags blocked by decision) |
+| CAS-06 | Rebook / hire again | same | P2 | No action | D-82; rebook endpoint and allowedActions | booking service/controller/dto | customer.history-rating (3) | Q-106 | FIXED_VERIFIED |
+| CAS-07 | Worker name and photo on bookings and attendance | same | P2 | Not returned | D-81; batched display and photo links | booking service/dto, attendance | customer.history-rating (2), customer.active-service, contract | Q-105 privacy sign-off | FIXED_VERIFIED |
+| CAS-08 | Customer missing-day exception | same | P2 | Already implemented; rules unconfirmed | D-83; full rule and concurrency tests | - | customer.active-service (5) | - | FIXED_VERIFIED |
 
 ## Found and fixed during remediation (not in the first audit)
 

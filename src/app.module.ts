@@ -21,6 +21,7 @@ import { SystemModule } from './modules/system/system.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { SafetyModule } from './modules/safety/safety.module';
 import { HomeModule } from './modules/home/home.module';
+import { HistoryModule } from './modules/history/history.module';
 import { ShortlistModule } from './modules/shortlist/shortlist.module';
 import { WorkerPhotoModule } from './modules/worker-photo/worker-photo.module';
 import { AvailabilityModule } from './modules/availability/availability.module';
@@ -91,6 +92,7 @@ const embeddedWorkers =
     WorkerPhotoModule,
     ShortlistModule,
     HomeModule,
+    HistoryModule,
     SafetyModule,
     MetaModule,
     SystemModule,

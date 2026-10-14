@@ -26,6 +26,7 @@ export const AttendanceErrorCode = {
   BOOKING_NOT_ACTIVE: 'BOOKING_NOT_ACTIVE',
   ATTENDANCE_ALREADY_RECORDED: 'ATTENDANCE_ALREADY_RECORDED',
   DATE_NOT_ALLOWED: 'DATE_NOT_ALLOWED',
+  CHECK_IN_REQUIRED: 'CHECK_IN_REQUIRED',
 } as const;
 
 export interface AttendanceActor {
@@ -78,6 +79,129 @@ export class AttendanceService {
     );
   }
 
+  /**
+   * The worker taps "check in" / "check out" (D-77). The time is the SERVER clock at the moment of the call, never a client value,
+   * and nothing is inferred from a status. Check-in creates today's PRESENT entry when none exists, or stamps today's PRESENT/LATE one;
+   * check-out needs a check-in. Repeating either returns the same entry unchanged.
+   */
+  async workerCheck(
+    userId: string,
+    workerId: string,
+    bookingId: string,
+    kind: 'IN' | 'OUT',
+  ): Promise<AttendanceView> {
+    const booking = await this.bookings.getSummary(bookingId).catch(() => null);
+    if (!booking || booking.workerId !== workerId) throw this.bookingNotFound();
+    if (booking.status !== 'ACTIVE') {
+      throw new DomainException(
+        AttendanceErrorCode.BOOKING_NOT_ACTIVE,
+        'Attendance can be recorded only while the service is active',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const today = indiaToday();
+    this.assertDate(today, booking.startDate);
+    const actor: AttendanceActor = { kind: 'WORKER', userId };
+    const field = kind === 'IN' ? 'checkInAt' : 'checkOutAt';
+    const note = kind === 'IN' ? 'Checked in' : 'Checked out';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const existing = await this.repository.findForDay(booking.id, today);
+      if (!existing && kind === 'OUT') throw this.checkInRequired();
+      try {
+        const row = await this.repository.transaction(async (tx) => {
+          if (!existing) {
+            const created = await this.repository.create(
+              {
+                bookingId: booking.id,
+                workerId,
+                date: today,
+                status: 'PRESENT',
+                note: null,
+                checkInAt: new Date(),
+                recordedByUserId: userId,
+                recordedByKind: 'WORKER',
+              },
+              tx,
+            );
+            await this.repository.addEvent(
+              {
+                recordId: created.id,
+                fromStatus: null,
+                toStatus: 'PRESENT',
+                note,
+                actorUserId: userId,
+                actorKind: 'WORKER',
+              },
+              tx,
+            );
+            await this.auditCheck(booking.id, created.id, today, 'PRESENT', note, actor, tx);
+            return created;
+          }
+          const locked = (await this.repository.lock(existing.id, tx))!;
+          if (locked.status !== 'PRESENT' && locked.status !== 'LATE') {
+            throw new DomainException(
+              AttendanceErrorCode.ATTENDANCE_ALREADY_RECORDED,
+              'Attendance for this date is already recorded as something other than a worked day',
+              HttpStatus.CONFLICT,
+            );
+          }
+          if (kind === 'OUT' && locked.checkInAt === null) throw this.checkInRequired();
+          if (locked[field] !== null) return locked; // repeat: unchanged
+          await this.repository.stamp(locked.id, field, new Date(), tx);
+          await this.repository.addEvent(
+            {
+              recordId: locked.id,
+              fromStatus: locked.status,
+              toStatus: locked.status,
+              note,
+              actorUserId: userId,
+              actorKind: 'WORKER',
+            },
+            tx,
+          );
+          await this.auditCheck(booking.id, locked.id, today, locked.status, note, actor, tx);
+          return (await this.repository.findById(locked.id, tx))!;
+        });
+        return this.view(row);
+      } catch (error) {
+        // Two first check-ins raced for the same new day: the loser retries against the winner's row.
+        if (isUniqueViolation(error) && attempt === 0) continue;
+        throw error;
+      }
+    }
+    throw this.checkInRequired();
+  }
+
+  private auditCheck(
+    bookingId: string,
+    recordId: string,
+    date: string,
+    status: AttendanceStatusValue,
+    what: string,
+    actor: AttendanceActor,
+    tx: Parameters<Parameters<AttendanceRepository['transaction']>[0]>[0],
+  ): Promise<unknown> {
+    return this.audit.record(
+      {
+        action: what === 'Checked in' ? 'attendance.check_in' : 'attendance.check_out',
+        entityType: 'attendance_record',
+        entityId: recordId,
+        actorId: actor.userId,
+        actorRole: actor.kind,
+        metadata: { bookingId, date, status },
+      },
+      tx,
+    );
+  }
+
+  private checkInRequired(): DomainException {
+    return new DomainException(
+      AttendanceErrorCode.CHECK_IN_REQUIRED,
+      'Check in first',
+      HttpStatus.CONFLICT,
+    );
+  }
+
   async adminRecord(
     bookingId: string,
     dto: AdminRecordAttendanceDto,
@@ -100,7 +224,13 @@ export class AttendanceService {
       if (!record) throw this.notFound();
       const note = dto.note ?? null;
       if (record.status === dto.status && record.note === note) return;
-      await this.repository.update(record.id, { status: dto.status, note }, tx);
+      // A check-in/out time only means something on a worked day; correcting to anything else removes it (kept in the audit record).
+      const worked = dto.status === 'PRESENT' || dto.status === 'LATE';
+      await this.repository.update(
+        record.id,
+        { status: dto.status, note, clearTimes: !worked },
+        tx,
+      );
       await this.repository.addEvent(
         {
           recordId: record.id,
@@ -125,6 +255,7 @@ export class AttendanceService {
             date: record.date,
             from: record.status,
             to: dto.status,
+            clearedCheckTimes: !worked && (record.checkInAt !== null || record.checkOutAt !== null),
           },
         },
         tx,
@@ -163,7 +294,7 @@ export class AttendanceService {
   ): Promise<AttendanceSummaryView> {
     const booking = await this.bookings.getSummary(bookingId).catch(() => null);
     if (!booking || booking.workerId !== workerId) throw this.bookingNotFound();
-    return this.summary(bookingId, month);
+    return this.summary(booking, month, false);
   }
 
   async summaryForCustomer(
@@ -173,14 +304,14 @@ export class AttendanceService {
   ): Promise<AttendanceSummaryView> {
     const booking = await this.bookings.getSummary(bookingId).catch(() => null);
     if (!booking || booking.customerUserId !== userId) throw this.bookingNotFound();
-    return this.summary(bookingId, month);
+    return this.summary(booking, month, true);
   }
 
   async summaryForAdmin(bookingId: string, month: string): Promise<AttendanceSummaryView> {
-    await this.bookings.getSummary(bookingId).catch(() => {
+    const booking = await this.bookings.getSummary(bookingId).catch(() => {
       throw this.bookingNotFound();
     });
-    return this.summary(bookingId, month);
+    return this.summary(booking, month, false);
   }
 
   async adminList(
@@ -209,7 +340,18 @@ export class AttendanceService {
     };
   }
 
-  private async summary(bookingId: string, month: string): Promise<AttendanceSummaryView> {
+  private async summary(
+    booking: {
+      id: string;
+      status: string;
+      workerId: string | null;
+      availableFrom: string;
+      availableTo: string;
+    },
+    month: string,
+    withWorker: boolean,
+  ): Promise<AttendanceSummaryView> {
+    const bookingId = booking.id;
     const [year, mon] = month.split('-').map(Number);
     const daysInMonth = new Date(Date.UTC(year, mon, 0)).getUTCDate();
     const from = `${month}-01`;
@@ -224,7 +366,11 @@ export class AttendanceService {
       present: counts.PRESENT,
       absent: counts.ABSENT,
       exception: counts.EXCEPTION,
-      recorded: counts.PRESENT + counts.ABSENT + counts.EXCEPTION,
+      late: counts.LATE,
+      leave: counts.LEAVE,
+      recorded: Object.values(counts).reduce((a, b) => a + b, 0),
+      scheduledWindow: { from: booking.availableFrom, to: booking.availableTo },
+      ...(withWorker ? { worker: await this.bookings.displayWorkerOf(booking) } : {}),
     };
   }
 
@@ -365,6 +511,8 @@ export class AttendanceService {
       date: row.date,
       status: row.status,
       note: row.note,
+      checkInAt: row.checkInAt,
+      checkOutAt: row.checkOutAt,
       recordedBy: row.recordedByKind,
       updatedAt: row.updatedAt,
     };

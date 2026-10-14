@@ -19,6 +19,7 @@ import { CustomersService } from '../customers/customers.service';
 import { LegalService } from '../legal/legal.service';
 import { PermissionCode } from '../users/rbac.constants';
 import { WorkersService } from '../workers/workers.service';
+import { evaluateRatingEligibility } from '../../common/rating/rating-eligibility';
 import { BookingLifecycleHooks } from './booking-hooks';
 import {
   AdminBookingListQuery,
@@ -28,6 +29,14 @@ import {
   BookingActionDto,
   BookingDetailView,
   BookingFilterQuery,
+  BookingHistoryQuery,
+  CUSTOMER_ALLOWED_ACTIONS,
+  CustomerAllowedAction,
+  CustomerBookingDetailView,
+  CustomerBookingView,
+  HISTORY_STATUSES,
+  RebookDto,
+  WorkerDisplayView,
   ChainEntryView,
   ProposeSlotDto,
   BookingStatusValue,
@@ -41,6 +50,7 @@ import {
   BookingFilter,
   BookingRecord,
   BookingRepository,
+  WORKER_VISIBLE_STATUSES,
 } from './booking.repository';
 import { InterviewRepository } from './interview.repository';
 
@@ -56,6 +66,7 @@ export const BookingErrorCode = {
   START_TOO_EARLY: 'START_TOO_EARLY',
   NO_SLOT_PROPOSAL: 'NO_SLOT_PROPOSAL',
   WORKER_UNAVAILABLE: 'WORKER_UNAVAILABLE',
+  REBOOK_NOT_ALLOWED: 'REBOOK_NOT_ALLOWED',
 } as const;
 
 export type ActorKindValue = 'CUSTOMER' | 'WORKER' | 'ADMIN' | 'SYSTEM';
@@ -318,30 +329,106 @@ export class BookingService {
     return this.create(customerUserId, dto, idempotencyKey, admin);
   }
 
-  async listMine(customerUserId: string, query: BookingFilterQuery): Promise<Page<BookingView>> {
+  async listMine(
+    customerUserId: string,
+    query: BookingFilterQuery,
+  ): Promise<Page<CustomerBookingView>> {
     const { items, total } = await this.repository.list(
       { customerUserId, ...this.filterOf(query) },
       skipFor(query),
       query.limit,
     );
     return {
-      data: await this.views(items),
+      data: await this.customerViews(items),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
 
-  /** The newest booking that is not finished (for the Home screen), or null. */
-  async activeForCustomer(customerUserId: string): Promise<BookingView | null> {
-    const { items } = await this.repository.list({ customerUserId, openOnly: true }, 0, 1);
-    return (await this.views(items))[0] ?? null;
+  /** The customer's finished bookings (D-78): year, category and search filters, newest service first. */
+  async historyMine(
+    customerUserId: string,
+    query: BookingHistoryQuery,
+  ): Promise<Page<CustomerBookingView>> {
+    const { items, total } = await this.repository.historyPage(
+      customerUserId,
+      {
+        statuses: query.status ? [query.status] : [...HISTORY_STATUSES],
+        year: query.year,
+        categoryCode: query.category,
+        search: query.search,
+      },
+      skipFor(query),
+      query.limit,
+    );
+    return {
+      data: await this.customerViews(items),
+      meta: { page: query.page, limit: query.limit, total },
+    };
   }
 
-  async getMine(customerUserId: string, bookingId: string): Promise<BookingDetailView> {
+  /** Services and distinct workers for the history header (the spend comes from Payment, composed by the History module). */
+  historyCountsMine(
+    customerUserId: string,
+    filter: { year?: number; category?: string },
+  ): Promise<{ totalServices: number; distinctWorkers: number }> {
+    return this.repository.historyCounts(customerUserId, {
+      year: filter.year,
+      categoryCode: filter.category,
+    });
+  }
+
+  /**
+   * "Hire again" (D-82): a NEW booking for the same worker with the same requirement, created through the normal creation path, so the
+   * worker's eligibility, availability, service area, engagement, double-booking rule, the customer's terms acceptance and the
+   * Idempotency-Key all apply again. Nothing of the old booking (payment, attendance, rating, timeline) is copied.
+   */
+  async rebook(
+    customerUserId: string,
+    dto: RebookDto,
+    idempotencyKey?: string,
+  ): Promise<{ booking: BookingDetailView; created: boolean }> {
+    const source = await this.repository.findById(dto.bookingId);
+    if (!source || source.customerUserId !== customerUserId) throw this.notFound();
+    if (source.status !== 'COMPLETED' || source.workerId === null) {
+      throw new DomainException(
+        BookingErrorCode.REBOOK_NOT_ALLOWED,
+        'Only a completed booking can be booked again',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const [category] = await this.categories.findByIds([source.categoryId]);
+    const keepAddress =
+      source.addressId !== null &&
+      (await this.customers.findActiveAddressForBooking(customerUserId, source.addressId)) !== null;
+    const request: CreateBookingDto = {
+      category: category.code,
+      areaId: source.areaId,
+      engagement: source.engagement,
+      availableFrom: toText(source.fromMinute),
+      availableTo: toText(source.toMinute),
+      workerId: source.workerId,
+      ...(keepAddress ? { addressId: source.addressId! } : {}),
+      ...(dto.startDate ? { startDate: dto.startDate } : {}),
+      ...(source.budgetMinMinor !== null ? { budgetMinMinor: source.budgetMinMinor } : {}),
+      ...(source.budgetMaxMinor !== null ? { budgetMaxMinor: source.budgetMaxMinor } : {}),
+      ...(source.budgetPeriod !== null ? { budgetPeriod: source.budgetPeriod } : {}),
+      ...(source.requirementNote !== null ? { requirementNote: source.requirementNote } : {}),
+    } as CreateBookingDto;
+    return this.create(customerUserId, request, idempotencyKey);
+  }
+
+  /** The newest booking that is not finished (for the Home screen), or null. */
+  async activeForCustomer(customerUserId: string): Promise<CustomerBookingView | null> {
+    const { items } = await this.repository.list({ customerUserId, openOnly: true }, 0, 1);
+    return (await this.customerViews(items))[0] ?? null;
+  }
+
+  async getMine(customerUserId: string, bookingId: string): Promise<CustomerBookingDetailView> {
     const booking = await this.repository.findById(bookingId);
     if (!booking || booking.customerUserId !== customerUserId) {
       throw this.notFound();
     }
-    return this.detail(booking, false);
+    return (await this.detail(booking, false)) as CustomerBookingDetailView;
   }
 
   // --- worker ------------------------------------------------------------------------------------------------
@@ -651,6 +738,9 @@ export class BookingService {
     customerUserId: string;
     workerId: string | null;
     startDate: string | null;
+    /** The booking's own time window, HH:mm. */
+    availableFrom: string;
+    availableTo: string;
   }> {
     const booking = await this.repository.findById(bookingId);
     if (!booking) throw this.notFound();
@@ -660,6 +750,8 @@ export class BookingService {
       customerUserId: booking.customerUserId,
       workerId: booking.workerId,
       startDate: booking.startDate,
+      availableFrom: toText(booking.fromMinute),
+      availableTo: toText(booking.toMinute),
     };
   }
 
@@ -1333,9 +1425,136 @@ export class BookingService {
   }
 
   private async detail(booking: BookingRecord, forAdmin: boolean): Promise<BookingDetailView> {
-    const [view] = await this.views([booking]);
+    const [view] = forAdmin ? await this.views([booking]) : await this.customerViews([booking]);
     const events = await this.repository.listEvents(booking.id);
     return { ...view, timeline: events.map((e) => this.timelineEntry(e, forAdmin)) };
+  }
+
+  // --- what the customer's own booking responses add (worker identity, allowed actions, rating state) --------------------
+
+  /** The common view plus `worker`, `allowedActions` and `rating`; every lookup is one statement for the whole page. */
+  private async customerViews(bookings: BookingRecord[]): Promise<CustomerBookingView[]> {
+    const views = await this.views(bookings);
+    if (bookings.length === 0) return [];
+    const shown = [
+      ...new Set(
+        bookings
+          .filter((b) => b.workerId !== null && WORKER_VISIBLE_STATUSES.includes(b.status))
+          .map((b) => b.workerId!),
+      ),
+    ];
+    const [rated, displays, rebookable] = await Promise.all([
+      this.hooks.ratedBookingIds(bookings.map((b) => b.id)),
+      this.workerDisplays(shown),
+      this.rebookable(bookings),
+    ]);
+    return bookings.map((b, i) => {
+      const rating = evaluateRatingEligibility(b, {
+        alreadyRated: rated.has(b.id),
+        allowEndedEarly: this.config.ratingAllowEndedEarly,
+      });
+      const actions: CustomerAllowedAction[] = CUSTOMER_ALLOWED_ACTIONS.filter((a) =>
+        this.customerCanNow(a, b, rating.eligible, rebookable.has(b.id)),
+      );
+      return {
+        ...views[i],
+        worker:
+          b.workerId !== null && WORKER_VISIBLE_STATUSES.includes(b.status)
+            ? (displays.get(b.workerId) ?? null)
+            : null,
+        allowedActions: actions,
+        rating: { rated: rated.has(b.id), eligible: rating.eligible, code: rating.code },
+      };
+    });
+  }
+
+  private customerCanNow(
+    action: CustomerAllowedAction,
+    booking: BookingRecord,
+    canRate: boolean,
+    canRebook: boolean,
+  ): boolean {
+    switch (action) {
+      case 'pay':
+        return booking.status === 'PENDING_PAYMENT';
+      case 'rate':
+        return canRate;
+      case 'rebook':
+        return canRebook;
+      case 'report-attendance-exception':
+        return booking.status === 'ACTIVE' && booking.workerId !== null;
+      default:
+        return RULES[action].some(
+          (r) => r.actors.includes('CUSTOMER') && r.from.includes(booking.status),
+        );
+    }
+  }
+
+  /**
+   * Completed bookings whose worker could be booked again right now: the same checks creation makes (category and area still enabled,
+   * engagement still offered, worker eligible and free, no open booking with them). Bounded by the page size; nothing else is queried.
+   */
+  private async rebookable(bookings: BookingRecord[]): Promise<Set<string>> {
+    const candidates = bookings.filter((b) => b.status === 'COMPLETED' && b.workerId !== null);
+    const ok = new Set<string>();
+    await Promise.all(
+      candidates.map(async (b) => {
+        try {
+          await this.categories.assertEngagementOffered(b.categoryId, b.engagement);
+          const [category] = await this.categories.findByIds([b.categoryId]);
+          if (!category?.isEnabled) return;
+          await this.areas.requireEnabled(b.areaId);
+          if (await this.repository.hasLiveBookingWith(b.customerUserId, b.workerId!, b.categoryId))
+            return;
+          await this.assertEligible(b.workerId!, {
+            categoryId: b.categoryId,
+            areaId: b.areaId,
+            engagement: b.engagement,
+            fromMinute: b.fromMinute,
+            toMinute: b.toMinute,
+            customerUserId: b.customerUserId,
+            excludeBookingId: b.id,
+          });
+          ok.add(b.id);
+        } catch {
+          // not bookable again: no `rebook` action
+        }
+      }),
+    );
+    return ok;
+  }
+
+  /** The worker of a booking as the owning customer may see them (null before the interview stage); for Attendance. */
+  async displayWorkerOf(booking: {
+    status: string;
+    workerId: string | null;
+  }): Promise<WorkerDisplayView | null> {
+    if (booking.workerId === null || !WORKER_VISIBLE_STATUSES.includes(booking.status)) return null;
+    return (await this.workerDisplays([booking.workerId])).get(booking.workerId) ?? null;
+  }
+
+  /** Display name (first name and last initial) and photo links for several workers, in two statements in total. */
+  async workerDisplays(workerIds: string[]): Promise<Map<string, WorkerDisplayView>> {
+    if (workerIds.length === 0) return new Map();
+    const [names, photos] = await Promise.all([
+      this.workers.namesByIds(workerIds),
+      this.search.photoLinks(workerIds),
+    ]);
+    const out = new Map<string, WorkerDisplayView>();
+    for (const id of workerIds) {
+      const name = names.get(id);
+      if (name === undefined) continue;
+      const parts = name.trim().split(/\s+/).filter(Boolean);
+      const first = parts[0] ?? '';
+      const last = parts.length > 1 ? parts[parts.length - 1] : '';
+      const lastInitial = last ? Array.from(last)[0].toUpperCase() : '';
+      out.set(id, {
+        displayName: lastInitial ? `${first} ${lastInitial}.` : first,
+        initials: (Array.from(first)[0] ?? '').toUpperCase() + lastInitial,
+        photo: photos.get(id) ?? null,
+      });
+    }
+    return out;
   }
 
   private timelineEntry(event: BookingEventRecord, forAdmin: boolean): TimelineEntry {

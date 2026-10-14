@@ -174,3 +174,14 @@ Updated 2026-10-13. Status: PASS (implemented and proven by a runtime test on a 
 | PRD 5.2 price guidance | PARTIAL | endpoint built, data not supplied (decision) |
 | PRD 5.1 area from position | PARTIAL | centre and radius only |
 | PRD 5.1 customer photo | BLOCKED_BY_DECISION | not in FR-CUS |
+
+## 2026-10-14 customer Active Service, History and Rating
+| Requirement | Source | Status | Evidence |
+|---|---|---|---|
+| Customer sees attendance/status (FR-ATT-002, FR-ON-001) | SRS 3.11 | IMPLEMENTED, now with LATE/LEAVE, check-in/out times, scheduled window, worker identity (D-76, D-77, D-81) | customer.active-service.int-spec |
+| Customer or admin can raise an exception (FM-09 alternate flow) | FRD FM-09 | IMPLEMENTED and tested incl. concurrency (D-83) | customer.active-service.int-spec |
+| Service history (FRD FM-09 step 3, wireframe "Service History") | FRD, Wireframes | IMPLEMENTED: history list, totals, filters (D-78) | customer.history-rating.int-spec |
+| Ratings tied to completed/eligible engagements (FM-10) | FRD | IMPLEMENTED: server rule, eligibility API, allowedActions; "otherwise eligible" open (Q-102) | customer.history-rating.int-spec, rating-eligibility.spec |
+| Review length limit (FM-10) | FRD | IMPLEMENTED: configurable, default 300 (D-80) | customer.history-rating.int-spec |
+| Rating tags | none | NOT SPECIFIED: not built (Q-103) | - |
+| Hire the same worker again | design only | IMPLEMENTED through normal booking creation (D-82; Q-106) | customer.history-rating.int-spec |

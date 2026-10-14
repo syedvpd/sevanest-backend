@@ -223,6 +223,14 @@ export class AppConfigService {
   get ratingScaleMax(): number {
     return this.get('RATING_SCALE_MAX');
   }
+  /** Longest review text accepted for a new rating (default 300, D-80). */
+  get ratingReviewMax(): number {
+    return this.get('RATING_REVIEW_MAX_LENGTH') ?? 300;
+  }
+  /** Whether a REPLACED ("ended early") booking can be rated (default false, Q-102). */
+  get ratingAllowEndedEarly(): boolean {
+    return this.get('RATING_ALLOW_ENDED_EARLY') ?? false;
+  }
   get storageProvider(): StorageProviderKind {
     return this.get('STORAGE_PROVIDER');
   }

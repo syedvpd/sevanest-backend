@@ -74,7 +74,7 @@ describe('Attendance API (integration)', () => {
     it('needs a note for an exception and rejects unknown statuses and a self-chosen date', async () => {
       const b = await active();
       expect((await as(api, b.worker).post(wPath(b.id), { status: 'EXCEPTION' })).status).toBe(400);
-      expect((await as(api, b.worker).post(wPath(b.id), { status: 'LATE' })).status).toBe(400);
+      expect((await as(api, b.worker).post(wPath(b.id), { status: 'HALF_DAY' })).status).toBe(400);
       expect((await as(api, b.worker).post(wPath(b.id), {})).status).toBe(400);
       const ok = await as(api, b.worker).post(wPath(b.id), {
         status: 'EXCEPTION',
@@ -150,6 +150,8 @@ describe('Attendance API (integration)', () => {
       });
       expect(Object.keys(mine.body.data[0] as object).sort()).toEqual([
         'bookingId',
+        'checkInAt',
+        'checkOutAt',
         'date',
         'id',
         'note',

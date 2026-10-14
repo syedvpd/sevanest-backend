@@ -128,6 +128,16 @@ export class WorkersRepository {
     return row ? toRecord(row) : null;
   }
 
+  /** Names of several workers in one statement (for cards that show who served the customer). */
+  async namesByIds(ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.workerProfile.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
   async findById(id: string, db: Db = this.prisma): Promise<WorkerRecord | null> {
     const row = await db.workerProfile.findUnique({ where: { id }, select: PROFILE_SELECT });
     return row ? toRecord(row) : null;

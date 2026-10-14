@@ -22,6 +22,17 @@ export class BookingLifecycleHooks {
     this.hooks.push(hook);
   }
 
+  private ratedLookup: ((bookingIds: string[]) => Promise<Set<string>>) | null = null;
+
+  /** Ratings tells Booking which of these bookings already carry a rating (for the `rate` action), so Booking never reads `ratings`. */
+  registerRatedLookup(lookup: (bookingIds: string[]) => Promise<Set<string>>): void {
+    this.ratedLookup = lookup;
+  }
+
+  async ratedBookingIds(bookingIds: string[]): Promise<Set<string>> {
+    return this.ratedLookup ? this.ratedLookup(bookingIds) : new Set();
+  }
+
   async cancelled(
     bookingId: string,
     actor: { kind: string; userId: string | null },

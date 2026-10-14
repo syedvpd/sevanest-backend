@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '../../generated/prisma/client';
+import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 import type { PaymentStatusValue } from './dto/payment.dto';
 
@@ -533,6 +533,43 @@ export class PaymentRepository {
       openExceptionsByKind: byKind,
       unknownOrderEvents: unknown,
     };
+  }
+
+  /** Payment states in which the customer's money is still with the platform: that is what "spent" counts (D-78). */
+  static readonly SPENT_STATUSES = ['SUCCEEDED', 'REFUND_PENDING', 'REFUND_FAILED'] as const;
+
+  /** Money still held per booking, for these bookings (one statement). */
+  async heldByBooking(bookingIds: string[]): Promise<Map<string, number>> {
+    if (bookingIds.length === 0) return new Map();
+    const rows = await this.prisma.payment.groupBy({
+      by: ['bookingId'],
+      where: {
+        bookingId: { in: bookingIds },
+        status: { in: [...PaymentRepository.SPENT_STATUSES] },
+      },
+      _sum: { amountMinor: true },
+    });
+    return new Map(rows.map((r) => [r.bookingId, r._sum.amountMinor ?? 0]));
+  }
+
+  /**
+   * Money still held across ALL payments of the customer's bookings matching the year and category (a read-only join with bookings
+   * and categories, like Reports): successful payments and refunds not yet returned; refunded money is not spend.
+   */
+  async heldForCustomer(
+    customerUserId: string,
+    f: { year?: number; categoryCode?: string },
+  ): Promise<number> {
+    const rows = await this.prisma.$queryRaw<Array<{ spent: bigint | number | null }>>(Prisma.sql`
+      SELECT COALESCE(SUM(p.amount_minor), 0) AS spent
+      FROM payments p
+      JOIN bookings b ON b.id = p.booking_id
+      JOIN service_categories c ON c.id = b.category_id
+      WHERE p.status::text = ANY(${[...PaymentRepository.SPENT_STATUSES]})
+        AND b.customer_user_id = ${customerUserId}::uuid
+        ${f.year ? Prisma.sql`AND EXTRACT(YEAR FROM COALESCE(b.start_date, (b.created_at AT TIME ZONE 'Asia/Kolkata')::date)) = ${f.year}` : Prisma.empty}
+        ${f.categoryCode ? Prisma.sql`AND c.code = ${f.categoryCode}` : Prisma.empty}`);
+    return Number(rows[0]?.spent ?? 0);
   }
 
   async setEventResult(

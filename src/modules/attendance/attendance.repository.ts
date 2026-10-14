@@ -13,6 +13,8 @@ export interface AttendanceRecordRow {
   date: string;
   status: AttendanceStatusValue;
   note: string | null;
+  checkInAt: Date | null;
+  checkOutAt: Date | null;
   recordedByUserId: string;
   recordedByKind: ActorKindValue;
   updatedAt: Date;
@@ -37,6 +39,8 @@ function toRow(r: Prisma.AttendanceRecordGetPayload<object>): AttendanceRecordRo
     date: r.date.toISOString().slice(0, 10),
     status: r.status,
     note: r.note,
+    checkInAt: r.checkInAt,
+    checkOutAt: r.checkOutAt,
     recordedByUserId: r.recordedByUserId,
     recordedByKind: r.recordedByKind,
     updatedAt: r.updatedAt,
@@ -61,6 +65,7 @@ export class AttendanceRepository {
       date: string;
       status: AttendanceStatusValue;
       note: string | null;
+      checkInAt?: Date | null;
       recordedByUserId: string;
       recordedByKind: ActorKindValue;
     },
@@ -94,10 +99,23 @@ export class AttendanceRepository {
 
   async update(
     id: string,
-    data: { status: AttendanceStatusValue; note: string | null },
+    data: { status: AttendanceStatusValue; note: string | null; clearTimes?: boolean },
     tx: Prisma.TransactionClient,
   ): Promise<void> {
-    await tx.attendanceRecord.update({ where: { id }, data });
+    const { clearTimes, ...rest } = data;
+    await tx.attendanceRecord.update({
+      where: { id },
+      data: clearTimes ? { ...rest, checkInAt: null, checkOutAt: null } : rest,
+    });
+  }
+
+  async stamp(
+    id: string,
+    field: 'checkInAt' | 'checkOutAt',
+    at: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.attendanceRecord.update({ where: { id }, data: { [field]: at } });
   }
 
   async addEvent(
@@ -132,7 +150,13 @@ export class AttendanceRepository {
       where: { bookingId, date: { gte: day(range.from), lte: day(range.to) } },
       _count: { _all: true },
     });
-    const counts: Record<AttendanceStatusValue, number> = { PRESENT: 0, ABSENT: 0, EXCEPTION: 0 };
+    const counts: Record<AttendanceStatusValue, number> = {
+      PRESENT: 0,
+      ABSENT: 0,
+      EXCEPTION: 0,
+      LATE: 0,
+      LEAVE: 0,
+    };
     for (const r of rows) counts[r.status] = r._count._all;
     return counts;
   }

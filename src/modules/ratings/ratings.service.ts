@@ -1,19 +1,22 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { AppConfigService } from '../../config/app-config.service';
+import { BookingLifecycleHooks } from '../booking/booking-hooks';
 import { BookingService } from '../booking/booking.service';
 import {
   AdminRatingListQuery,
   AdminRatingView,
   CreateRatingDto,
+  RatingEligibilityView,
   RatingListQuery,
   RatingSummaryView,
   RatingView,
   WorkerRatingView,
 } from './dto/ratings.dto';
+import { evaluateRatingEligibility } from '../../common/rating/rating-eligibility';
 import { RATING_POLICY, type RatingPolicy } from './ratings.policy';
 import { RatingRecord, RatingsRepository } from './ratings.repository';
 
@@ -22,6 +25,7 @@ export const RatingErrorCode = {
   RATING_NOT_ELIGIBLE: 'RATING_NOT_ELIGIBLE',
   RATING_ALREADY_EXISTS: 'RATING_ALREADY_EXISTS',
   RATING_SCORE_OUT_OF_SCALE: 'RATING_SCORE_OUT_OF_SCALE',
+  RATING_REVIEW_TOO_LONG: 'RATING_REVIEW_TOO_LONG',
 } as const;
 
 export interface ModerationActor {
@@ -42,14 +46,20 @@ export interface WorkerRatingSummary {
  * restores it (audited) and keeps the worker's running totals correct in the same transaction.
  */
 @Injectable()
-export class RatingsService {
+export class RatingsService implements OnModuleInit {
   constructor(
     private readonly repository: RatingsRepository,
     private readonly bookings: BookingService,
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
+    private readonly hooks: BookingLifecycleHooks,
     @Inject(RATING_POLICY) private readonly policy: RatingPolicy,
   ) {}
+
+  onModuleInit(): void {
+    // Booking shows the `rate` action; it learns which bookings are already rated through this lookup, never by reading `ratings`.
+    this.hooks.registerRatedLookup((ids) => this.repository.ratedBookingIds(ids));
+  }
 
   // --- customer -------------------------------------------------------------------------------------------------
 
@@ -66,7 +76,24 @@ export class RatingsService {
         [{ field: 'score', messages: [`score must not be greater than ${scaleMax}`] }],
       );
     }
-    const verdict = await this.policy.evaluate(booking);
+    const reviewMax = this.config.ratingReviewMax;
+    if (dto.review !== undefined && Array.from(dto.review).length > reviewMax) {
+      throw new DomainException(
+        RatingErrorCode.RATING_REVIEW_TOO_LONG,
+        `The review must be at most ${reviewMax} characters`,
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'review', messages: [`review must be at most ${reviewMax} characters`] }],
+      );
+    }
+    // A repeat answers 409 (the documented contract), also when two requests race: the unique key below settles that case.
+    if ((await this.repository.findByBooking(booking.id)) !== null) {
+      throw new DomainException(
+        RatingErrorCode.RATING_ALREADY_EXISTS,
+        'This booking has already been rated',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const verdict = await this.policy.evaluate({ ...booking, alreadyRated: false });
     if (!verdict.eligible || booking.workerId === null) {
       throw new DomainException(
         RatingErrorCode.RATING_NOT_ELIGIBLE,
@@ -112,6 +139,22 @@ export class RatingsService {
       }
       throw error;
     }
+  }
+
+  /** What the app needs to show or hide "Rate": the same decision POST /ratings makes (404 for a booking that is not mine). */
+  async eligibilityMine(customerUserId: string, bookingId: string): Promise<RatingEligibilityView> {
+    const booking = await this.bookings.getSummary(bookingId).catch(() => null);
+    if (!booking || booking.customerUserId !== customerUserId) throw this.bookingNotFound();
+    const verdict = evaluateRatingEligibility(booking, {
+      alreadyRated: (await this.repository.findByBooking(booking.id)) !== null,
+      allowEndedEarly: this.config.ratingAllowEndedEarly,
+    });
+    return {
+      bookingId,
+      ...verdict,
+      reviewMaxLength: this.config.ratingReviewMax,
+      scaleMax: this.config.ratingScaleMax,
+    };
   }
 
   async listMine(customerUserId: string, query: RatingListQuery): Promise<Page<RatingView>> {

@@ -138,3 +138,4 @@ Traceability, API/RBAC audit, journeys, performance and production-readiness evi
 | Decisions | `docs/qa/decision-register.md` |
 | Worker photo pipeline (2026-10-14) | DONE: WebP renditions without metadata, optional malware scan, stable cache key (D-69) |
 | Receipt PDF (2026-10-14) | DONE: `GET /payments/{id}/receipt/pdf`, plain receipt, not a GST invoice (Q-100 open) |
+| Customer Active Service / History / Rating (2026-10-14) | DONE: attendance LATE/LEAVE + check-in/out + window, history and totals, rating eligibility + allowedActions, review limit, rebook, worker identity on bookings (D-76..D-83). Rating tags NOT built (Q-103) |

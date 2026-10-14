@@ -52,6 +52,16 @@ export class RatingsRepository {
     return db.rating.findUnique({ where: { id } });
   }
 
+  /** Which of these bookings already carry a rating (one statement). */
+  async ratedBookingIds(bookingIds: string[]): Promise<Set<string>> {
+    if (bookingIds.length === 0) return new Set();
+    const rows = await this.prisma.rating.findMany({
+      where: { bookingId: { in: bookingIds } },
+      select: { bookingId: true },
+    });
+    return new Set(rows.map((r) => r.bookingId));
+  }
+
   findByBooking(bookingId: string, db: Db = this.prisma): Promise<RatingRecord | null> {
     return db.rating.findUnique({ where: { bookingId } });
   }

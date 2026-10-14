@@ -56,6 +56,8 @@ describe('Module boundaries (static)', () => {
       system: ['users'],
       // Home only composes read calls of other modules for the customer Home screen; nothing depends on it.
       home: ['booking', 'notifications', 'shortlist', 'users'],
+      // History composes Booking (finished bookings) and Payment (money held) for the customer History screen; nothing depends on it.
+      history: ['booking', 'payment', 'users'],
       // Existing modules gained leaf dependencies.
     };
     allowed.booking = [

@@ -685,6 +685,7 @@ model Booking {
 
   @@unique([customerUserId, idempotencyKey])
   @@index([customerUserId, createdAt])
+  @@index([customerUserId, status])
   @@index([workerId, status])
   @@index([status, createdAt])
   @@index([areaId])
@@ -953,6 +954,10 @@ enum AttendanceStatus {
   PRESENT
   ABSENT
   EXCEPTION
+  /// Worked, but arrived late (D-76). Counts as a worked day.
+  LATE
+  /// Approved or announced leave of the worker (D-76). Not a worked day.
+  LEAVE
 }
 
 /// Who made an entry: a worker, a customer (raising an exception) or an administrator (FRD FM-09).
@@ -970,6 +975,9 @@ model AttendanceRecord {
   date             DateTime         @db.Date
   status           AttendanceStatus
   note             String?
+  /// Server-stamped when the worker checks in / out (D-77). Never derived from a status.
+  checkInAt        DateTime?        @map("check_in_at") @db.Timestamptz(6)
+  checkOutAt       DateTime?        @map("check_out_at") @db.Timestamptz(6)
   recordedByUserId String           @map("recorded_by_user_id") @db.Uuid
   recordedByKind   ActorKind        @map("recorded_by_kind")
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1004,6 +1012,15 @@ model AttendanceEvent {
   @@map("attendance_events")
 }
 
+enum ReplacementReason {
+  WORK_QUALITY
+  BEHAVIOUR
+  ATTENDANCE
+  MISMATCH
+  WORKER_UNAVAILABLE
+  OTHER
+}
+
 enum ReplacementStatus {
   REQUESTED
   APPROVED
@@ -1018,11 +1035,15 @@ model ReplacementRequest {
   bookingId            String            @map("booking_id") @db.Uuid
   requestedByUserId    String            @map("requested_by_user_id") @db.Uuid
   reason               String
+  reasonCode           ReplacementReason @default(OTHER) @map("reason_code")
   notes                String?
   status               ReplacementStatus @default(REQUESTED)
   decidedByUserId      String?           @map("decided_by_user_id") @db.Uuid
   decidedAt            DateTime?         @map("decided_at") @db.Timestamptz(6)
+  /// Internal staff remarks: never shown to customers (Q-110).
   decisionRemarks      String?           @map("decision_remarks")
+  /// Customer-facing decision message (Q-110).
+  decisionMessage      String?           @map("decision_message")
   replacementBookingId String?           @unique @map("replacement_booking_id") @db.Uuid
   completedAt          DateTime?         @map("completed_at") @db.Timestamptz(6)
   createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)

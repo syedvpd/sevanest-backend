@@ -35,6 +35,9 @@ import {
   BookingActionDto,
   BookingDetailView,
   BookingFilterQuery,
+  CustomerBookingDetailView,
+  CustomerBookingView,
+  RebookDto,
   ChainEntryView,
   ProposeSlotDto,
   BookingView,
@@ -119,22 +122,51 @@ export class BookingsController {
   }
 
   @Get()
-  @ApiPageResponse(BookingView)
-  @ApiOperation({ summary: 'My bookings, newest first (paginated)' })
+  @ApiPageResponse(CustomerBookingView)
+  @ApiOperation({
+    summary: 'My bookings, newest first (paginated)',
+    description:
+      'Each item adds `worker` (display name and photo once the interview stage is reached), `allowedActions` (what I can do now) and `rating` (rated / eligible). See GET /bookings/history for finished bookings with filters.',
+  })
   list(
     @Query() query: BookingFilterQuery,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Page<BookingView>> {
+  ): Promise<Page<CustomerBookingView>> {
     return this.bookings.listMine(user.userId, query);
   }
 
+  @Post('rebook')
+  @ApiModelResponse(CustomerBookingDetailView, { status: 201 })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description:
+      'Optional. Repeating the same request with the same key returns the first new booking (200).',
+  })
+  @ApiOperation({
+    summary: 'Hire the same worker again for the same requirement (creates a NEW booking)',
+    description:
+      'Body: bookingId (my COMPLETED booking; `rebook` in its allowedActions) and an optional startDate. Goes through normal booking creation: 422 WORKER_NOT_ELIGIBLE, 409 WORKER_UNAVAILABLE, 409 DUPLICATE_BOOKING, 422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / ENGAGEMENT_NOT_OFFERED apply again. 409 REBOOK_NOT_ALLOWED for any other status; 404 for a booking that is not mine. Payment, attendance, rating and history are not copied.',
+  })
+  async rebook(
+    @Body() dto: RebookDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<BookingDetailView> {
+    assertIdempotencyKey(key);
+    const { booking, created } = await this.bookings.rebook(user.userId, dto, key);
+    res.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    return booking;
+  }
+
   @Get(':bookingId')
-  @ApiModelResponse(BookingDetailView)
+  @ApiModelResponse(CustomerBookingDetailView)
   @ApiOperation({ summary: "One of my bookings with its status timeline (404 for anyone else's)" })
   get(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<BookingDetailView> {
+  ): Promise<CustomerBookingDetailView> {
     return this.bookings.getMine(user.userId, bookingId);
   }
 

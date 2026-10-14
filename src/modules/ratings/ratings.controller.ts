@@ -24,6 +24,7 @@ import {
   AdminRatingView,
   CreateRatingDto,
   ModerationDto,
+  RatingEligibilityView,
   RatingListQuery,
   RatingSummaryView,
   RatingView,
@@ -45,7 +46,7 @@ export class RatingsController {
   @ApiOperation({
     summary: 'Rate the worker of my completed booking (once per booking)',
     description:
-      '404 for a booking that is not mine, 422 RATING_NOT_ELIGIBLE unless the booking is COMPLETED, 400 RATING_SCORE_OUT_OF_SCALE, 409 RATING_ALREADY_EXISTS. A rating cannot be edited or deleted by the customer (Q-60).',
+      '404 for a booking that is not mine, 422 RATING_NOT_ELIGIBLE unless GET /ratings/bookings/{id}/eligibility says eligible, 400 RATING_SCORE_OUT_OF_SCALE, 400 RATING_REVIEW_TOO_LONG (limit = ratingReviewMax in /reference-data), 409 RATING_ALREADY_EXISTS. A rating cannot be edited or deleted by the customer (Q-60).',
   })
   create(
     @Body() dto: CreateRatingDto,
@@ -62,6 +63,20 @@ export class RatingsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Page<RatingView>> {
     return this.ratings.listMine(user.userId, query);
+  }
+
+  @Get('bookings/:bookingId/eligibility')
+  @ApiModelResponse(RatingEligibilityView)
+  @ApiOperation({
+    summary: 'May I rate this booking right now? (the same decision POST /ratings makes)',
+    description:
+      'Returns eligible plus a stable code (ELIGIBLE, ALREADY_RATED, NOT_COMPLETED, ENDED_EARLY_NOT_RATEABLE, NO_WORKER), a reason, the review limit and the rating scale. 404 for a booking that is not mine. Bookings also carry the `rate` action in allowedActions.',
+  })
+  eligibility(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<RatingEligibilityView> {
+    return this.ratings.eligibilityMine(user.userId, bookingId);
   }
 
   @Get('bookings/:bookingId')

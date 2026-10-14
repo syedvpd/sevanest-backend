@@ -93,6 +93,11 @@ export class WorkersService {
     return ref;
   }
 
+  /** Contract for Booking: the stored names of these workers, keyed by worker id (one statement). */
+  namesByIds(ids: string[]): Promise<Map<string, string>> {
+    return this.repository.namesByIds(ids);
+  }
+
   /** Contract for Worker Photo: records which stored object is the current profile photo (never accepted from a request body). */
   setPhotoRef(workerId: string, ref: string, tx: Prisma.TransactionClient): Promise<void> {
     return this.repository.setPhotoRef(workerId, ref, tx);

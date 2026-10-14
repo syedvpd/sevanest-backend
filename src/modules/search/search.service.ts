@@ -126,6 +126,11 @@ export class SearchService {
     return new Map(cards.map((c) => [c.workerId, c]));
   }
 
+  /** Contract for Booking: short-lived photo links of these workers (the caller already decided they may be shown). */
+  photoLinks(ids: string[]): ReturnType<WorkerPhotoService['linksFor']> {
+    return this.photos.linksFor(ids);
+  }
+
   /** Free interview/trial start times of a visible worker on one date (same 404 as the profile for anyone not visible). */
   async listSlots(
     workerId: string,

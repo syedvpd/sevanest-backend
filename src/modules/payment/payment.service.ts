@@ -268,6 +268,21 @@ export class PaymentService {
     return this.view((await this.repository.findById(paymentId))!);
   }
 
+  /** Contract for the customer History: money still held per booking, and in total for a year/category (D-78). */
+  heldByBooking(bookingIds: string[]): Promise<Map<string, number>> {
+    return this.repository.heldByBooking(bookingIds);
+  }
+
+  heldForCustomer(
+    customerUserId: string,
+    filter: { year?: number; category?: string },
+  ): Promise<number> {
+    return this.repository.heldForCustomer(customerUserId, {
+      year: filter.year,
+      categoryCode: filter.category,
+    });
+  }
+
   async listMine(customerUserId: string, query: PaymentListQuery): Promise<Page<PaymentView>> {
     const { items, total } = await this.repository.list(
       {
