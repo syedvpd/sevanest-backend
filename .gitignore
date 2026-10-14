@@ -36,3 +36,6 @@ Thumbs.db
 
 # Local data
 pgdata/
+
+# performance run output (raw samples, throwaway local tokens)
+test/perf/out/
