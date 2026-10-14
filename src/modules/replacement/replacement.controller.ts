@@ -71,7 +71,7 @@ export class ReplacementsController {
   @ApiOperation({
     summary: 'One of my requests with its status timeline (404 for anyone else)',
     description:
-      '`decisionRemarks` is the staff remark, returned as written. `timeline` is the persisted status history, oldest first.',
+      '`decisionMessage` is the customer-facing message; internal staff remarks are never returned. `timeline` is the persisted status history, oldest first.',
   })
   get(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -167,7 +167,7 @@ export class AdminReplacementsController {
     @Body() dto: DecisionDto,
     @CurrentUser() admin: AuthenticatedUser,
   ): Promise<AdminReplacementView> {
-    return this.replacements.approve(requestId, dto.remarks, await this.actor(admin));
+    return this.replacements.approve(requestId, dto.remarks, dto.message, await this.actor(admin));
   }
 
   @Post(':requestId/reject')
@@ -182,7 +182,12 @@ export class AdminReplacementsController {
     @Body() dto: DecisionDto,
     @CurrentUser() admin: AuthenticatedUser,
   ): Promise<AdminReplacementView> {
-    return this.replacements.reject(requestId, dto.remarks ?? '', await this.actor(admin));
+    return this.replacements.reject(
+      requestId,
+      dto.remarks ?? '',
+      dto.message,
+      await this.actor(admin),
+    );
   }
 
   @Get(':requestId/candidates')

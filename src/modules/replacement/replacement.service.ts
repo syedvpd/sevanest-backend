@@ -18,6 +18,7 @@ import {
   AdminReplacementListQuery,
   AdminReplacementView,
   CreateReplacementDto,
+  REPLACEMENT_REASONS,
   ReplacementDetailView,
   ReplacementListQuery,
   ReplacementTimelineEntry,
@@ -91,6 +92,16 @@ export class ReplacementService implements OnModuleInit {
     if (await this.repository.findOpenForBooking(booking.id)) {
       throw this.alreadyOpen();
     }
+    const reasonCode = dto.reasonCode ?? 'OTHER';
+    if (!dto.reason && reasonCode === 'OTHER') {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'reason', messages: ['reason is required when the reason code is OTHER'] }],
+      );
+    }
+    const reasonText = dto.reason ?? REPLACEMENT_REASONS.find((r) => r.code === reasonCode)!.label;
     const verdict = await this.policy.evaluate(booking);
     if (!verdict.eligible) {
       throw new DomainException(
@@ -106,7 +117,8 @@ export class ReplacementService implements OnModuleInit {
           {
             bookingId: booking.id,
             requestedByUserId: customerUserId,
-            reason: dto.reason,
+            reason: reasonText,
+            reasonCode,
             notes: dto.notes ?? null,
           },
           tx,
@@ -310,18 +322,20 @@ export class ReplacementService implements OnModuleInit {
   async approve(
     id: string,
     remarks: string | undefined,
+    message: string | undefined,
     admin: ReplacementActor,
   ): Promise<AdminReplacementView> {
-    await this.decide(id, 'APPROVED', remarks, admin);
+    await this.decide(id, 'APPROVED', remarks, message, admin);
     return this.adminView((await this.repository.findById(id))!);
   }
 
   async reject(
     id: string,
     remarks: string,
+    message: string | undefined,
     admin: ReplacementActor,
   ): Promise<AdminReplacementView> {
-    await this.decide(id, 'REJECTED', remarks, admin);
+    await this.decide(id, 'REJECTED', remarks, message, admin);
     return this.adminView((await this.repository.findById(id))!);
   }
 
@@ -359,6 +373,7 @@ export class ReplacementService implements OnModuleInit {
     id: string,
     to: 'APPROVED' | 'REJECTED',
     remarks: string | undefined,
+    message: string | undefined,
     admin: ReplacementActor,
   ): Promise<void> {
     if (to === 'REJECTED' && !remarks) {
@@ -383,6 +398,7 @@ export class ReplacementService implements OnModuleInit {
           decidedByUserId: admin.userId,
           decidedAt: new Date(),
           decisionRemarks: remarks ?? null,
+          decisionMessage: message ?? null,
         },
         tx,
       );
@@ -460,7 +476,7 @@ export class ReplacementService implements OnModuleInit {
           status: to,
           at: row.createdAt,
           actor,
-          remarks: to === 'APPROVED' || to === 'REJECTED' ? r.decisionRemarks : null,
+          remarks: to === 'APPROVED' || to === 'REJECTED' ? r.decisionMessage : null,
         };
       });
   }
@@ -470,9 +486,10 @@ export class ReplacementService implements OnModuleInit {
       id: r.id,
       bookingId: r.bookingId,
       status: r.status,
+      reasonCode: r.reasonCode,
       reason: r.reason,
       notes: r.notes,
-      decisionRemarks: r.decisionRemarks,
+      decisionMessage: r.decisionMessage,
       replacementBookingId: r.replacementBookingId,
       createdAt: r.createdAt,
       decidedAt: r.decidedAt,
@@ -484,6 +501,7 @@ export class ReplacementService implements OnModuleInit {
     const booking = await this.bookings.getSummary(r.bookingId);
     return {
       ...this.view(r),
+      decisionRemarks: r.decisionRemarks,
       requestedByUserId: r.requestedByUserId,
       decidedByUserId: r.decidedByUserId,
       currentWorkerId: booking.workerId,

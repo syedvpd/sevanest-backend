@@ -149,7 +149,10 @@ describe('Replacement API (integration)', () => {
     it('approves once (repeat is harmless) and never after a rejection', async () => {
       const b = await active();
       const id = (await request(b.id)).body.id as string;
-      const first = await as(api, admin).post(`${A}/${id}/approve`, { remarks: 'ok' });
+      const first = await as(api, admin).post(`${A}/${id}/approve`, {
+        remarks: 'ok',
+        message: 'Approved, please pick a worker',
+      });
       expect(first.status).toBe(200);
       expect(first.body).toMatchObject({
         status: 'APPROVED',
@@ -163,7 +166,10 @@ describe('Replacement API (integration)', () => {
       expect(
         await api.prisma.auditLog.count({ where: { entityId: id, action: 'replacement.approve' } }),
       ).toBe(1);
-      expect((await as(api, customer).get(`${R}/${id}`)).body.decisionRemarks).toBe('ok');
+      const seen = (await as(api, customer).get(`${R}/${id}`)).body;
+      expect(seen.decisionMessage).toBe('Approved, please pick a worker');
+      expect(seen).not.toHaveProperty('decisionRemarks');
+      expect(first.body.decisionRemarks).toBe('ok');
     });
 
     it('needs remarks to reject, and a rejection returns the booking to ACTIVE', async () => {
@@ -369,7 +375,7 @@ describe('Replacement API (integration)', () => {
     const history = async (id: string) =>
       (await as(api, customer).get(`${R}/${id}`).expect(200)).body as {
         status: string;
-        decisionRemarks: string | null;
+        decisionMessage: string | null;
         timeline: Array<{ status: string; actor: string; remarks: string | null; at: string }>;
       };
 
@@ -385,7 +391,9 @@ describe('Replacement API (integration)', () => {
       const stranger = await loginWithOtp(api, { appType: 'CUSTOMER' });
       expect((await as(api, stranger).get(`${R}?bookingId=${b.id}`)).body.data).toEqual([]);
 
-      await as(api, admin).post(`${A}/${first}/approve`, { remarks: 'Eligible' }).expect(200);
+      await as(api, admin)
+        .post(`${A}/${first}/approve`, { remarks: 'internal note', message: 'Eligible' })
+        .expect(200);
       const detail = await history(first);
       expect(detail.timeline.map((t) => [t.status, t.actor, t.remarks])).toEqual([
         ['REQUESTED', 'CUSTOMER', null],
@@ -455,13 +463,17 @@ describe('Replacement API (integration)', () => {
       const b = await active();
       const id = (await request(b.id)).body.id as string;
       await as(api, admin)
-        .post(`${A}/${id}/reject`, { remarks: 'Not enough evidence' })
+        .post(`${A}/${id}/reject`, {
+          remarks: 'Not enough evidence',
+          message: 'We could not verify the complaint',
+        })
         .expect(200);
       const detail = await history(id);
-      expect(detail.decisionRemarks).toBe('Not enough evidence');
+      expect(detail.decisionMessage).toBe('We could not verify the complaint');
+      expect(JSON.stringify(detail)).not.toContain('Not enough evidence');
       expect(detail.timeline.map((t) => [t.status, t.actor, t.remarks])).toEqual([
         ['REQUESTED', 'CUSTOMER', null],
-        ['REJECTED', 'STAFF', 'Not enough evidence'],
+        ['REJECTED', 'STAFF', 'We could not verify the complaint'],
       ]);
       const alt = await alternative();
       for (const call of [
@@ -520,6 +532,81 @@ describe('Replacement API (integration)', () => {
         ['REQUESTED', 'CUSTOMER'],
         ['CANCELLED', 'SYSTEM'],
       ]);
+    });
+  });
+
+  describe('reason codes and reference data (Q-107)', () => {
+    it('publishes the fixed reasons and stores the chosen code', async () => {
+      const ref = await api.http().get('/api/v1/reference-data').expect(200);
+      const reasons = (ref.body.data ?? ref.body).replacementReasons as Array<{
+        code: string;
+        label: string;
+      }>;
+      expect(reasons.map((x) => x.code)).toEqual([
+        'WORK_QUALITY',
+        'BEHAVIOUR',
+        'ATTENDANCE',
+        'MISMATCH',
+        'WORKER_UNAVAILABLE',
+        'OTHER',
+      ]);
+      const b = await active();
+      const res = await as(api, customer)
+        .post(R, { bookingId: b.id, reasonCode: 'ATTENDANCE' })
+        .expect(201);
+      expect(res.body).toMatchObject({
+        reasonCode: 'ATTENDANCE',
+        reason: reasons.find((x) => x.code === 'ATTENDANCE')!.label,
+        notes: null,
+      });
+      const row = await api.prisma.replacementRequest.findUniqueOrThrow({
+        where: { id: res.body.id },
+      });
+      expect(row.reasonCode).toBe('ATTENDANCE');
+    });
+
+    it('keeps older clients working and rejects unknown codes, OTHER without detail and long notes', async () => {
+      const b = await active();
+      const legacy = await request(b.id);
+      expect(legacy.status).toBe(201);
+      expect(legacy.body.reasonCode).toBe('OTHER');
+      await as(api, customer).post(`${R}/${legacy.body.id}/cancel`).expect(200);
+      for (const body of [
+        { reasonCode: 'NOPE' },
+        { reasonCode: 'OTHER' },
+        {},
+        { reasonCode: 'BEHAVIOUR', notes: 'x'.repeat(2001) },
+      ]) {
+        const res = await as(api, customer).post(R, { bookingId: b.id, ...body });
+        expect([res.status, body]).toEqual([400, body]);
+      }
+      const ok = await as(api, customer).post(R, {
+        bookingId: b.id,
+        reasonCode: 'BEHAVIOUR',
+        notes: 'x'.repeat(2000),
+      });
+      expect(ok.status).toBe(201);
+    });
+
+    it('keeps internal remarks away from customers but visible to staff, with audit history', async () => {
+      const b = await active();
+      const id = (await request(b.id)).body.id as string;
+      const res = await as(api, admin)
+        .post(`${A}/${id}/approve`, { remarks: 'internal only', message: 'Go ahead' })
+        .expect(200);
+      expect(res.body).toMatchObject({
+        decisionRemarks: 'internal only',
+        decisionMessage: 'Go ahead',
+      });
+      const mine = (await as(api, customer).get(`${R}/${id}`)).body;
+      const listed = (await as(api, customer).get(`${R}?bookingId=${b.id}`)).body.data[0];
+      for (const view of [mine, listed]) {
+        expect(view.decisionMessage).toBe('Go ahead');
+        expect(JSON.stringify(view)).not.toContain('internal only');
+      }
+      expect(
+        await api.prisma.auditLog.count({ where: { entityId: id, action: 'replacement.approve' } }),
+      ).toBe(1);
     });
   });
 

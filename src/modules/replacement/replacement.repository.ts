@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
-import type { ReplacementStatusValue } from './dto/replacement.dto';
+import type { ReplacementReasonCode, ReplacementStatusValue } from './dto/replacement.dto';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -10,11 +10,13 @@ export interface ReplacementRecord {
   bookingId: string;
   requestedByUserId: string;
   reason: string;
+  reasonCode: ReplacementReasonCode;
   notes: string | null;
   status: ReplacementStatusValue;
   decidedByUserId: string | null;
   decidedAt: Date | null;
   decisionRemarks: string | null;
+  decisionMessage: string | null;
   replacementBookingId: string | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -25,6 +27,7 @@ export interface ReplacementChange {
   decidedByUserId?: string;
   decidedAt?: Date;
   decisionRemarks?: string | null;
+  decisionMessage?: string | null;
   replacementBookingId?: string;
   completedAt?: Date;
 }
@@ -39,7 +42,13 @@ export class ReplacementRepository {
   }
 
   create(
-    input: { bookingId: string; requestedByUserId: string; reason: string; notes: string | null },
+    input: {
+      bookingId: string;
+      requestedByUserId: string;
+      reason: string;
+      reasonCode: ReplacementReasonCode;
+      notes: string | null;
+    },
     tx: Prisma.TransactionClient,
   ): Promise<ReplacementRecord> {
     return tx.replacementRequest.create({ data: input });

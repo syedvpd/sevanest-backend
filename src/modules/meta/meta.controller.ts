@@ -8,6 +8,7 @@ import { BOOKING_STATUS_LABELS, BUDGET_PERIODS } from '../booking/dto/booking.dt
 import { INTERVIEW_STATUS_LABELS } from '../booking/dto/interview.dto';
 import { LegalService } from '../legal/legal.service';
 import { ENGAGEMENTS } from '../search/search.types';
+import { REPLACEMENT_REASONS } from '../replacement/dto/replacement.dto';
 import { REPORT_REASONS } from '../safety/safety.dto';
 import { TICKET_PRIORITIES } from '../support/dto/support.dto';
 
@@ -48,11 +49,21 @@ class StatusLabelsView {
   interview!: Record<string, string>;
 }
 
+export class ReplacementReasonView {
+  @ApiProperty({ example: 'WORK_QUALITY' }) code!: string;
+  @ApiProperty({ example: 'Quality of work' }) label!: string;
+}
+
 export class ReferenceDataView {
   @ApiProperty({ type: [String] }) engagements!: string[];
   @ApiProperty({ type: [String] }) budgetPeriods!: string[];
   @ApiProperty({ type: [String] }) reportReasons!: string[];
   @ApiProperty({ type: [String] }) ticketPriorities!: string[];
+  @ApiProperty({
+    type: [ReplacementReasonView],
+    description: 'Fixed reasons for POST /replacement-requests (reasonCode), Q-107.',
+  })
+  replacementReasons!: ReplacementReasonView[];
   @ApiProperty({
     example: 10,
     description:
@@ -118,6 +129,7 @@ export class MetaController {
     budgetPeriods: readonly string[];
     reportReasons: readonly string[];
     ticketPriorities: readonly string[];
+    replacementReasons: ReadonlyArray<{ code: string; label: string }>;
     /** Reviews are whole numbers from 1 to this value (RATING_SCALE_MAX). `rating.average` is on the same scale. */
     ratingScaleMax: number;
     /** Longest review text accepted (RATING_REVIEW_MAX_LENGTH). */
@@ -130,6 +142,7 @@ export class MetaController {
       budgetPeriods: BUDGET_PERIODS,
       reportReasons: REPORT_REASONS,
       ticketPriorities: TICKET_PRIORITIES,
+      replacementReasons: REPLACEMENT_REASONS,
       ratingScaleMax: this.config.ratingScaleMax,
       ratingReviewMax: this.config.ratingReviewMax,
       languages: this.languages(),
