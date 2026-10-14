@@ -1,7 +1,6 @@
 import '../support/env-api-integration';
 // Test login is deliberately OFF here, with a number list and code present, to prove the flag (not the list) decides.
 process.env.ALLOW_TEST_OTP = 'false';
-process.env.TEST_OTP_NUMBERS = '+919999900021';
 process.env.TEST_OTP_CODE = '424242';
 
 import { createHmac } from 'node:crypto';
@@ -13,6 +12,7 @@ import {
   loginWithOtp,
   otpFromSms,
   randomIp,
+  randomMobile,
   requestOtp,
 } from '../support/api-app';
 import { ProviderError } from '../../src/integrations/provider-error';
@@ -21,6 +21,9 @@ import { TOKEN_AUDIENCE, TOKEN_ISSUER } from '../../src/modules/auth/token.servi
 import { makeBooking } from '../support/bookings';
 import { as, createArea, onboardWorker, setRequiredChecks } from '../support/workforce';
 
+// Random numbers: the per-number OTP counters live in Redis and survive between runs, so fixed numbers would hit 429 on a re-run.
+const LISTED_MOBILE = randomMobile();
+process.env.TEST_OTP_NUMBERS = LISTED_MOBILE;
 const W = '/api/v1/workers/me';
 const UNKNOWN_ID = '00000000-0000-7000-8000-000000000000';
 const b64 = (value: object | string): string =>
@@ -124,7 +127,7 @@ describe('Worker app blockers (integration)', () => {
     });
 
     it('ignores the fixed test code while ALLOW_TEST_OTP is off, even for a listed number', async () => {
-      const mobile = '+919999900021';
+      const mobile = LISTED_MOBILE;
       const ip = randomIp();
       expect((await requestOtp(api, mobile, 'WORKER', ip)).status).toBe(200);
       expect(api.sms.sent.length).toBeGreaterThan(0); // a real SMS was queued: the fixed-code shortcut was not taken
@@ -152,7 +155,7 @@ describe('Worker app blockers (integration)', () => {
       const local = await createApiApp({ smsProvider: failing });
       try {
         const before = await local.prisma.session.count();
-        const mobile = '+919999900022';
+        const mobile = randomMobile();
         const res = await requestOtp(local, mobile, 'WORKER', randomIp());
         expect(res.status).toBe(503);
         expect(res.body.code).toBe('SMS_NOT_CONFIGURED');
