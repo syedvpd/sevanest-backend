@@ -480,7 +480,7 @@ describe('Worker app blockers (integration)', () => {
       const foreign = await as(api, stranger).post('/api/v1/support/tickets', {
         categoryId: category.body.id,
         subject: 's',
-        description: 'd',
+        description: 'Not my booking at all',
         bookingId: b.id,
       });
       expect(foreign.status).toBe(404);

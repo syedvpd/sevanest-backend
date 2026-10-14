@@ -290,7 +290,7 @@ describe('Reports API (integration)', () => {
             await as(api, customer)
               .post('/api/v1/support/tickets', {
                 categoryId: category.body.id as string,
-                description: 'x',
+                description: 'Support volume sample',
               })
               .expect(201)
           ).body.id as string,
