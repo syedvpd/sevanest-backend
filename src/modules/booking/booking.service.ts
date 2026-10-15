@@ -137,6 +137,15 @@ export function actionsFor(kind: ActorKindValue): BookingAction[] {
   return BOOKING_ACTIONS.filter((a) => RULES[a].some((r) => r.actors.includes(kind)));
 }
 
+/** A worker moved the booking backwards (declined, or their interview was cancelled): the note is the worker's private reason. */
+function workerSteppedBack(event: BookingEventRecord): boolean {
+  return (
+    event.actorKind === 'WORKER' &&
+    event.fromStatus !== event.toStatus &&
+    (event.toStatus === 'NEW_REQUEST' || event.toStatus === 'MATCHED')
+  );
+}
+
 /**
  * Booking lifecycle (SRS 3.5, FRD FM-06/FM-08, state model section 4). Owns the booking tables and the state machine; every
  * change locks the row, records the timeline entry, writes the audit record and the notification outbox event in ONE
@@ -1563,8 +1572,9 @@ export class BookingService {
       to: event.toStatus,
       by: event.actorKind,
       // Staff notes (cancellation reasons, interview outcomes) are part of the customer's own booking history. A worker's own
-      // free text (the reason for declining) is not shown to the customer.
-      note: !forAdmin && event.actorKind === 'WORKER' ? null : event.note,
+      // free text when they step back (decline, interview cancelled: the booking moves back to NEW_REQUEST or MATCHED) is not shown
+      // to the customer; the fixed phrases the system writes for worker actions are.
+      note: !forAdmin && workerSteppedBack(event) ? null : event.note,
       at: event.createdAt,
       ...(forAdmin ? { actorUserId: event.actorUserId } : {}),
     };

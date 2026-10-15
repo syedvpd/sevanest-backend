@@ -37,6 +37,8 @@ describe('Module boundaries (static)', () => {
       verification: ['users', 'workers'],
       search: ['service-categories', 'availability', 'verification', 'worker-photo'],
       'worker-photo': ['workers'],
+      // The customer's own photo reuses the worker-photo checks (types, renditions, error codes); it touches no other business module.
+      'customer-photo': ['worker-photo'],
       shortlist: ['search'],
       matching: ['search', 'availability', 'users'],
       booking: ['users', 'workers', 'service-categories', 'availability', 'search'],
