@@ -337,10 +337,10 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
       }
     });
 
-    it('review limit: published in /reference-data, enforced in characters at the boundary, empty refused, tags not part of V1', async () => {
+    it('review limit: published in /reference-data, enforced in characters at the boundary, empty refused, tags are catalogue codes', async () => {
       const ref = (await api.http().get('/api/v1/reference-data').expect(200)).body;
       expect(ref.ratingReviewMax).toBe(300);
-      expect(ref.ratingTags).toBeUndefined();
+      expect(ref.ratingTags.map((t: { code: string }) => t.code)).toContain('PUNCTUAL');
       const me = await newCustomer();
       const a = await complete(await makeBooking(api, admin, me, area.id, 'ACTIVE'));
       const over = await as(api, me).post(R, {
@@ -361,12 +361,14 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
         bookingId: a.id,
         score: 5,
         review: 'x'.repeat(300),
-        tags: ['punctual'],
+        tags: ['PUNCTUAL'],
       });
       expect(ok.status).toBe(201);
       expect(ok.body.review).toHaveLength(300);
-      expect(ok.body.tags).toBeUndefined();
-      expect((await as(api, me).get(`${R}/${ok.body.id}`).expect(200)).body.tags).toBeUndefined();
+      expect(ok.body.tags).toEqual(['PUNCTUAL']);
+      expect((await as(api, me).get(`${R}/${ok.body.id}`).expect(200)).body.tags).toEqual([
+        'PUNCTUAL',
+      ]);
 
       // characters, not bytes: 300 emoji are accepted, 301 are not
       const emoji = await complete(await makeBooking(api, admin, me, area.id, 'ACTIVE'));

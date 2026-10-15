@@ -111,6 +111,7 @@ export class RatingsService implements OnModuleInit {
             workerId,
             score: dto.score,
             reviewText: dto.review ?? null,
+            tags: dto.tags ?? [],
           },
           tx,
         );
@@ -302,6 +303,7 @@ export class RatingsService implements OnModuleInit {
       bookingId: r.bookingId,
       score: r.score,
       review: r.reviewText,
+      tags: r.tags,
       status: r.status,
       createdAt: r.createdAt,
     };
@@ -315,6 +317,7 @@ export class RatingsService implements OnModuleInit {
       customerUserId: r.customerUserId,
       score: r.score,
       review: r.reviewText,
+      tags: r.tags,
       status: r.status,
       moderatedByUserId: r.moderatedByUserId,
       moderatedAt: r.moderatedAt,

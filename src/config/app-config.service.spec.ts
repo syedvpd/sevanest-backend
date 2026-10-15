@@ -79,3 +79,23 @@ describe('AppConfigService.appPolicy store URL', () => {
     expect(policy.storeUrlWorker).toBeUndefined();
   });
 });
+
+describe('AppConfigService.policyContent', () => {
+  it('returns only what is configured, trimmed, and nothing invented', () => {
+    expect(make({}).policyContent).toEqual({
+      cancellationText: undefined,
+      cancellationUrl: undefined,
+      refundText: undefined,
+      refundUrl: undefined,
+    });
+    const set = make({
+      POLICY_CANCELLATION_TEXT: '  Approved cancellation wording.  ',
+      POLICY_REFUND_URL: 'https://example.test/refunds',
+      POLICY_REFUND_TEXT: '   ',
+    }).policyContent;
+    expect(set.cancellationText).toBe('Approved cancellation wording.');
+    expect(set.refundUrl).toBe('https://example.test/refunds');
+    expect(set.refundText).toBeUndefined();
+    expect(set.cancellationUrl).toBeUndefined();
+  });
+});

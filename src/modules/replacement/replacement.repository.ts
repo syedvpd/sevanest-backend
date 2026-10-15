@@ -12,6 +12,7 @@ export interface ReplacementRecord {
   reason: string;
   reasonCode: ReplacementReasonCode;
   notes: string | null;
+  neededFrom: Date | null;
   status: ReplacementStatusValue;
   decidedByUserId: string | null;
   decidedAt: Date | null;
@@ -48,6 +49,7 @@ export class ReplacementRepository {
       reason: string;
       reasonCode: ReplacementReasonCode;
       notes: string | null;
+      neededFrom: Date | null;
     },
     tx: Prisma.TransactionClient,
   ): Promise<ReplacementRecord> {

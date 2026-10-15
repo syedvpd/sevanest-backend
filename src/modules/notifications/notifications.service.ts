@@ -75,8 +75,27 @@ export function placeholdersOf(text: string): string[] {
   return [...text.matchAll(PLACEHOLDER)].map((m) => m[1]);
 }
 
-/** Where a tap on an inbox item should lead, from the ids in its parameters (deep link). */
-export function routeFor(params: Record<string, string>): { type: string; id: string } | null {
+/**
+ * Events whose own entity has a screen of its own: the route points at that entity when the event really carries its id. Every
+ * other event (and a missing id) falls back to the booking, then ticket, then the first id present.
+ */
+const ENTITY_ROUTES: Record<string, { param: string; type: string }> = {
+  PAYMENT_SUCCEEDED: { param: 'paymentId', type: 'payment' },
+  PAYMENT_FAILED: { param: 'paymentId', type: 'payment' },
+  PAYMENT_UNDER_REVIEW: { param: 'paymentId', type: 'payment' },
+  REPLACEMENT_UPDATE: { param: 'replacementId', type: 'replacement' },
+  INTERVIEW_REQUESTED: { param: 'interviewId', type: 'interview' },
+  INTERVIEW_RESPONDED: { param: 'interviewId', type: 'interview' },
+  INTERVIEW_CANCELLED: { param: 'interviewId', type: 'interview' },
+};
+
+/** Where a tap on an inbox item or a push should lead, from the event and the ids in its parameters (deep link). */
+export function routeFor(
+  params: Record<string, string>,
+  event?: string,
+): { type: string; id: string } | null {
+  const own = event ? ENTITY_ROUTES[event] : undefined;
+  if (own && params[own.param]) return { type: own.type, id: params[own.param] };
   if (params.bookingId) return { type: 'booking', id: params.bookingId };
   if (params.ticketId) return { type: 'ticket', id: params.ticketId };
   if (params.replacementId) return { type: 'replacement', id: params.replacementId };
@@ -331,7 +350,7 @@ export class NotificationsService {
     notification: NotificationRecord,
     target: { text: string; title: string; tokens: string[] },
   ): Promise<string | null> {
-    const route = routeFor(notification.params);
+    const route = routeFor(notification.params, notification.eventCode);
     const data: Record<string, string> = {
       notificationId: notification.id,
       event: notification.eventCode,
@@ -548,7 +567,7 @@ export class NotificationsService {
         event: n.eventCode,
         title: n.template?.title ? render(n.template.title, n.params) : null,
         body: n.template ? render(n.template.body, n.params) : '',
-        route: routeFor(n.params),
+        route: routeFor(n.params, n.eventCode),
         readAt: n.readAt,
         createdAt: n.createdAt,
       })),

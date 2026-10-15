@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsIn, IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { IsEnum, IsIn, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -57,6 +57,15 @@ export class CreateReplacementDto {
   @IsString()
   @Length(1, 2000)
   notes?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-03',
+    description:
+      'Date the customer wants the replacement from (YYYY-MM-DD, a real date, today or later in India). Informational only: it does not change the replacement booking, its start date, price or the review time. 400 otherwise.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'neededFrom must be a date in YYYY-MM-DD form' })
+  neededFrom?: string;
 }
 
 export class DecisionDto {
@@ -108,6 +117,13 @@ export class ReplacementView {
   @ApiProperty({ enum: REPLACEMENT_REASON_CODES }) reasonCode!: ReplacementReasonCode;
   @ApiProperty() reason!: string;
   @ApiProperty({ nullable: true, type: String }) notes!: string | null;
+  @ApiProperty({
+    nullable: true,
+    example: '2026-11-03',
+    description: 'The date the customer asked for (informational), YYYY-MM-DD.',
+    type: String,
+  })
+  neededFrom!: string | null;
   @ApiProperty({
     nullable: true,
     description: 'Customer-facing decision message written by staff (Q-110).',

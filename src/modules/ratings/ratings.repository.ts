@@ -12,6 +12,7 @@ export interface RatingRecord {
   workerId: string;
   score: number;
   reviewText: string | null;
+  tags: string[];
   status: RatingStatusValue;
   moderatedByUserId: string | null;
   moderatedAt: Date | null;
@@ -42,6 +43,7 @@ export class RatingsRepository {
       workerId: string;
       score: number;
       reviewText: string | null;
+      tags: string[];
     },
     tx: Prisma.TransactionClient,
   ): Promise<RatingRecord> {

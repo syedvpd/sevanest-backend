@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { parseFcmServiceAccount } from '../integrations/notifications/fcm.provider';
 import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
+  MaxLength,
   IsBoolean,
   IsEnum,
   IsIn,
@@ -601,6 +602,23 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   SUPPORT_CONTACT_EMAIL?: string;
+
+  /** Approved cancellation / refund policy shown by the apps (GET /app-config policy). Unset = not published. Text is supplied by the client. */
+  @IsOptional()
+  @MaxLength(4000)
+  POLICY_CANCELLATION_TEXT?: string;
+
+  @IsOptional()
+  @MaxLength(4000)
+  POLICY_REFUND_TEXT?: string;
+
+  @IsOptional()
+  @Matches(/^https:\/\/\S+$/, { message: 'POLICY_CANCELLATION_URL must be an https URL' })
+  POLICY_CANCELLATION_URL?: string;
+
+  @IsOptional()
+  @Matches(/^https:\/\/\S+$/, { message: 'POLICY_REFUND_URL must be an https URL' })
+  POLICY_REFUND_URL?: string;
 
   /** Firebase service-account JSON (one line) for PUSH_PROVIDER=fcm. Secret: environment only. */
   @ValidateIf((o: EnvironmentVariables) => o.PUSH_PROVIDER === MessagingProviderKind.Fcm)

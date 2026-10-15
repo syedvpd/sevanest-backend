@@ -6,6 +6,7 @@ import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { NotificationEvent } from '../../common/outbox/notification-events';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { Page, skipFor } from '../../common/pagination/pagination';
+import { indiaToday, isRealDate } from '../../common/time/india';
 import type { Prisma } from '../../generated/prisma/client';
 import { BookingLifecycleHooks } from '../booking/booking-hooks';
 import { BookingActor, BookingService } from '../booking/booking.service';
@@ -101,6 +102,17 @@ export class ReplacementService implements OnModuleInit {
         [{ field: 'reason', messages: ['reason is required when the reason code is OTHER'] }],
       );
     }
+    if (
+      dto.neededFrom !== undefined &&
+      (!isRealDate(dto.neededFrom) || dto.neededFrom < indiaToday())
+    ) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'neededFrom', messages: ['neededFrom must be a real date, today or later'] }],
+      );
+    }
     const reasonText = dto.reason ?? REPLACEMENT_REASONS.find((r) => r.code === reasonCode)!.label;
     const verdict = await this.policy.evaluate(booking);
     if (!verdict.eligible) {
@@ -120,6 +132,7 @@ export class ReplacementService implements OnModuleInit {
             reason: reasonText,
             reasonCode,
             notes: dto.notes ?? null,
+            neededFrom: dto.neededFrom ? new Date(`${dto.neededFrom}T00:00:00.000Z`) : null,
           },
           tx,
         );
@@ -489,6 +502,7 @@ export class ReplacementService implements OnModuleInit {
       reasonCode: r.reasonCode,
       reason: r.reason,
       notes: r.notes,
+      neededFrom: r.neededFrom ? r.neededFrom.toISOString().slice(0, 10) : null,
       decisionMessage: r.decisionMessage,
       replacementBookingId: r.replacementBookingId,
       createdAt: r.createdAt,

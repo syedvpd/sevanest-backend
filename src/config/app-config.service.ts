@@ -133,6 +133,21 @@ export class AppConfigService {
       },
     };
   }
+  /** Approved policy content the client supplied; blank counts as not configured (no text is ever invented). */
+  get policyContent(): {
+    cancellationText?: string;
+    cancellationUrl?: string;
+    refundText?: string;
+    refundUrl?: string;
+  } {
+    return {
+      cancellationText: this.get('POLICY_CANCELLATION_TEXT')?.trim() || undefined,
+      cancellationUrl: this.get('POLICY_CANCELLATION_URL')?.trim() || undefined,
+      refundText: this.get('POLICY_REFUND_TEXT')?.trim() || undefined,
+      refundUrl: this.get('POLICY_REFUND_URL')?.trim() || undefined,
+    };
+  }
+
   get legal(): {
     termsVersion?: string;
     privacyVersion?: string;

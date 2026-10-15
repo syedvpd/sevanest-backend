@@ -1,6 +1,7 @@
 import { Controller, Get, Header } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { ApiModelResponse } from '../../common/swagger/api-responses';
+import { RATING_TAGS } from '../../common/rating/rating-tags';
 import { LegalCurrentView } from '../legal/legal.dto';
 import { Public } from '../../common/decorators/auth.decorators';
 import { AppConfigService } from '../../config/app-config.service';
@@ -43,6 +44,33 @@ class SupportContactView {
   @ApiProperty({ nullable: true, type: String }) email!: string | null;
 }
 
+class PolicyContentView {
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Approved cancellation policy text; null until the client supplies it.',
+  })
+  cancellationText!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'https link to the full cancellation policy; null when not configured.',
+  })
+  cancellationUrl!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Approved refund policy text; null until the client supplies it.',
+  })
+  refundText!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'https link to the full refund policy; null when not configured.',
+  })
+  refundUrl!: string | null;
+}
+
 export class AppConfigView {
   @ApiProperty({
     type: MinVersionView,
@@ -53,6 +81,12 @@ export class AppConfigView {
   @ApiProperty({ description: 'true = show the maintenance screen.' }) maintenance!: boolean;
   @ApiProperty({ type: SupportContactView }) support!: SupportContactView;
   @ApiProperty({ type: LegalCurrentView }) legal!: LegalCurrentView;
+  @ApiProperty({
+    type: PolicyContentView,
+    description:
+      'Approved cancellation and refund policy, exactly as configured. Every field is null until the client supplies it; the server never writes policy text itself.',
+  })
+  policy!: PolicyContentView;
   @ApiProperty({ type: [String], example: ['en'] }) languages!: string[];
 }
 
@@ -66,6 +100,12 @@ class StatusLabelsView {
 export class ReplacementReasonView {
   @ApiProperty({ example: 'WORK_QUALITY' }) code!: string;
   @ApiProperty({ example: 'Quality of work' }) label!: string;
+}
+
+export class RatingTagView {
+  @ApiProperty({ example: 'PUNCTUAL' }) code!: string;
+  @ApiProperty({ example: 'Punctual' }) label!: string;
+  @ApiProperty({ enum: ['POSITIVE', 'NEGATIVE'] }) sentiment!: string;
 }
 
 export class ReferenceDataView {
@@ -86,10 +126,15 @@ export class ReferenceDataView {
   ratingScaleMax!: number;
   @ApiProperty({
     example: 300,
-    description:
-      'Longest review text the server accepts (RATING_REVIEW_MAX_LENGTH, default 300). Rating tags are not part of V1: no tag catalogue is defined (Q-103), so none is returned or accepted.',
+    description: 'Longest review text the server accepts (RATING_REVIEW_MAX_LENGTH, default 300).',
   })
   ratingReviewMax!: number;
+  @ApiProperty({
+    type: [RatingTagView],
+    description:
+      'Fixed rating tag catalogue (Q-103, pending client confirmation). Send the `code` values in `tags` of POST /ratings; `label` is display text. Any tag is accepted with any score.',
+  })
+  ratingTags!: RatingTagView[];
   @ApiProperty({ type: [String] }) languages!: string[];
   @ApiProperty({ type: StatusLabelsView }) statusLabels!: StatusLabelsView;
 }
@@ -117,9 +162,16 @@ export class MetaController {
     maintenance: boolean;
     support: { phone: string | null; email: string | null };
     legal: ReturnType<LegalService['current']>;
+    policy: {
+      cancellationText: string | null;
+      cancellationUrl: string | null;
+      refundText: string | null;
+      refundUrl: string | null;
+    };
     languages: string[];
   } {
     const policy = this.config.appPolicy;
+    const content = this.config.policyContent;
     return {
       customer: {
         minVersion: policy.minVersionCustomer ?? null,
@@ -132,6 +184,12 @@ export class MetaController {
       maintenance: policy.maintenance,
       support: { phone: policy.supportPhone ?? null, email: policy.supportEmail ?? null },
       legal: this.legal.current(),
+      policy: {
+        cancellationText: content.cancellationText ?? null,
+        cancellationUrl: content.cancellationUrl ?? null,
+        refundText: content.refundText ?? null,
+        refundUrl: content.refundUrl ?? null,
+      },
       languages: this.languages(),
     };
   }
@@ -154,6 +212,7 @@ export class MetaController {
     ratingScaleMax: number;
     /** Longest review text accepted (RATING_REVIEW_MAX_LENGTH). */
     ratingReviewMax: number;
+    ratingTags: ReadonlyArray<{ code: string; label: string; sentiment: string }>;
     languages: string[];
     statusLabels: { booking: Record<string, string>; interview: Record<string, string> };
   } {
@@ -165,6 +224,7 @@ export class MetaController {
       replacementReasons: REPLACEMENT_REASONS,
       ratingScaleMax: this.config.ratingScaleMax,
       ratingReviewMax: this.config.ratingReviewMax,
+      ratingTags: RATING_TAGS,
       languages: this.languages(),
       statusLabels: { booking: BOOKING_STATUS_LABELS, interview: INTERVIEW_STATUS_LABELS },
     };

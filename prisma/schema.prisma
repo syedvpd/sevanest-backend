@@ -1038,6 +1038,8 @@ model ReplacementRequest {
   reason               String
   reasonCode           ReplacementReason @default(OTHER) @map("reason_code")
   notes                String?
+  /// Date the customer wants the replacement from (informational: it does not change the booking, price or start rules).
+  neededFrom           DateTime?         @map("needed_from") @db.Date
   status               ReplacementStatus @default(REQUESTED)
   decidedByUserId      String?           @map("decided_by_user_id") @db.Uuid
   decidedAt            DateTime?         @map("decided_at") @db.Timestamptz(6)
@@ -1075,6 +1077,8 @@ model Rating {
   /// 1..RATING_SCALE_MAX (the upper bound is configuration, Q-58).
   score             Int          @db.SmallInt
   reviewText        String?      @map("review_text")
+  /// Codes from the fixed rating tag catalogue (common/rating/rating-tags.ts); empty when none were chosen.
+  tags              String[]     @default([])
   status            RatingStatus @default(VISIBLE)
   moderatedByUserId String?      @map("moderated_by_user_id") @db.Uuid
   moderatedAt       DateTime?    @map("moderated_at") @db.Timestamptz(6)

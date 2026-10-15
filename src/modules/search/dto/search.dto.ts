@@ -160,6 +160,11 @@ export class WorkerReviewView {
     type: String,
   })
   comment!: string | null;
+  @ApiProperty({
+    type: [String],
+    description: 'Tag codes the customer chose (GET /reference-data ratingTags); empty when none.',
+  })
+  tags!: string[];
   @ApiProperty() createdAt!: Date;
   @ApiProperty({
     nullable: true,

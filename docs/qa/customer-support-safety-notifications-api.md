@@ -116,7 +116,7 @@ Notification part: `title`, `body` from the admin-configured PUSH template (plac
 |---|---|---|
 | `notificationId` | always | id of the notification row |
 | `event` | always | event code, e.g. `TICKET_UPDATE` |
-| `routeType` | event names an entity | `booking` or `ticket` for current events (see §6) |
+| `routeType` | event names an entity | `booking`, `ticket`, `payment`, `replacement` or `interview` (see §6) |
 | `routeId` | with `routeType` | entity uuid |
 
 No names, phone numbers, addresses, document data, report text or ticket text is sent. Delivery is asynchronous (outbox → queue → worker): a notification row existing does **not** mean the push was delivered; `GET /admin/notifications` shows `QUEUED/SENT/FAILED/SKIPPED` (`SENT` = FCM accepted it, not that a device displayed it).
@@ -125,20 +125,20 @@ No names, phone numbers, addresses, document data, report text or ticket text is
 
 `GET /notifications?unreadOnly=&page=&limit=` → items `{id, event, title, body, route: {type,id}|null, readAt, createdAt}`, newest first. The inbox only holds events that have an **active IN_APP template** (admin-configured; defaults in `default-templates.ts`).
 
-`route` is derived from the event's ids, first match wins: `bookingId` → `booking`; `ticketId` → `ticket`; `replacementId` → `replacement`; `paymentId` → `payment`; otherwise `null`.
+`route` (and the push `routeType`/`routeId`) is derived from the event and its ids (2026-10-15, Q-110). Events that have a screen of their own route to that entity **when the event really carries its id**: payment events -> `payment` + `paymentId`; REPLACEMENT_UPDATE -> `replacement` + `replacementId`; INTERVIEW_REQUESTED / INTERVIEW_RESPONDED / INTERVIEW_CANCELLED -> `interview` + `interviewId`. Every other event: `bookingId` -> `booking`; `ticketId` -> `ticket`; `replacementId` -> `replacement`; `paymentId` -> `payment`; otherwise `null`. A missing entity id falls back, so no id is ever invented. Route types emitted: `booking`, `ticket`, `payment`, `replacement`, `interview`. Resolve with GET /payments/{id}, GET /replacement-requests/{id}, GET /interviews/{id} (workers: their own interview endpoints). The push `data` still carries only `notificationId`, `event`, `routeType`, `routeId` (strings, ids only: no amounts, notes or personal data). Local tests only; FCM delivery is not verified.
 
 | Event (emitted today) | Recipient | `route` |
 |---|---|---|
 | JOB_OPPORTUNITY, INTERVIEW_TRIAL_SCHEDULED, BOOKING_CONFIRMED, BOOKING_MATCHED, WORKER_ACCEPTED, WORKER_DECLINED, INTERVIEW_OUTCOME, BOOKING_PAYMENT_DUE, BOOKING_STARTED, BOOKING_COMPLETED, BOOKING_CANCELLED, BOOKING_SLOT_PROPOSED, BOOKING_SLOT_ANSWERED | customer or worker | `booking` |
-| INTERVIEW_REQUESTED, INTERVIEW_RESPONDED, INTERVIEW_CANCELLED | customer or worker | `booking` (`interviewId` is a parameter but not routed; there is **no `interview` route type**) |
-| PAYMENT_SUCCEEDED, PAYMENT_FAILED, PAYMENT_UNDER_REVIEW | customer | `booking` (payment events carry `bookingId`, which wins; `payment` is not emitted) |
-| REPLACEMENT_UPDATE | customer | `booking` (same reason; `replacement` is not emitted) |
+| INTERVIEW_REQUESTED, INTERVIEW_RESPONDED, INTERVIEW_CANCELLED | customer or worker | `interview` (`interviewId`) |
+| PAYMENT_SUCCEEDED, PAYMENT_FAILED, PAYMENT_UNDER_REVIEW | customer | `payment` (`paymentId`) |
+| REPLACEMENT_UPDATE | customer | `replacement` (`replacementId`) |
 | TICKET_UPDATE, TICKET_MESSAGE | ticket creator | `ticket` |
 | VERIFICATION_APPROVED, VERIFICATION_REJECTED, RECHECK_DUE | worker | `null` |
 | PAYMENT_EXCEPTION_ALERT | staff | `payment`/`null` (staff only) |
 | RATING_RECEIVED, ATTENDANCE_EXCEPTION | — | **defined with default wording, but nothing emits them** |
 
-There is **no rating-prompt** notification or route. Changing route types (e.g. emitting `interview`, `payment`, `replacement`) would alter what the shipped app receives and needs a decision (Q-110).
+There is **no rating-prompt** notification or route. The new route types change what older app builds receive for these events: an app that does not know `payment`, `replacement` or `interview` should fall back to opening the booking (Q-110 still awaits the client).
 
 ### Unread count and row actions
 

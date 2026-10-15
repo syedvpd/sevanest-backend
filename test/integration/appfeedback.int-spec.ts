@@ -60,7 +60,7 @@ describe('Customer app gaps (integration)', () => {
       const body = res.body as { data: Array<Record<string, unknown>>; meta: object };
       expect(body.meta).toEqual({ page: 1, limit: 20, total: 1 });
       expect(Object.keys(body.data[0]).sort()).toEqual(
-        ['comment', 'createdAt', 'reviewerFirstName', 'score'].sort(),
+        ['comment', 'createdAt', 'reviewerFirstName', 'score', 'tags'].sort(),
       );
       expect(body.data[0]).toMatchObject({
         score: 4,

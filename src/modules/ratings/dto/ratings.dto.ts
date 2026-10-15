@@ -1,7 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Min,
+} from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
+import { RATING_TAG_CODES } from '../../../common/rating/rating-tags';
 import {
   RATING_ELIGIBILITY_CODES,
   type RatingEligibilityCode,
@@ -47,6 +60,19 @@ export class CreateRatingDto {
   @IsString()
   @Length(1, REVIEW_MAX_LENGTH)
   review?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    enum: RATING_TAG_CODES,
+    description:
+      'Optional tag codes from GET /reference-data ratingTags (Q-103, catalogue pending client confirmation). Unknown codes and duplicates are 400; null or [] means none. Any tag is accepted with any score.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(RATING_TAG_CODES.length)
+  @ArrayUnique()
+  @IsIn(RATING_TAG_CODES, { each: true })
+  tags?: string[] | null;
 }
 
 export class ModerationDto {
@@ -83,6 +109,12 @@ export class RatingView {
   @ApiProperty() score!: number;
   @ApiProperty({ nullable: true, type: String }) review!: string | null;
   @ApiProperty({
+    type: [String],
+    enum: RATING_TAG_CODES,
+    description: 'Chosen tag codes; empty when none.',
+  })
+  tags!: string[];
+  @ApiProperty({
     enum: RATING_STATUSES,
     description: 'HIDDEN = removed from the worker profile by an administrator.',
   })
@@ -116,6 +148,7 @@ export class AdminRatingView {
   @ApiProperty() customerUserId!: string;
   @ApiProperty() score!: number;
   @ApiProperty({ nullable: true, type: String }) review!: string | null;
+  @ApiProperty({ type: [String], enum: RATING_TAG_CODES }) tags!: string[];
   @ApiProperty({ enum: RATING_STATUSES }) status!: RatingStatusValue;
   @ApiProperty({ nullable: true, type: String }) moderatedByUserId!: string | null;
   @ApiProperty({ nullable: true, type: Date }) moderatedAt!: Date | null;

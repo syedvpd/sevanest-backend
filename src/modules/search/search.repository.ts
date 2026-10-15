@@ -147,6 +147,7 @@ export class SearchRepository {
     items: Array<{
       score: number;
       comment: string | null;
+      tags: string[];
       createdAt: Date;
       reviewerFirstName: string | null;
     }>;
@@ -157,11 +158,12 @@ export class SearchRepository {
         Array<{
           score: number;
           comment: string | null;
+          tags: string[];
           createdAt: Date;
           reviewerFirstName: string | null;
         }>
       >(Prisma.sql`
-        SELECT r.score::int AS score, r.review_text AS comment, r.created_at AS "createdAt",
+        SELECT r.score::int AS score, r.review_text AS comment, COALESCE(r.tags, ARRAY[]::text[]) AS tags, r.created_at AS "createdAt",
                NULLIF(split_part(btrim(cp.name), ' ', 1), '') AS "reviewerFirstName"
         FROM ratings r
         LEFT JOIN customer_profiles cp ON cp.user_id = r.customer_user_id
