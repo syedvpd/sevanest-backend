@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type WorkerOnboardingStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
+import { verifiedWorkerCondition } from '../verification/verification-eligibility';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -110,6 +111,7 @@ export interface WorkerListFilter {
   createdTo?: Date;
   areaId?: string;
   minRating?: number;
+  verified?: boolean;
 }
 
 export type ProfileScalarUpdate = Partial<
@@ -275,8 +277,17 @@ export class WorkersRepository {
         WHERE rating_count > 0 AND rating_sum::float8 / rating_count >= ${filter.minRating}`);
       ratedIds = rated.map((r) => r.id);
     }
+    let verifiedIds: string[] | undefined;
+    if (filter.verified !== undefined) {
+      const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT wp.id FROM worker_profiles wp WHERE ${verifiedWorkerCondition('wp.id')}`);
+      verifiedIds = rows.map((r) => r.id);
+    }
     const where: Prisma.WorkerProfileWhereInput = {
       ...(ratedIds ? { id: { in: ratedIds } } : {}),
+      ...(verifiedIds
+        ? { AND: [{ id: filter.verified ? { in: verifiedIds } : { notIn: verifiedIds } }] }
+        : {}),
       ...(filter.areaId ? { preferredAreas: { some: { areaId: filter.areaId } } } : {}),
       ...(filter.onboardingStatus ? { onboardingStatus: filter.onboardingStatus } : {}),
       ...(filter.userId ? { userId: filter.userId } : {}),

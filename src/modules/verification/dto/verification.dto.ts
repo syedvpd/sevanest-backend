@@ -5,9 +5,11 @@ import {
   ArrayUnique,
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Matches,
   Max,
@@ -103,6 +105,32 @@ export class VerificationQueueQuery extends PageQueryDto {
   @IsOptional()
   @IsEnum(CHECK_TYPES)
   checkType?: CheckType;
+
+  @ApiPropertyOptional({
+    enum: ['me'],
+    description:
+      'My Reviews: only checks assigned to the signed-in reviewer (resolved from the token, never from the request). Cannot be combined with reviewerId.',
+  })
+  @IsOptional()
+  @IsIn(['me'])
+  assignedTo?: 'me';
+
+  @ApiPropertyOptional({ description: 'Only checks assigned to this reviewer (user id).' })
+  @IsOptional()
+  @IsUUID()
+  reviewerId?: string;
+
+  @ApiPropertyOptional({ description: 'Only workers who offer this service category.' })
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ description: 'Part of the worker name (case-insensitive).' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 100)
+  search?: string;
 }
 
 export class DocumentView {
@@ -161,10 +189,40 @@ export class DocumentUploadResponse {
 
 export class QueueItem {
   @ApiProperty() checkId!: string;
-  @ApiProperty() workerId!: string;
+  @ApiProperty({
+    description:
+      'WorkerProfile id. It is also the application identity: there is no separate application number.',
+  })
+  workerId!: string;
+  @ApiProperty() workerName!: string;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description:
+      'When the worker submitted the profile for verification (application submission time).',
+  })
+  applicationSubmittedAt!: Date | null;
   @ApiProperty({ enum: CHECK_TYPES }) checkType!: CheckType;
   @ApiProperty({ enum: CHECK_STATUSES }) status!: StoredCheckStatus;
-  @ApiProperty({ nullable: true, type: Date }) submittedAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description: 'When this check was submitted for review.',
+  })
+  submittedAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Persisted reviewer (user id), set by start-review. Null = unassigned. Admin display names are not stored.',
+  })
+  reviewerUserId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description: 'When the reviewer took the check into review.',
+  })
+  claimedAt!: Date | null;
   @ApiProperty() uploadedDocuments!: number;
 }
 
@@ -179,6 +237,7 @@ export class EventView {
 export class AdminCheckView extends CheckView {
   @ApiProperty() checkId!: string;
   @ApiProperty({ nullable: true, type: String }) reviewerUserId!: string | null;
+  @ApiProperty({ nullable: true, type: Date }) claimedAt!: Date | null;
   @ApiProperty({ type: [EventView], description: 'Full history, oldest first.' })
   history!: EventView[];
 }
@@ -192,7 +251,14 @@ export class AdminWorkerVerificationResponse {
 
 export class DocumentLinkResponse {
   @ApiProperty({ description: 'Short-lived signed URL. Do not log or share it.' }) url!: string;
-  @ApiProperty() expiresAt!: Date;
+  @ApiProperty({ description: 'Same value as url (the name the admin web app asks for).' })
+  signedUrl!: string;
+  @ApiProperty({ description: 'ISO-8601 instant at which the link stops working.' })
+  expiresAt!: Date;
+  @ApiProperty({
+    description: 'Seconds from now until expiresAt, computed when the link was issued.',
+  })
+  expiresInSeconds!: number;
 }
 
 export class RequirementsResponse {

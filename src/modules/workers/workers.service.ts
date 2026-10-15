@@ -430,6 +430,7 @@ export class WorkersService {
         accountStatus: query.accountStatus,
         areaId: query.areaId,
         minRating: query.minRating,
+        verified: query.verified,
         ...createdRange(query.createdFrom, query.createdTo),
       },
       skipFor(query),

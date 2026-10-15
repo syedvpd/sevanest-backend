@@ -72,3 +72,6 @@ Re-verified all 57 asks against code and tests (`docs/qa/customer-app-backend-ga
 
 ## 2026-10-15 worker-app integration audit
 Built: check types `SKILL_CERTIFICATE`/`LICENSE`, criminal self-declaration (`PUT /workers/me/criminal-declaration`, admin detail shows it), migration `20261031090000` (31 in total), `docs/openapi.json` (local export). Decision D-87, questions Q-117..Q-120. Evidence (local fresh DB): unit 319/319, integration 943/945 in the full run (2 failures explained and fixed; the 3 affected specs rerun 41/41). SMS never sent (`SMS_PROVIDER=disabled` locally); FCM configured but no live push test. Report: `docs/qa/worker-app-backend-integration-audit.md`. Nothing committed.
+
+## 2026-10-15 worker verification API gap work
+Audit in `docs/qa/worker-verification-api-gap-audit.md`. Built: reviewer assignment on start-review (+ `claimed_at`, migration `20261101090000`, 32 in total), queue filters (`assignedTo=me`, `reviewerId`, category, name) and worker/assignment fields, document link `signedUrl`/`expiresInSeconds`, `GET /admin/workers?verified=`. Not built (no policy, D-89, Q-123..Q-129): dossier-level decision, application number, completed event, activation, SLA. Evidence: see the audit. Nothing committed.

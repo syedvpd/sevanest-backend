@@ -310,6 +310,17 @@ export class AdminWorkerListQuery extends PageQueryDto {
   minRating?: number;
 
   @ApiPropertyOptional({
+    description:
+      'true = only fully verified workers (every required check approved, none due for re-check); false = the others. Verified workers are the ones awaiting any operations follow-up: verification does not change the account status.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  verified?: boolean;
+
+  @ApiPropertyOptional({
     example: '2026-11-01',
     description: 'Registered on or after (India date).',
   })

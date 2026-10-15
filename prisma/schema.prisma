@@ -543,6 +543,8 @@ model WorkerVerificationCheck {
   submittedAt        DateTime?               @map("submitted_at") @db.Timestamptz(6)
   reviewedAt         DateTime?               @map("reviewed_at") @db.Timestamptz(6)
   reviewerUserId     String?                 @map("reviewer_user_id") @db.Uuid
+  /// When the current reviewer took the check into review (start-review). Null while unassigned.
+  claimedAt          DateTime?               @map("claimed_at") @db.Timestamptz(6)
   remarks            String?
   /// Date (India) on which an approval stops counting and a re-check is due. Optional (FM-05).
   recheckAt          DateTime?               @map("recheck_at") @db.Date

@@ -131,9 +131,16 @@ export class AdminVerificationController {
   @Get('queue')
   @ApiPageResponse(QueueItem)
   @Permissions(PermissionCode.VERIFICATION_REVIEW)
-  @ApiOperation({ summary: 'Verification queue, oldest submission first (paginated)' })
-  queue(@Query() query: VerificationQueueQuery): Promise<Page<QueueItem>> {
-    return this.verification.queue(query);
+  @ApiOperation({
+    summary: 'Verification queue, oldest submission first (paginated)',
+    description:
+      'Filters: status, checkType, categoryId, search (worker name), assignedTo=me (My Reviews, from the token) or reviewerId. Order: check submission time, then id.',
+  })
+  async queue(
+    @Query() query: VerificationQueueQuery,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<Page<QueueItem>> {
+    return this.verification.queue(query, await this.actor(admin));
   }
 
   @Get('requirements')
@@ -163,7 +170,12 @@ export class AdminVerificationController {
   @ApiModelResponse(AdminWorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.VERIFICATION_REVIEW)
-  @ApiOperation({ summary: 'Take a submitted check into review (SUBMITTED to IN_REVIEW)' })
+  @ApiOperation({
+    summary:
+      'Claim a check for review (SUBMITTED to IN_REVIEW; persists the reviewer and claim time)',
+    description:
+      'Repeating on my own claim changes nothing. 409 CHECK_ALREADY_ASSIGNED when another reviewer holds it; there is no reassignment (no rule is defined).',
+  })
   async startReview(
     @Param('checkId', ParseUUIDPipe) checkId: string,
     @CurrentUser() admin: AuthenticatedUser,

@@ -14,6 +14,7 @@ export interface CheckRecord {
   submittedAt: Date | null;
   reviewedAt: Date | null;
   reviewerUserId: string | null;
+  claimedAt: Date | null;
   remarks: string | null;
   /** YYYY-MM-DD (India date) or null. */
   recheckAt: string | null;
@@ -53,6 +54,7 @@ function toCheck(row: CheckRow): CheckRecord {
     submittedAt: row.submittedAt,
     reviewedAt: row.reviewedAt,
     reviewerUserId: row.reviewerUserId,
+    claimedAt: row.claimedAt,
     remarks: row.remarks,
     recheckAt: row.recheckAt ? row.recheckAt.toISOString().slice(0, 10) : null,
   };
@@ -63,6 +65,7 @@ export interface CheckUpdate {
   submittedAt?: Date | null;
   reviewedAt?: Date | null;
   reviewerUserId?: string | null;
+  claimedAt?: Date | null;
   remarks?: string | null;
   recheckAt?: string | null;
 }
@@ -168,6 +171,7 @@ export class VerificationRepository {
         submittedAt: data.submittedAt,
         reviewedAt: data.reviewedAt,
         reviewerUserId: data.reviewerUserId,
+        claimedAt: data.claimedAt,
         remarks: data.remarks,
         recheckAt:
           data.recheckAt === undefined
@@ -217,13 +221,29 @@ export class VerificationRepository {
   }
 
   async queue(
-    filter: { statuses: StoredCheckStatus[]; checkType?: CheckType },
+    filter: {
+      statuses: StoredCheckStatus[];
+      checkType?: CheckType;
+      reviewerUserId?: string;
+      categoryId?: string;
+      search?: string;
+    },
     skip: number,
     take: number,
-  ): Promise<{ items: CheckRecord[]; total: number; uploadedByCheck: Map<string, number> }> {
+  ): Promise<{
+    items: Array<CheckRecord & { workerName: string; applicationSubmittedAt: Date | null }>;
+    total: number;
+    uploadedByCheck: Map<string, number>;
+  }> {
+    const worker: Prisma.WorkerProfileWhereInput = {
+      ...(filter.categoryId ? { skills: { some: { categoryId: filter.categoryId } } } : {}),
+      ...(filter.search ? { name: { contains: filter.search, mode: 'insensitive' as const } } : {}),
+    };
     const where: Prisma.WorkerVerificationCheckWhereInput = {
       status: { in: filter.statuses },
       ...(filter.checkType ? { checkType: filter.checkType } : {}),
+      ...(filter.reviewerUserId ? { reviewerUserId: filter.reviewerUserId } : {}),
+      ...(Object.keys(worker).length > 0 ? { worker: { is: worker } } : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.workerVerificationCheck.findMany({
@@ -231,6 +251,7 @@ export class VerificationRepository {
         orderBy: [{ submittedAt: 'asc' }, { id: 'asc' }],
         skip,
         take,
+        include: { worker: { select: { name: true, submittedAt: true } } },
       }),
       this.prisma.workerVerificationCheck.count({ where }),
     ]);
@@ -242,7 +263,11 @@ export class VerificationRepository {
         })
       : [];
     return {
-      items: rows.map(toCheck),
+      items: rows.map((r) => ({
+        ...toCheck(r),
+        workerName: r.worker.name,
+        applicationSubmittedAt: r.worker.submittedAt,
+      })),
       total,
       uploadedByCheck: new Map(counts.map((c) => [c.checkId, c._count._all])),
     };

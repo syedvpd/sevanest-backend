@@ -57,6 +57,7 @@ export const VerificationErrorCode = {
   CHECK_NOT_EDITABLE: 'CHECK_NOT_EDITABLE',
   CHECK_INCOMPLETE: 'CHECK_INCOMPLETE',
   CHECK_ALREADY_APPROVED: 'CHECK_ALREADY_APPROVED',
+  CHECK_ALREADY_ASSIGNED: 'CHECK_ALREADY_ASSIGNED',
   INVALID_TRANSITION: 'INVALID_TRANSITION',
   STORAGE_NOT_CONFIGURED: 'STORAGE_NOT_CONFIGURED',
 } as const;
@@ -372,6 +373,7 @@ export class VerificationService {
           submittedAt: now,
           reviewedAt: null,
           reviewerUserId: null,
+          claimedAt: null,
           remarks: null,
           recheckAt: null,
         },
@@ -402,12 +404,21 @@ export class VerificationService {
     return this.adminView(workerId);
   }
 
-  async queue(query: VerificationQueueQuery): Promise<Page<QueueItem>> {
+  async queue(query: VerificationQueueQuery, admin: VerificationActor): Promise<Page<QueueItem>> {
+    if (query.assignedTo && query.reviewerId) {
+      throw this.invalidField('reviewerId', 'Use either assignedTo or reviewerId, not both');
+    }
     const statuses: StoredCheckStatus[] = query.status
       ? [query.status]
       : ['SUBMITTED', 'IN_REVIEW'];
     const { items, total, uploadedByCheck } = await this.repository.queue(
-      { statuses, checkType: query.checkType },
+      {
+        statuses,
+        checkType: query.checkType,
+        reviewerUserId: query.assignedTo === 'me' ? admin.userId : query.reviewerId,
+        categoryId: query.categoryId,
+        search: query.search,
+      },
       skipFor(query),
       query.limit,
     );
@@ -415,9 +426,13 @@ export class VerificationService {
       data: items.map((c) => ({
         checkId: c.id,
         workerId: c.workerId,
+        workerName: c.workerName,
+        applicationSubmittedAt: c.applicationSubmittedAt,
         checkType: c.checkType,
         status: c.status,
         submittedAt: c.submittedAt,
+        reviewerUserId: c.reviewerUserId,
+        claimedAt: c.claimedAt,
         uploadedDocuments: uploadedByCheck.get(c.id) ?? 0,
       })),
       meta: { page: query.page, limit: query.limit, total },
@@ -425,12 +440,31 @@ export class VerificationService {
   }
 
   startReview(checkId: string, admin: VerificationActor): Promise<AdminWorkerVerificationResponse> {
+    // SUBMITTED is claimed; an IN_REVIEW check with no reviewer (after a re-check) can be claimed too. Assignment is the persisted
+    // reviewerUserId, never the status. Re-claiming my own check changes nothing; another reviewer's check answers 409 (no
+    // reassignment rule is defined, so none is offered).
     return this.transition(checkId, admin, {
       action: 'verification.start_review',
-      from: ['SUBMITTED'],
+      from: ['SUBMITTED', 'IN_REVIEW'],
       to: 'IN_REVIEW',
-      idempotentWhen: 'IN_REVIEW',
-      update: () => ({ status: 'IN_REVIEW' }),
+      preflight: (check) => {
+        if (check.status !== 'IN_REVIEW') return 'proceed';
+        if (check.reviewerUserId === admin.userId) return 'skip';
+        if (check.reviewerUserId !== null) {
+          throw new DomainException(
+            VerificationErrorCode.CHECK_ALREADY_ASSIGNED,
+            'This check is already assigned to another reviewer',
+            HttpStatus.CONFLICT,
+          );
+        }
+        return 'proceed';
+      },
+      update: (now) => ({
+        status: 'IN_REVIEW',
+        reviewerUserId: admin.userId,
+        claimedAt: now,
+        reviewedAt: null,
+      }),
     });
   }
 
@@ -501,6 +535,7 @@ export class VerificationService {
         status: 'IN_REVIEW',
         reviewedAt: null,
         reviewerUserId: null,
+        claimedAt: null,
         remarks: null,
         recheckAt: null,
       }),
@@ -561,7 +596,12 @@ export class VerificationService {
         integrityChecked,
       },
     });
-    return { url: link.url, expiresAt: link.expiresAt };
+    return {
+      url: link.url,
+      signedUrl: link.url,
+      expiresAt: link.expiresAt,
+      expiresInSeconds: Math.max(0, Math.round((link.expiresAt.getTime() - Date.now()) / 1000)),
+    };
   }
 
   /**
@@ -675,13 +715,14 @@ export class VerificationService {
       action: string;
       from: StoredCheckStatus[];
       to: StoredCheckStatus;
-      idempotentWhen?: StoredCheckStatus;
+      preflight?: (check: CheckRecord) => 'proceed' | 'skip';
       remarks?: string;
       metadata?: Record<string, unknown>;
       update: (now: Date) => {
         status: StoredCheckStatus;
         reviewedAt?: Date | null;
         reviewerUserId?: string | null;
+        claimedAt?: Date | null;
         remarks?: string | null;
         recheckAt?: string | null;
       };
@@ -696,15 +737,15 @@ export class VerificationService {
           HttpStatus.NOT_FOUND,
         );
       }
-      if (rule.idempotentWhen && check.status === rule.idempotentWhen) {
-        return check.workerId;
-      }
       if (!rule.from.includes(check.status)) {
         throw new DomainException(
           VerificationErrorCode.INVALID_TRANSITION,
           `A check that is ${check.status} cannot move to ${rule.to}`,
           HttpStatus.CONFLICT,
         );
+      }
+      if (rule.preflight?.(check) === 'skip') {
+        return check.workerId;
       }
       const now = new Date();
       await this.repository.updateCheck(check.id, rule.update(now), tx);
@@ -849,6 +890,7 @@ export class VerificationService {
         ...view,
         checkId: check?.id ?? '',
         reviewerUserId: check?.reviewerUserId ?? null,
+        claimedAt: check?.claimedAt ?? null,
         history: (check ? (eventsByCheck.get(check.id) ?? []) : []).map((e) => ({
           fromStatus: e.fromStatus,
           toStatus: e.toStatus,

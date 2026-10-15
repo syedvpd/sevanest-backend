@@ -547,7 +547,18 @@ describe('Verification API (integration)', () => {
       expect(mine[0].uploadedDocuments).toBe(1);
       expect(mine[1].uploadedDocuments).toBe(0);
       expect(Object.keys(mine[0] as object).sort()).toEqual(
-        ['checkId', 'checkType', 'status', 'submittedAt', 'uploadedDocuments', 'workerId'].sort(),
+        [
+          'applicationSubmittedAt',
+          'checkId',
+          'checkType',
+          'claimedAt',
+          'reviewerUserId',
+          'status',
+          'submittedAt',
+          'uploadedDocuments',
+          'workerId',
+          'workerName',
+        ].sort(),
       );
       const identity = await as(api, admin)
         .get(`${A}/queue?checkType=EMERGENCY_CONTACT&limit=100`)
@@ -773,7 +784,12 @@ describe('Verification API (integration)', () => {
       });
       const res = await as(api, admin).get(`${A}/documents/${documentId}/link`);
       expect(res.status).toBe(200);
-      expect(Object.keys(res.body as object).sort()).toEqual(['expiresAt', 'url']);
+      expect(Object.keys(res.body as object).sort()).toEqual([
+        'expiresAt',
+        'expiresInSeconds',
+        'signedUrl',
+        'url',
+      ]);
       expect(new Date(res.body.expiresAt as string).getTime()).toBeGreaterThan(Date.now());
       expect(new Date(res.body.expiresAt as string).getTime()).toBeLessThanOrEqual(
         Date.now() + api.config.verificationDocuments.signedUrlTtlSeconds * 1000 + 2000,
