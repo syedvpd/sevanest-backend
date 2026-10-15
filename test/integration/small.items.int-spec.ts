@@ -479,7 +479,10 @@ describe('Small backlog items and interim defaults (integration)', () => {
       const who = await newCustomer();
       const key = `key-${unique()}`;
       const bad = await as(api, who)
-        .post('/api/v1/support/tickets', { categoryId: UNKNOWN_ID, description: 'Worker did not come' })
+        .post('/api/v1/support/tickets', {
+          categoryId: UNKNOWN_ID,
+          description: 'Worker did not come',
+        })
         .set('Idempotency-Key', key);
       expect(bad.status).toBeGreaterThanOrEqual(400);
       expect(await tickets(who)).toBe(0);
