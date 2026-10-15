@@ -67,11 +67,13 @@ export const VerificationErrorCode = {
  */
 const MAX_OPEN_DOCUMENTS_PER_CHECK = 10;
 
-/** Checks whose evidence is an uploaded document. The other two are evidenced by the profile data (FR-VER-009/010). */
+/** Checks whose evidence is an uploaded document. Emergency contact and previous employment are evidenced by the profile data (FR-VER-009/010). */
 const DOCUMENT_CHECKS: ReadonlySet<CheckType> = new Set<CheckType>([
   'IDENTITY',
   'ADDRESS',
   'POLICE_VERIFICATION',
+  'SKILL_CERTIFICATE',
+  'LICENSE',
 ]);
 
 /** A check the worker may still change / (re)submit. */

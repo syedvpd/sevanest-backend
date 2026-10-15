@@ -25,6 +25,8 @@ export const CHECK_TYPES = [
   'EMERGENCY_CONTACT',
   'PREVIOUS_EMPLOYMENT',
   'POLICE_VERIFICATION',
+  'SKILL_CERTIFICATE',
+  'LICENSE',
 ] as const;
 export type CheckType = (typeof CHECK_TYPES)[number];
 

@@ -65,6 +65,8 @@ describe('Verification API (integration)', () => {
         'EMERGENCY_CONTACT',
         'PREVIOUS_EMPLOYMENT',
         'POLICE_VERIFICATION',
+        'SKILL_CERTIFICATE',
+        'LICENSE',
       ]);
       expect(res.body.checks.every((c: { status: string }) => c.status === 'NOT_SUBMITTED')).toBe(
         true,
@@ -314,7 +316,13 @@ describe('Verification API (integration)', () => {
   describe('worker: submitting a check', () => {
     it('needs a document for identity, address and police checks (422 CHECK_INCOMPLETE)', async () => {
       const worker = await submittedWorker();
-      for (const type of ['IDENTITY', 'ADDRESS', 'POLICE_VERIFICATION']) {
+      for (const type of [
+        'IDENTITY',
+        'ADDRESS',
+        'POLICE_VERIFICATION',
+        'SKILL_CERTIFICATE',
+        'LICENSE',
+      ]) {
         const res = await as(api, worker).post(`${V}/checks/${type}/submit`);
         expect(res.status).toBe(422);
         expect(res.body.code).toBe('CHECK_INCOMPLETE');
@@ -326,6 +334,43 @@ describe('Verification API (integration)', () => {
         sizeBytes: 10,
       });
       expect((await as(api, worker).post(`${V}/checks/IDENTITY/submit`)).status).toBe(422);
+    });
+
+    it('takes skill certificate and licence like any document check: upload, submit, queue, reject with remarks, approve, verified', async () => {
+      await setRequiredChecks(api, admin, ['SKILL_CERTIFICATE', 'LICENSE']);
+      try {
+        const worker = await submittedWorker();
+        await uploadDocument(api, worker, 'LICENSE');
+        await as(api, worker).post(`${V}/checks/LICENSE/submit`).expect(200);
+        const queue = await as(api, admin)
+          .get(`${A}/queue?checkType=LICENSE&limit=100`)
+          .expect(200);
+        expect(
+          queue.body.data.some((i: { workerId: string }) => i.workerId === worker.workerId),
+        ).toBe(true);
+        const licenceId = await checkIdOf(api, admin, worker.workerId, 'LICENSE');
+        await as(api, admin).post(`${A}/checks/${licenceId}/start-review`).expect(200);
+        await as(api, admin)
+          .post(`${A}/checks/${licenceId}/reject`, { remarks: 'Licence expired' })
+          .expect(200);
+        const seen = await as(api, worker).get(V).expect(200);
+        const licence = seen.body.checks.find(
+          (c: { checkType: string }) => c.checkType === 'LICENSE',
+        );
+        expect(licence.status).toBe('REJECTED');
+        expect(licence.remarks).toBe('Licence expired');
+        expect(licence.required).toBe(true);
+
+        await uploadDocument(api, worker, 'LICENSE');
+        await as(api, worker).post(`${V}/checks/LICENSE/submit`).expect(200);
+        await approveCheck(api, admin, worker, 'SKILL_CERTIFICATE');
+        const again = await checkIdOf(api, admin, worker.workerId, 'LICENSE');
+        await as(api, admin).post(`${A}/checks/${again}/start-review`).expect(200);
+        await as(api, admin).post(`${A}/checks/${again}/approve`, {}).expect(200);
+        expect((await as(api, worker).get(V).expect(200)).body.level).toBe('VERIFIED');
+      } finally {
+        await setRequiredChecks(api, admin, ['IDENTITY', 'ADDRESS']);
+      }
     });
 
     it('checks emergency contact and previous employment against the profile data', async () => {

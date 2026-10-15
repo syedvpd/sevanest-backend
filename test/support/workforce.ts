@@ -169,7 +169,13 @@ export async function approveCheck(
   checkType: string,
   recheckAt?: string,
 ): Promise<string> {
-  const needsDocument = ['IDENTITY', 'ADDRESS', 'POLICE_VERIFICATION'].includes(checkType);
+  const needsDocument = [
+    'IDENTITY',
+    'ADDRESS',
+    'POLICE_VERIFICATION',
+    'SKILL_CERTIFICATE',
+    'LICENSE',
+  ].includes(checkType);
   if (needsDocument) await uploadDocument(api, worker, checkType);
   const submitted = await as(api, worker).post(
     `/api/v1/workers/me/verification/checks/${checkType}/submit`,

@@ -385,6 +385,11 @@ model WorkerProfile {
   previousEmployerName   String?                @map("previous_employer_name")
   previousEmployerMobile String?                @map("previous_employer_mobile")
   profilePhotoRef        String?                @map("profile_photo_ref")
+  /// Criminal self-declaration (D-87). Null = not answered. true = the worker states they have a criminal record or pending case.
+  /// Detail text only when true. The acceptance time is server-stamped each time the worker (re)confirms the declaration.
+  criminalRecordDeclared Boolean?               @map("criminal_record_declared")
+  criminalRecordDetails  String?                @map("criminal_record_details")
+  criminalDeclaredAt     DateTime?              @map("criminal_declared_at") @db.Timestamptz(6)
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -499,6 +504,9 @@ enum VerificationCheckType {
   EMERGENCY_CONTACT
   PREVIOUS_EMPLOYMENT
   POLICE_VERIFICATION
+  /// Trade / skill certificate and licence: document-evidenced like identity (worker-app audit 2026-10-15, decision D-87).
+  SKILL_CERTIFICATE
+  LICENSE
 }
 
 /// FRD section 5 status model (PROPOSED). "Not Submitted" is the draft state of an existing row; "Recheck Due" is not stored:

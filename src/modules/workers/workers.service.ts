@@ -21,6 +21,7 @@ import {
   AdminWorkerListQuery,
   AdminWorkerSummary,
   CreateWorkerProfileDto,
+  SetCriminalDeclarationDto,
   SetWorkerCategoriesDto,
   SetWorkerReferencesDto,
   UpdateWorkerProfileDto,
@@ -201,6 +202,58 @@ export class WorkersService {
   ): Promise<WorkerProfileResponse> {
     const ref = await this.requireRefByUserId(userId);
     return this.setCategories(ref.workerId, dto, { kind: 'self', userId });
+  }
+
+  /**
+   * The worker's criminal self-declaration with consent. Each call replaces the previous statement and re-stamps the acceptance time on
+   * the server. It never blocks submission or verification (no rule is defined for a "yes" answer, Q-117); staff see it on the worker.
+   * The audit log records the answer, never the free text.
+   */
+  async setMyCriminalDeclaration(
+    userId: string,
+    dto: SetCriminalDeclarationDto,
+  ): Promise<WorkerProfileResponse> {
+    const ref = await this.requireRefByUserId(userId);
+    if (!dto.hasCriminalRecord && dto.details !== undefined) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [
+          {
+            field: 'details',
+            messages: ['details are only accepted when hasCriminalRecord is true'],
+          },
+        ],
+      );
+    }
+    const updated = await this.repository.transaction(async (tx) => {
+      if (!(await this.repository.lock(ref.workerId, tx))) {
+        throw this.workerNotFound();
+      }
+      await this.repository.updateScalars(
+        ref.workerId,
+        {
+          criminalRecordDeclared: dto.hasCriminalRecord,
+          criminalRecordDetails: dto.hasCriminalRecord ? (dto.details ?? null) : null,
+          criminalDeclaredAt: new Date(),
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: 'worker.criminal_declaration',
+          entityType: 'worker_profile',
+          entityId: ref.workerId,
+          actorId: userId,
+          actorRole: null,
+          metadata: { hasCriminalRecord: dto.hasCriminalRecord },
+        },
+        tx,
+      );
+      return (await this.repository.findById(ref.workerId, tx))!;
+    });
+    return this.toProfileView(updated, await this.users.findById(updated.userId));
   }
 
   /**
@@ -417,7 +470,7 @@ export class WorkersService {
       entityId: workerId,
       actorId: actor.userId,
       actorRole: actor.roles?.join(',') || null,
-      metadata: { groups: ['address', 'emergencyContact'] },
+      metadata: { groups: ['address', 'emergencyContact', 'criminalDeclaration'] },
     });
     return detail;
   }
@@ -581,6 +634,7 @@ export class WorkersService {
       emergencyContact: worker.emergencyContact,
       previousEmployer: worker.previousEmployer,
       hasProfilePhoto: worker.hasProfilePhoto,
+      criminalDeclaration: worker.criminalDeclaration,
       categories: worker.categoryIds
         .map((id) => categories.get(id))
         .filter((c): c is WorkerCategoryRef => c !== undefined),

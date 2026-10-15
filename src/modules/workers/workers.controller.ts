@@ -29,6 +29,7 @@ import {
   AdminWorkerListQuery,
   AdminWorkerSummary,
   CreateWorkerProfileDto,
+  SetCriminalDeclarationDto,
   SetWorkerCategoriesDto,
   SetWorkerReferencesDto,
   UpdateWorkerProfileDto,
@@ -92,6 +93,20 @@ export class WorkersController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<WorkerProfileResponse> {
     return this.workers.setMyCategories(user.userId, dto);
+  }
+
+  @Put('criminal-declaration')
+  @ApiModelResponse(WorkerProfileResponse)
+  @ApiOperation({
+    summary: 'Save my criminal self-declaration and consent',
+    description:
+      'Body: hasCriminalRecord (my own statement), details (only when true), accepted (must be true). The server stamps the acceptance time; the saved declaration comes back as criminalDeclaration on this response, on GET /workers/me and on the admin worker detail. It can be repeated: the latest statement replaces the previous one. Saving it never blocks submission or verification.',
+  })
+  setCriminalDeclaration(
+    @Body() dto: SetCriminalDeclarationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<WorkerProfileResponse> {
+    return this.workers.setMyCriminalDeclaration(user.userId, dto);
   }
 
   @Get('references')

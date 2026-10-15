@@ -16,6 +16,8 @@ import {
   Max,
   Min,
   ValidateNested,
+  IsBoolean,
+  Equals,
 } from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
 import { IsIndianMobile } from '../../../common/validation/indian-mobile';
@@ -227,6 +229,32 @@ export class UpdateWorkerProfileDto {
   previousEmployer?: PreviousEmployerDto | null;
 }
 
+export class SetCriminalDeclarationDto {
+  @ApiProperty({
+    description:
+      'true = I have a criminal record or a pending criminal case; false = I have none. The meaning is the worker own statement (Q-117).',
+  })
+  @IsBoolean()
+  hasCriminalRecord!: boolean;
+
+  @ApiPropertyOptional({
+    maxLength: 1000,
+    description: 'Only with hasCriminalRecord = true (400 otherwise).',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 1000)
+  details?: string;
+
+  @ApiProperty({
+    description:
+      'Consent: must be true. The worker confirms the statement is true and accepts that it is stored and shown to verification staff.',
+  })
+  @Equals(true, { message: 'accepted must be true: the declaration needs the worker consent' })
+  accepted!: boolean;
+}
+
 export class SetWorkerCategoriesDto {
   @ApiProperty({
     type: [String],
@@ -310,6 +338,12 @@ export class WorkerCategoryRef {
   isEnabled!: boolean;
 }
 
+export class CriminalDeclarationView {
+  @ApiProperty() hasCriminalRecord!: boolean;
+  @ApiProperty({ nullable: true, type: String }) details!: string | null;
+  @ApiProperty({ description: 'Server time of the latest acceptance.' }) acceptedAt!: Date;
+}
+
 export class WorkerAddressResponse extends WorkerAddressDto {}
 export class EmergencyContactResponse extends EmergencyContactDto {}
 export class PreviousEmployerResponse extends PreviousEmployerDto {}
@@ -335,6 +369,12 @@ export class WorkerProfileResponse {
   @ApiProperty({ type: PreviousEmployerResponse, nullable: true })
   previousEmployer!: PreviousEmployerResponse | null;
   @ApiProperty() hasProfilePhoto!: boolean;
+  @ApiProperty({
+    type: CriminalDeclarationView,
+    nullable: true,
+    description: 'The criminal self-declaration; null until the worker has made it.',
+  })
+  criminalDeclaration!: CriminalDeclarationView | null;
   @ApiProperty({ type: [WorkerCategoryRef] }) categories!: WorkerCategoryRef[];
   @ApiProperty({
     type: [String],

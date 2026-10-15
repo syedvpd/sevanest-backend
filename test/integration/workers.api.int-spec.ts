@@ -115,6 +115,7 @@ describe('Workers API (integration)', () => {
           'address',
           'categories',
           'createdAt',
+          'criminalDeclaration',
           'emergencyContact',
           'experienceMonths',
           'expectedSalary',
@@ -354,6 +355,54 @@ describe('Workers API (integration)', () => {
       const final = (await as(worker).get('/api/v1/workers/me')).body;
       expect(final).toMatchObject({ address, experienceMonths: 18, languages: ['en'] });
       expect(final.emergencyContact.name).toBe('Lakshmi Devi');
+    });
+  });
+
+  describe('criminal self-declaration (PUT /workers/me/criminal-declaration)', () => {
+    const D = '/api/v1/workers/me/criminal-declaration';
+
+    it('is null until made, then saved with a server-stamped acceptance time and shown to the worker and to staff', async () => {
+      const worker = await newWorker();
+      expect((await as(worker).get('/api/v1/workers/me')).body.criminalDeclaration).toBeNull();
+      const saved = await as(worker).put(D, {
+        hasCriminalRecord: true,
+        details: 'Old case 2015, acquitted',
+        accepted: true,
+      });
+      expect(saved.status).toBe(200);
+      expect(saved.body.criminalDeclaration).toMatchObject({
+        hasCriminalRecord: true,
+        details: 'Old case 2015, acquitted',
+      });
+      const first = saved.body.criminalDeclaration.acceptedAt as string;
+      expect(Number.isNaN(Date.parse(first))).toBe(false);
+      const mine = await as(worker).get('/api/v1/workers/me');
+      expect(mine.body.criminalDeclaration.hasCriminalRecord).toBe(true);
+      const adminView = await as(superAdmin).get(`/api/v1/admin/workers/${worker.workerId}`);
+      expect(adminView.status).toBe(200);
+      expect(adminView.body.criminalDeclaration.details).toBe('Old case 2015, acquitted');
+
+      const again = await as(worker).put(D, { hasCriminalRecord: false, accepted: true });
+      expect(again.body.criminalDeclaration).toMatchObject({
+        hasCriminalRecord: false,
+        details: null,
+      });
+      expect(
+        Date.parse(again.body.criminalDeclaration.acceptedAt as string),
+      ).toBeGreaterThanOrEqual(Date.parse(first));
+    });
+
+    it('needs explicit consent and refuses details with a "no" answer', async () => {
+      const worker = await newWorker();
+      for (const body of [
+        { hasCriminalRecord: false },
+        { hasCriminalRecord: false, accepted: false },
+        { accepted: true },
+        { hasCriminalRecord: false, details: 'x', accepted: true },
+      ]) {
+        expect((await as(worker).put(D, body)).status).toBe(400);
+      }
+      expect((await as(worker).get('/api/v1/workers/me')).body.criminalDeclaration).toBeNull();
     });
   });
 

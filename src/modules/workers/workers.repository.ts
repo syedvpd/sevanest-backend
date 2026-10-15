@@ -22,6 +22,9 @@ const PROFILE_SELECT = {
   previousEmployerName: true,
   previousEmployerMobile: true,
   profilePhotoRef: true,
+  criminalRecordDeclared: true,
+  criminalRecordDetails: true,
+  criminalDeclaredAt: true,
   createdAt: true,
   updatedAt: true,
   languages: { select: { languageCode: true }, orderBy: { languageCode: 'asc' } },
@@ -43,6 +46,11 @@ export interface WorkerRecord {
   emergencyContact: { name: string; mobile: string } | null;
   previousEmployer: { name: string; mobile: string } | null;
   hasProfilePhoto: boolean;
+  criminalDeclaration: {
+    hasCriminalRecord: boolean;
+    details: string | null;
+    acceptedAt: Date;
+  } | null;
   languages: string[];
   categoryIds: string[];
   createdAt: Date;
@@ -77,6 +85,14 @@ function toRecord(row: ProfileRow): WorkerRecord {
         ? null
         : { name: row.previousEmployerName, mobile: row.previousEmployerMobile! },
     hasProfilePhoto: row.profilePhotoRef !== null,
+    criminalDeclaration:
+      row.criminalRecordDeclared === null
+        ? null
+        : {
+            hasCriminalRecord: row.criminalRecordDeclared,
+            details: row.criminalRecordDetails,
+            acceptedAt: row.criminalDeclaredAt!,
+          },
     languages: row.languages.map((l) => l.languageCode),
     categoryIds: row.skills.map((s) => s.categoryId),
     createdAt: row.createdAt,
@@ -111,6 +127,9 @@ export type ProfileScalarUpdate = Partial<
     | 'emergencyContactMobile'
     | 'previousEmployerName'
     | 'previousEmployerMobile'
+    | 'criminalRecordDeclared'
+    | 'criminalRecordDetails'
+    | 'criminalDeclaredAt'
   >
 >;
 
