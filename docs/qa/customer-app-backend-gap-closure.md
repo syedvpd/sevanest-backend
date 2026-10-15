@@ -91,7 +91,7 @@ BLOCKED - EXTERNAL CREDENTIAL/INFRASTRUCTURE · NOT APPLICABLE - WITH EVIDENCE.
 | # | Request | Status | Evidence / remaining |
 |---|---|---|---|
 | 55 | Legal terms / privacy URLs | ALREADY IMPLEMENTED - VERIFIED (+ small fix) | `GET /app-config` `legal.terms{version,url}` / `legal.privacy{...}`; URL is `null` unless configured (`LEGAL_*_URL`, now blank = unset, unit tested). Note: the document object is only returned when its **version** (`LEGAL_*_VERSION`) is also set. No URL is hardcoded. BLOCKED - EXTERNAL: operator must supply the approved URLs |
-| 56 | Account deletion | BLOCKED - CLIENT DECISION | No endpoint; retention for bookings/payments/audit is undefined (Q-112). Nothing invented |
+| 56 | Account deletion | PARTIALLY IMPLEMENTED | Existing (re-verified in code; test `gap.closing` "records a deletion request, blocks it while money or an engagement is in progress, and lets the user withdraw it", passes alone 31/31): `POST /me/deletion-request {reason?}` (201; repeating returns the open request; 409 `DELETION_BLOCKED` while a booking is unfinished or a payment/refund is in progress, with generic messages), `GET /me/deletion-request` (open request or null), `DELETE /me/deletion-request` (withdraw, 404 `DELETION_NOT_FOUND`), staff `GET /admin/deletion-requests` (`user.status.manage`). It records the request, audits it and raises a staff alert; **nothing is erased or anonymised**. | BLOCKED - CLIENT DECISION: what staff then erase/anonymise and retention for payments, bookings, ratings, tickets, audit (Q-88, Q-112). The app can offer "Request account deletion" now with the wording "we will review your request"; it must not promise erasure |
 | 57 | `customer.storeUrl`, `minVersion` format, maintenance | ALREADY IMPLEMENTED - VERIFIED | `customer.storeUrl`/`worker.storeUrl` from `APP_STORE_URL_*` (https only, boot fails otherwise; unit tested here); `minVersion` strictly `major.minor.patch` or `null`; `maintenance` flag; public, 60 s cache. BLOCKED - EXTERNAL: real store URL not supplied |
 
 ## Security checks per new endpoint
@@ -112,10 +112,10 @@ BLOCKED - EXTERNAL CREDENTIAL/INFRASTRUCTURE · NOT APPLICABLE - WITH EVIDENCE.
 | `npm test` (unit) | 308/308, 34 suites (baseline before changes 306/306) |
 | `npm run test:e2e` | 27/27, 2 suites |
 | Migrations on an empty DB + `prisma migrate diff --exit-code` | 29 migrations apply; no drift (after correcting one over-long index name in the new migration) |
-| `npm run test:integration` (full, fresh `_ci` DB) | see "Final integration run" below |
+| `npm run test:integration` (full, fresh `_ci` DB) | NOT verified: no clean full run finished (see below) |
 
 ### Final integration run
-RESULT_PLACEHOLDER
+**Not completed cleanly.** Two full runs overlapped on the same database (the first had not stopped), so their failures (39 tests in 16 suites) are not valid evidence and are not counted either way; a third clean run was cancelled at the owner's request before it finished. What was run and passed on its own, on disposable local databases: `customer.gapclosure` 12/12 (the added `minRating` and photo-cleanup tests came after that run and were not re-run), `replacement.api` 26/26, `gap.closing` 31/31. The remaining suites were **not** verified in this run; the GitHub CI run is the first full integration evidence for this change.
 
 ## Compatibility notes for the app
 * All additions are new routes or stricter validation of an impossible value. One visible behaviour change: a booking-timeline `note` written by the **worker** (decline reason) is now `null` for the customer. `minRating` above `ratingScaleMax` is now 400 instead of an empty list.

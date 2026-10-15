@@ -91,5 +91,5 @@ Full matrix: `docs/qa/customer-app-backend-gap-closure.md`. Local tests only (`t
 | 12 Fee before payment | **Implemented.** `GET /fees/booking` -> `{code, amountMinor, currency}` (paise); add `?bookingId=` (own booking) to get the amount of its open payment. 422 `FEE_NOT_CONFIGURED` when none is active. Policy text is not served (Q-114). |
 | 13 Cancellation reasons / refund | **Unchanged, blocked on policy (Q-114).** `cancel` takes free text; refund state is on the payment (`GET /payments?bookingId=`). |
 | 55 Legal URLs | **Already supported; configuration.** `GET /app-config` `legal.terms.url` / `legal.privacy.url` are `null` until `LEGAL_TERMS_URL` / `LEGAL_PRIVACY_URL` are set (and their `*_VERSION`; the object is `null` without a version). Blank counts as unset. |
-| 56 Account deletion | **Blocked (Q-112).** No endpoint. |
+| 56 Account deletion | **A request endpoint exists:** `POST /me/deletion-request` (409 `DELETION_BLOCKED` while a booking is unfinished or money is in flight), `GET`, `DELETE` to withdraw. It is recorded and audited for staff; nothing is erased automatically. What deletion means (erase/anonymise, retention) is blocked on Q-88 / Q-112. |
 | 57 Store URL / minVersion | **Already supported** (see section 57 above). |

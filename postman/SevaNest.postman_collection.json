@@ -1,9 +1,24 @@
 {
   "info": {
     "name": "SevaNest Backend API",
-    "description": "All 267 operations of the SevaNest API (OpenAPI generated). Folders follow the module lifecycle (create, list, read, update, state change, delete). Ids are captured into collection variables by the tests of create/list requests. Each request checks: no 5xx, a documented status or a business-state answer (404/409/422), response time under slowMs, the standard error envelope.\n\nOrder: run \"00 Start here\" first, then the module folders from top to bottom. Some operations only succeed once earlier state exists (for example a booking must be ACTIVE before attendance); a 409/422 there is an accepted answer.",
+    "description": "All 271 operations of the SevaNest API (OpenAPI generated). Folders follow the module lifecycle (create, list, read, update, state change, delete). Ids are captured into collection variables by the tests of create/list requests. Each request checks: no 5xx, a documented status or a business-state answer (404/409/422), response time under slowMs, the standard error envelope.\n\nOrder: run \"00 Start here\" first, then the module folders from top to bottom. Some operations only succeed once earlier state exists (for example a booking must be ACTIVE before attendance); a 409/422 there is an accepted answer.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const d = new Date(); const c = pm.collectionVariables;",
+          "c.set('today', d.toISOString().slice(0, 10));",
+          "c.set('futureIso', new Date(Date.now() + 2 * 86400000).toISOString());",
+          "c.set('uniqueSuffix', Date.now().toString(36) + Math.floor(Math.random() * 1e4));",
+          "c.set('uniqueMobile', '9' + String(Math.floor(Math.random() * 1e9)).padStart(9, '0'));"
+        ]
+      }
+    }
+  ],
   "variable": [
     {
       "key": "today",
@@ -11,6 +26,14 @@
     },
     {
       "key": "futureIso",
+      "value": ""
+    },
+    {
+      "key": "uniqueSuffix",
+      "value": ""
+    },
+    {
+      "key": "uniqueMobile",
       "value": ""
     }
   ],
@@ -494,7 +517,7 @@
             "description": "Admin login with email and password\n\nRepeated failures lock the account and the client IP for a configured time (429, ADMIN_LOGIN_LOCKED).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"ops.lead@example.com\",\n  \"password\": \"a-long-enough-password-1!\"\n}",
+              "raw": "{\n  \"email\": \"tester.{{uniqueSuffix}}@example.test\",\n  \"password\": \"a-long-enough-password-1!\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -592,7 +615,7 @@
             "description": "Send a login OTP to a customer or worker mobile number\n\nRate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). Suspended accounts are refused before anything is sent.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"mobile\": \"9876543210\",\n  \"appType\": \"CUSTOMER\"\n}",
+              "raw": "{\n  \"mobile\": \"{{uniqueMobile}}\",\n  \"appType\": \"CUSTOMER\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -645,7 +668,7 @@
             "description": "Verify the OTP and start a session\n\nCreates the account on first verification (user.isNewUser = true, then create the profile). The OTP is single-use.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"mobile\": \"9876543210\",\n  \"appType\": \"CUSTOMER\",\n  \"otp\": \"123456\"\n}",
+              "raw": "{\n  \"mobile\": \"{{uniqueMobile}}\",\n  \"appType\": \"CUSTOMER\",\n  \"otp\": \"123456\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -794,7 +817,7 @@
             "description": "Bind the device push token to the current session\n\nOne token per session, one session per device: a user with several devices has several bindings. A token already bound to another session (reinstall, another account on the same phone) moves to this one. The binding disappears when the session ends (logout, revoke, refresh-token replay).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"token\": \"Postman token\",\n  \"platform\": \"ANDROID\"\n}",
+              "raw": "{\n  \"token\": \"postman-device-token-{{uniqueSuffix}}\",\n  \"platform\": \"ANDROID\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1335,7 +1358,7 @@
             "description": "Create an admin account with one role (Super Admin)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"ops.lead@example.com\",\n  \"password\": \"a-long-enough-password-1!\",\n  \"roleCode\": \"SUPER_ADMIN\"\n}",
+              "raw": "{\n  \"email\": \"tester.{{uniqueSuffix}}@example.test\",\n  \"password\": \"a-long-enough-password-1!\",\n  \"roleCode\": \"SUPER_ADMIN\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1836,7 +1859,7 @@
             "description": "Add an area (409 AREA_DUPLICATE when the city already has it)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Madhapur\",\n  \"city\": \"Hyderabad\"\n}",
+              "raw": "{\n  \"name\": \"Anita Sharma {{uniqueSuffix}}\",\n  \"city\": \"Hyderabad\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2042,7 +2065,7 @@
             "description": "Add a category (409 CATEGORY_DUPLICATE for an existing code or name)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"HOUSE_MAID\",\n  \"name\": \"House Maid\"\n}",
+              "raw": "{\n  \"code\": \"HOUSE_MAID\",\n  \"name\": \"Anita Sharma {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2191,7 +2214,7 @@
             "description": "Set (create or replace) the band for a category + engagement, optionally for one area",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category\": \"COOK\",\n  \"engagement\": \"FULL_TIME\",\n  \"minMinor\": 1,\n  \"maxMinor\": 1,\n  \"period\": \"HOUR\",\n  \"basis\": \"Typical for Hyderabad, set by SevaNest\"\n}",
+              "raw": "{\n  \"category\": \"COOK\",\n  \"areaId\": \"{{areaId}}\",\n  \"engagement\": \"FULL_TIME\",\n  \"minMinor\": 1,\n  \"maxMinor\": 1,\n  \"period\": \"HOUR\",\n  \"basis\": \"Typical for Hyderabad, set by SevaNest\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2915,7 +2938,7 @@
             "description": "Add a ticket category (audited)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"PAYMENT_ISSUE\",\n  \"name\": \"Postman name\"\n}",
+              "raw": "{\n  \"code\": \"PAYMENT_ISSUE\",\n  \"name\": \"Anita Sharma {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3180,7 +3203,7 @@
             "description": "Escalate the ticket (reason required, internal)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4172,7 +4195,7 @@
             "description": "Set the booking/platform fee (BOOKING_FEE); audited with before and after",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amountMinor\": 1\n}",
+              "raw": "{\n  \"amountMinor\": 50000\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4229,7 +4252,7 @@
             "description": "Close a money problem after a person dealt with it (note required; audited)\n\nMoves no money. Refund through POST /admin/payments/{id}/refund first when a refund is due.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"note\": \"Postman note\"\n}",
+              "raw": "{\n  \"note\": \"Postman test note {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4334,7 +4357,7 @@
             "description": "Refund a succeeded payment in full (reason required; repeating is safe)\n\nWho may refund and the cancellation fee rules are open (Q-17, Q-21): nothing is refunded automatically.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4433,7 +4456,7 @@
             "description": "Set any configured fee by code (placement, verification, replacement plan ...); audited with before and after\n\nFee values are configuration (PRD 10). Only BOOKING_FEE is charged by the current flows; other codes are stored for the revenue models the business enables later.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amountMinor\": 1\n}",
+              "raw": "{\n  \"amountMinor\": 50000\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4493,7 +4516,7 @@
             "description": "Create my profile after OTP registration (409 if it already exists)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Asha Rao\",\n  \"email\": \"asha@example.com\",\n  \"preferredLanguage\": \"en\"\n}",
+              "raw": "{\n  \"name\": \"Anita Sharma {{uniqueSuffix}}\",\n  \"email\": \"tester.{{uniqueSuffix}}@example.test\",\n  \"preferredLanguage\": \"en\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5034,7 +5057,7 @@
             "description": "Start my work profile after OTP registration (409 if it exists)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Ramesh Kumar\"\n}",
+              "raw": "{\n  \"name\": \"Anita Sharma {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5278,7 +5301,7 @@
             "description": "Set my references - replaces the whole list (up to 5; an empty list clears it)\n\nEach mobile once; your own number is refused (400).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"references\": [\n    {\n      \"name\": \"Mrs. Rao\",\n      \"mobile\": \"9876543210\"\n    }\n  ]\n}",
+              "raw": "{\n  \"references\": [\n    {\n      \"name\": \"Anita Sharma {{uniqueSuffix}}\",\n      \"mobile\": \"{{uniqueMobile}}\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5857,7 +5880,7 @@
             "description": "Create a worker account and empty profile for a mobile (assisted onboarding, audited)\n\n409 MOBILE_IN_USE (a customer or staff number), 409 WORKER_PROFILE_EXISTS. The worker signs in with an OTP to that number.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Ramesh Kumar\",\n  \"mobile\": \"9876543210\"\n}",
+              "raw": "{\n  \"name\": \"Anita Sharma {{uniqueSuffix}}\",\n  \"mobile\": \"{{uniqueMobile}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6319,7 +6342,7 @@
             "description": "Add an operational note to a customer",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"note\": \"Postman note\"\n}",
+              "raw": "{\n  \"note\": \"Postman test note {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7155,7 +7178,7 @@
             "description": "Create a booking request (NEW_REQUEST, or MATCHED when an eligible worker is chosen)\n\n422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / WORKER_NOT_ELIGIBLE, 409 DUPLICATE_BOOKING for a second open booking with the same worker and service.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category\": \"HOUSE_MAID\",\n  \"areaId\": \"{{areaId}}\",\n  \"engagement\": \"FULL_TIME\",\n  \"availableFrom\": \"09:00\",\n  \"availableTo\": \"13:00\"\n}",
+              "raw": "{\n  \"category\": \"HOUSE_MAID\",\n  \"areaId\": \"{{areaId}}\",\n  \"engagement\": \"FULL_TIME\",\n  \"availableFrom\": \"09:00\",\n  \"availableTo\": \"13:00\",\n  \"workerId\": \"{{workerId}}\",\n  \"addressId\": \"{{addressId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7555,7 +7578,7 @@
             "description": "Perform a booking action as the customer\n\nActions: match (admin), schedule, decline (worker/admin), reopen-matching, interview-complete, confirm-worker, start, complete, cancel. Each is one permitted transition of the booking state model; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating an action whose result already holds changes nothing.",
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"workerId\": \"{{workerId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7665,7 +7688,7 @@
             "description": "Perform a booking action as the worker\n\nActions: match (admin), schedule, decline (worker/admin), reopen-matching, interview-complete, confirm-worker, start, complete, cancel. Each is one permitted transition of the booking state model; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating an action whose result already holds changes nothing.",
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"workerId\": \"{{workerId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7926,7 +7949,7 @@
             "description": "Cancel an open interview or trial (reason required)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7982,7 +8005,7 @@
             "description": "It took place: record the outcome. The booking moves on so the worker can be confirmed\n\nStates: REQUESTED -> CONFIRMED | DECLINED | RESCHEDULE_PROPOSED; open sessions can be CANCELLED; a CONFIRMED session is COMPLETED with an outcome. One session is open per booking. 404 for a booking or session that is not yours, 409 INVALID_INTERVIEW_STATE for a step that is not allowed now.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"outcomeNote\": \"Postman outcomeNote\"\n}",
+              "raw": "{\n  \"outcomeNote\": \"Interview went well.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8330,7 +8353,7 @@
             "description": "Cancel an open interview or trial (reason required)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8388,7 +8411,7 @@
             "description": "Decline the request (reason required)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8560,6 +8583,48 @@
                 }
               }
             }
+          }
+        },
+        {
+          "name": "GET /fees/booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/fees/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "fees",
+                "booking"
+              ],
+              "query": []
+            },
+            "description": "The booking fee I will be charged, before the payment step\n\nSame source as POST /payments, so the amount is exactly what is charged. Pass bookingId (mine) to get the amount of its already-open payment. 422 FEE_NOT_CONFIGURED when no active fee exists (then POST /payments fails the same way), 404 BOOKING_NOT_FOUND for a booking that is not mine. Cancellation, refund and replacement terms are not part of this response: no approved policy exists."
           }
         },
         {
@@ -8850,7 +8915,7 @@
             "description": "Raise an exception for a date the worker did not record\n\nOnly when no entry exists for that date (409 otherwise); a note is required.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"date\": \"2026-11-03\",\n  \"note\": \"Postman note\"\n}",
+              "raw": "{\n  \"date\": \"2026-11-03\",\n  \"note\": \"Postman test note {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9266,7 +9331,7 @@
             "description": "Create a booking request on behalf of a customer (audited as an admin action)\n\nSame rules as the customer request, plus customerId. 404 CUSTOMER_NOT_FOUND, 409 CUSTOMER_NOT_ACTIVE.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category\": \"HOUSE_MAID\",\n  \"areaId\": \"{{areaId}}\",\n  \"engagement\": \"FULL_TIME\",\n  \"availableFrom\": \"09:00\",\n  \"availableTo\": \"13:00\",\n  \"customerId\": \"{{customerId}}\"\n}",
+              "raw": "{\n  \"category\": \"HOUSE_MAID\",\n  \"areaId\": \"{{areaId}}\",\n  \"engagement\": \"FULL_TIME\",\n  \"availableFrom\": \"09:00\",\n  \"availableTo\": \"13:00\",\n  \"workerId\": \"{{workerId}}\",\n  \"addressId\": \"{{addressId}}\",\n  \"customerId\": \"{{customerId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9457,7 +9522,7 @@
             "description": "Perform a booking action as staff (audited)\n\nActions: match (admin), schedule, decline (worker/admin), reopen-matching, interview-complete, confirm-worker, start, complete, cancel. Each is one permitted transition of the booking state model; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating an action whose result already holds changes nothing.",
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"workerId\": \"{{workerId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9718,7 +9783,7 @@
             "description": "Cancel an open interview or trial (reason required, audited)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9775,7 +9840,7 @@
             "description": "Record the outcome on behalf of the customer (audited)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"outcomeNote\": \"Postman outcomeNote\"\n}",
+              "raw": "{\n  \"outcomeNote\": \"Interview went well.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10293,7 +10358,7 @@
             "description": "Correct an entry (reason required; the previous value stays in the history)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"PRESENT\",\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"status\": \"PRESENT\",\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10356,7 +10421,7 @@
             "description": "Rate the worker of my completed booking (once per booking)\n\n404 for a booking that is not mine, 422 RATING_NOT_ELIGIBLE unless GET /ratings/bookings/{id}/eligibility says eligible, 400 RATING_SCORE_OUT_OF_SCALE, 400 RATING_REVIEW_TOO_LONG (limit = ratingReviewMax in /reference-data), 409 RATING_ALREADY_EXISTS. A rating cannot be edited or deleted by the customer (Q-60).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"score\": 1\n}",
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"score\": 4\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10732,7 +10797,7 @@
             "description": "Hide a rating from the worker profile and totals (reason required, audited)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10789,7 +10854,7 @@
             "description": "Restore a hidden rating (reason required, audited)",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11550,7 +11615,7 @@
             "description": "Raise a support request or complaint\n\n422 SUPPORT_CATEGORY_INVALID for an unknown or disabled category. A bookingId must be a booking the caller is a party to (the customer, or the booking worker), otherwise 404 BOOKING_NOT_FOUND. The description (10 to 4000 characters) is kept on the ticket and is not copied into the message thread. Payment, replacement and interview problems are all raised against the booking they belong to (bookingId). Priority is set by staff only; the request cannot ask for one, and no response-time promise is made unless the business configured a resolution target (`dueAt`).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"categoryId\": \"{{categoryId}}\",\n  \"description\": \"Postman description\"\n}",
+              "raw": "{\n  \"categoryId\": \"{{categoryId}}\",\n  \"description\": \"Postman test: the worker did not arrive on time today ({{uniqueSuffix}}).\",\n  \"bookingId\": \"{{bookingId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11848,7 +11913,7 @@
             "description": "Block a worker (customers) or the customer of a booking (workers)\n\nBlocked pairs never see each other in search, shortlist, matching or replacement candidates and cannot be booked together. Repeating is harmless. 404 for anyone you have no relationship with.",
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"workerId\": \"{{workerId}}\",\n  \"bookingId\": \"{{bookingId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11903,7 +11968,7 @@
             "description": "Report a worker or customer (safety, misconduct, fraud ...)\n\nStaff are alerted. `alsoBlock: true` blocks them as well. Send `Idempotency-Key` so a retry returns the first report (header `Idempotent-Replay: true`) instead of filing a second one. `reasonCode` is the machine-readable reason; `note` (max 1000) is the free-text account for staff; `reason` (max 500) is only the text kept with the block when `alsoBlock` is true (the reason code is kept if it is absent). The response `id` is the report id; no support ticket is created or linked. Customers name the worker with `workerId` and/or `bookingId`; if both are sent the worker must be the one on that booking, otherwise 404 SAFETY_TARGET_NOT_FOUND. Lateness, leaving early, wrong attendance and work quality are not safety reports: use a support ticket or the attendance flow.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reasonCode\": \"HARASSMENT\"\n}",
+              "raw": "{\n  \"workerId\": \"{{workerId}}\",\n  \"bookingId\": \"{{bookingId}}\",\n  \"reasonCode\": \"HARASSMENT\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12049,7 +12114,7 @@
             "description": "Apply a block between two customer/worker accounts (reason required, audited)\n\nThe user cannot lift a block applied by staff.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"blockerUserId\": \"Postman blockerUserId\",\n  \"blockedUserId\": \"Postman blockedUserId\",\n  \"reason\": \"Postman reason\"\n}",
+              "raw": "{\n  \"blockerUserId\": \"Postman blockerUserId\",\n  \"blockedUserId\": \"Postman blockedUserId\",\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12762,7 +12827,7 @@
             "description": "Close an alert with a note (audited)\n\nResolving does not change the booking, ticket or payment the alert is about. If the problem is detected again the alert re-opens.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"note\": \"Postman note\"\n}",
+              "raw": "{\n  \"note\": \"Postman test note {{uniqueSuffix}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13730,6 +13795,159 @@
               "query": []
             },
             "description": "Every prerequisite for real use and whether it is met (areas, fee, verification set, providers, templates, workers)\n\nBLOCKER checks must pass before launch. `workers` lists the background loops seen in the last 3 minutes; an empty list means the worker process is not running. Read-only; no secrets."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer photo",
+      "item": [
+        {
+          "name": "POST /customers/me/photo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([201, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers/me/photo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me",
+                "photo"
+              ],
+              "query": []
+            },
+            "description": "Ask for a short-lived upload link for a new profile photo\n\nJPEG or PNG within the configured size. 503 PHOTO_NOT_CONFIGURED until PROFILE_PHOTO_MAX_BYTES is set; 413 too large; 422 type not allowed or too many unconfirmed uploads. Upload the bytes to the link with PUT, then confirm. An upload that is never confirmed is discarded after 24 hours.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contentType\": \"image/jpeg\",\n  \"sizeBytes\": 250000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /customers/me/photo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers/me/photo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me",
+                "photo"
+              ],
+              "query": []
+            },
+            "description": "A short-lived link to my current photo (404 PHOTO_NOT_FOUND when none)"
+          }
+        },
+        {
+          "name": "POST /customers/me/photo/{photoId}/confirm",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers/me/photo/{{photoId}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me",
+                "photo",
+                "{{photoId}}",
+                "confirm"
+              ],
+              "query": []
+            },
+            "description": "Confirm the upload; the photo becomes current once its size, file signature and content check out\n\nErrors: 422 PHOTO_NOT_UPLOADED, PHOTO_CONTENT_MISMATCH or PHOTO_MALWARE_DETECTED; 404 for an unknown photo or a photo of another customer. Repeating is harmless. The previous photo is removed."
           }
         }
       ]

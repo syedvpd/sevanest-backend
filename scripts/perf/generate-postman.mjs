@@ -27,8 +27,47 @@ const resolve = (schema) => {
 const ID_FIELDS = new Set(['bookingId', 'workerId', 'areaId', 'categoryId', 'addressId', 'customerId', 'requestId', 'interviewId', 'paymentId', 'ratingId', 'ticketId', 'templateId', 'notificationId', 'blockId', 'documentId', 'checkId', 'attendanceId', 'userId', 'sessionId', 'alertId', 'exceptionId', 'eventId', 'photoId']);
 const FIELD_VARS = { areaId: 'areaId', categoryId: 'categoryId', workerId: 'workerId', bookingId: 'bookingId', addressId: 'addressId', customerId: 'customerId' };
 
+// Realistic sample values for well-known field names. {{uniqueSuffix}} and {{uniqueMobile}} are regenerated before every request
+// (collection pre-request script), so repeated runs never collide on unique fields.
+const REAL_VALUES = {
+  name: 'Anita Sharma {{uniqueSuffix}}',
+  fullName: 'Anita Sharma',
+  line: '12-3-45, Road No. 7, Banjara Hills',
+  line2: 'Near City Park',
+  label: 'Home',
+  area: 'Banjara Hills',
+  city: 'Hyderabad',
+  state: 'Telangana',
+  pincode: '500034',
+  preferredLanguage: 'en',
+  language: 'en',
+  reason: 'Postman test {{uniqueSuffix}}',
+  note: 'Postman test note {{uniqueSuffix}}',
+  description: 'Postman test: the worker did not arrive on time today ({{uniqueSuffix}}).',
+  subject: 'Postman test {{uniqueSuffix}}',
+  review: 'Punctual and polite.',
+  requirementNote: 'Need a part-time cook for two meals a day.',
+  outcomeNote: 'Interview went well.',
+  contentType: 'image/jpeg',
+  category: 'HOUSE_MAID',
+  scheduleType: 'INTERVIEW',
+  engagement: 'PART_TIME',
+  availableFrom: '09:00',
+  availableTo: '12:00',
+  title: 'Postman test {{uniqueSuffix}}',
+  fcmToken: 'postman-device-token-{{uniqueSuffix}}',
+  token: 'postman-device-token-{{uniqueSuffix}}',
+};
+const REAL_NUMBERS = { latitude: 17.4126, longitude: 78.4482, score: 4, sizeBytes: 150000, budgetMinMinor: 600000, budgetMaxMinor: 1000000, amountMinor: 50000 };
+
 const sample = (schema, name = '', depth = 0) => {
   const s = resolve(schema);
+  // values that must be unique per run beat the static OpenAPI example
+  if (s.type === 'string' || s.type === undefined) {
+    if (/email/i.test(name)) return 'tester.{{uniqueSuffix}}@example.test';
+    if (/mobile/i.test(name)) return '{{uniqueMobile}}';
+    if (name === 'name') return REAL_VALUES.name;
+  }
   if (s.example !== undefined) return s.example;
   if (s.enum) return s.enum[0];
   if (s.oneOf || s.anyOf) return sample((s.oneOf ?? s.anyOf)[0], name, depth);
@@ -39,7 +78,7 @@ const sample = (schema, name = '', depth = 0) => {
       const out = {};
       const required = new Set(s.required ?? []);
       for (const [k, v] of Object.entries(s.properties ?? {})) {
-        if (required.has(k)) out[k] = sample(v, k, depth + 1);
+        if (required.has(k) || (depth === 0 && FIELD_VARS[k] && resolve(v).type === 'string')) out[k] = sample(v, k, depth + 1);
       }
       return out;
     }
@@ -47,7 +86,7 @@ const sample = (schema, name = '', depth = 0) => {
       return [sample(s.items, name, depth + 1)];
     case 'integer':
     case 'number':
-      return s.minimum ?? 1;
+      return REAL_NUMBERS[name] ?? s.minimum ?? 1;
     case 'boolean':
       return true;
     default: {
@@ -55,8 +94,10 @@ const sample = (schema, name = '', depth = 0) => {
       if (s.format === 'uuid') return `{{${name || 'id'}}}`;
       if (s.format === 'date-time' || /At$/.test(name) || /^(preferredAt|proposedAt|scheduledAt)$/.test(name)) return '{{futureIso}}';
       if (s.format === 'date' || /^(date|startDate|from|to)$/.test(name)) return '{{today}}';
-      if (/mobile/i.test(name)) return '9876543210';
-      if (/email/i.test(name)) return 'postman.{{$randomInt}}@example.test';
+      const real = REAL_VALUES[name];
+      if (real !== undefined) return real;
+      if (/mobile/i.test(name)) return '{{uniqueMobile}}';
+      if (/email/i.test(name)) return 'tester.{{uniqueSuffix}}@example.test';
       if (name === 'password' || /password/i.test(name)) return 'a-long-enough-password-1!';
       if (/^(code|eventCode)$/.test(name)) return 'POSTMAN_{{$randomInt}}';
       return s.minLength && s.minLength > 10 ? 'x'.repeat(s.minLength) : `Postman ${name || 'text'}`;
@@ -174,24 +215,41 @@ const start = {
 
 const collection = {
   info: { name: 'SevaNest Backend API', description: `All ${ops.length} operations of the SevaNest API (OpenAPI generated). Folders follow the module lifecycle (create, list, read, update, state change, delete). Ids are captured into collection variables by the tests of create/list requests. Each request checks: no 5xx, a documented status or a business-state answer (404/409/422), response time under slowMs, the standard error envelope.\n\nOrder: run "00 Start here" first, then the module folders from top to bottom. Some operations only succeed once earlier state exists (for example a booking must be ACTIVE before attendance); a 409/422 there is an accepted answer.`, schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
-  variable: [{ key: 'today', value: '' }, { key: 'futureIso', value: '' }],
+  event: [
+    {
+      listen: 'prerequest',
+      script: {
+        type: 'text/javascript',
+        exec: [
+          "const d = new Date(); const c = pm.collectionVariables;",
+          "c.set('today', d.toISOString().slice(0, 10));",
+          "c.set('futureIso', new Date(Date.now() + 2 * 86400000).toISOString());",
+          "c.set('uniqueSuffix', Date.now().toString(36) + Math.floor(Math.random() * 1e4));",
+          "c.set('uniqueMobile', '9' + String(Math.floor(Math.random() * 1e9)).padStart(9, '0'));",
+        ],
+      },
+    },
+  ],
+  variable: [{ key: 'today', value: '' }, { key: 'futureIso', value: '' }, { key: 'uniqueSuffix', value: '' }, { key: 'uniqueMobile', value: '' }],
   item: [start, ...tagOrder.map((tag) => ({ name: tag, item: folders.get(tag).sort((a, b) => orderKey(a.path, a.method).localeCompare(orderKey(b.path, b.method))).map((o) => buildRequest(o.path, o.method, o.op)) }))],
 };
 
-const environment = {
-  name: 'SevaNest local',
+const makeEnvironment = (name, baseUrl, slowMs) => ({
+  name,
   values: [
-    ['baseUrl', 'http://localhost:3000'],
+    ['baseUrl', baseUrl],
     ['customerMobile', '+919999900001'],
     ['workerMobile', '+919999900002'],
     ['testOtpCode', '123456'],
     ['adminEmail', ''],
     ['adminPassword', ''],
-    ['slowMs', '500'],
+    ['slowMs', slowMs],
   ].map(([key, value]) => ({ key, value, type: key === 'adminPassword' ? 'secret' : 'default', enabled: true })),
   _postman_variable_scope: 'environment',
-};
+});
 
 writeFileSync(join(outDir, 'SevaNest.postman_collection.json'), JSON.stringify(collection, null, 2));
-writeFileSync(join(outDir, 'SevaNest.local.postman_environment.json'), JSON.stringify(environment, null, 2));
+writeFileSync(join(outDir, 'SevaNest.local.postman_environment.json'), JSON.stringify(makeEnvironment('SevaNest local', 'http://localhost:3000', '500'), null, 2));
+// Render staging: a free instance sleeps and answers slowly after idle, so the time limit is generous.
+writeFileSync(join(outDir, 'SevaNest.render.postman_environment.json'), JSON.stringify(makeEnvironment('SevaNest Render', 'https://sevanest-backend.onrender.com', '8000'), null, 2));
 console.log(`postman: ${ops.length} operations in ${tagOrder.length} folders`);
