@@ -6,6 +6,7 @@ import { createValidationPipe } from './common/pipes/validation.pipe';
 import {
   REQUEST_ID_HEADER,
   requestContextMiddleware,
+  requestTimingMiddleware,
 } from './common/request-context/request-context';
 import { AppConfigService } from './config/app-config.service';
 
@@ -21,6 +22,9 @@ export function configureApp(app: NestExpressApplication, config: AppConfigServi
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(requestContextMiddleware);
+  if (config.requestTimingLog) {
+    app.use(requestTimingMiddleware());
+  }
 
   if (config.corsOrigins.length > 0) {
     app.enableCors({ origin: config.corsOrigins, exposedHeaders: [REQUEST_ID_HEADER] });

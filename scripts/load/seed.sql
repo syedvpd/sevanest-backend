@@ -43,7 +43,7 @@ INSERT INTO worker_languages (worker_id, language_code) SELECT lw.id, 'hi' FROM 
 INSERT INTO worker_languages (worker_id, language_code) SELECT lw.id, 'te' FROM lw WHERE lw.n % 3 = 0;
 INSERT INTO worker_verification_checks (id, worker_id, check_type, status, submitted_at, reviewed_at, reviewer_user_id, created_at, updated_at)
 SELECT gen_random_uuid(), lw.id, 'IDENTITY', CASE WHEN lw.n % 10 < 7 THEN 'APPROVED' ELSE 'NOT_SUBMITTED' END::"VerificationCheckStatus",
-       CASE WHEN lw.n % 10 < 7 THEN now() END, CASE WHEN lw.n % 10 < 7 THEN now() END, CASE WHEN lw.n % 10 < 7 THEN (SELECT id FROM users WHERE type = 'ADMIN' ORDER BY created_at LIMIT 1) END, now(), now() FROM lw;
+       CASE WHEN lw.n % 10 < 7 THEN now() END, CASE WHEN lw.n % 10 < 7 THEN now() END, CASE WHEN lw.n % 10 < 7 THEN COALESCE((SELECT id FROM users WHERE type = 'ADMIN' ORDER BY created_at LIMIT 1), (SELECT id FROM users ORDER BY created_at LIMIT 1)) END, now(), now() FROM lw;
 INSERT INTO worker_rating_summaries (worker_id, rating_count, rating_sum, updated_at)
 SELECT lw.id, 3 + (lw.n % 40), (3 + (lw.n % 40)) * (3 + (lw.n % 3)), now() FROM lw WHERE lw.n % 10 < 6;
 

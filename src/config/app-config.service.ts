@@ -49,6 +49,9 @@ export class AppConfigService {
   get port(): number {
     return this.get('PORT');
   }
+  get requestTimingLog(): boolean {
+    return this.get('REQUEST_TIMING_LOG');
+  }
   get logLevel(): string {
     return this.get('LOG_LEVEL');
   }

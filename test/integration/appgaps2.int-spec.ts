@@ -267,6 +267,25 @@ describe('Customer app gaps, round two (integration)', () => {
       });
     });
 
+    it('checks every candidate hour in a fixed number of statements, not one per slot', async () => {
+      // Regression: availability checks used to fan out one query per slot at once, which saturates the connection pool
+      // (default 10) for a worker with a long day and surfaced as an intermittent 500 on a small host.
+      const w = await onboardWorker(api, { areaIds: [area.id] });
+      await approveCheck(api, admin, w, 'IDENTITY');
+      const spy = jest.spyOn(api.prisma, '$queryRaw');
+      try {
+        const res = await slots(w.workerId);
+        expect(res.status).toBe(200);
+        expect((res.body as { slots: string[] }).slots).toHaveLength(6);
+        const busyChecks = spy.mock.calls.filter((c) =>
+          String((c[0] as { sql?: string }).sql).includes('AS busy'),
+        );
+        expect(busyChecks).toHaveLength(1);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it('takes out the hours a held booking occupies', async () => {
       const c = await newCustomer();
       const b = await makeBooking(api, admin, c, area.id, 'PENDING_PAYMENT');

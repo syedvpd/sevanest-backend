@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { AppConfigService } from '../../config/app-config.service';
+import { recordQuery } from '../../common/request-context/request-context';
 import { PrismaClient } from '../../generated/prisma/client';
 
 /**
@@ -18,7 +19,17 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         max: config.databasePoolMax,
         query_timeout: config.databaseQueryTimeoutMs,
       }),
+      ...(config.requestTimingLog
+        ? { log: [{ emit: 'event' as const, level: 'query' as const }] }
+        : {}),
     });
+    if (config.requestTimingLog) {
+      // Only the duration is read: the statement text and its parameters are deliberately never touched.
+      (this as unknown as { $on(event: 'query', cb: (e: { duration: number }) => void): void }).$on(
+        'query',
+        (e) => recordQuery(e.duration),
+      );
+    }
   }
 
   async onModuleInit(): Promise<void> {

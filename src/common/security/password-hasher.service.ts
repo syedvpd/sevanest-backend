@@ -1,5 +1,6 @@
 import { randomBytes, scrypt, ScryptOptions, timingSafeEqual } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { ConcurrencyLimiter } from '../concurrency/limiter';
 
 /** scrypt cost parameters (OWASP-recommended memory-hard setting). They are stored in every hash, so they can be raised later. */
 const DEFAULT_PARAMS = { N: 2 ** 17, r: 8, p: 1 } as const;
@@ -8,17 +9,27 @@ const SALT_BYTES = 16;
 const MEMORY_HEADROOM = 1.25;
 const FORMAT = /^scrypt\$(\d+)\$(\d+)\$(\d+)\$([A-Za-z0-9_-]+)\$([A-Za-z0-9_-]+)$/;
 
+/**
+ * Each derivation holds ~128 MiB and one libuv thread (the default pool has four, shared with DNS and file I/O). Running them all at
+ * once on a small host starves unrelated requests and can exhaust memory, so at most two run together and the rest wait their turn.
+ * The cost parameters are untouched: this bounds concurrency, not strength.
+ */
+const derivations = new ConcurrencyLimiter(2);
+
 function deriveKey(
   password: string,
   salt: Buffer,
   keyLength: number,
   options: ScryptOptions,
 ): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    scrypt(password, salt, keyLength, options, (error, key) =>
-      error ? reject(error) : resolve(key),
-    );
-  });
+  return derivations.run(
+    () =>
+      new Promise<Buffer>((resolve, reject) => {
+        scrypt(password, salt, keyLength, options, (error, key) =>
+          error ? reject(error) : resolve(key),
+        );
+      }),
+  );
 }
 
 function scryptOptions(N: number, r: number, p: number): ScryptOptions {

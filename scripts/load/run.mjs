@@ -89,6 +89,14 @@ const SCENARIOS = [
     req: () => ({ path: `/api/v1/search/workers/${pick(workerIds)}`, as: pick(customers) }),
   },
   {
+    name: 'worker-slots',
+    weight: 5,
+    req: () => ({
+      path: `/api/v1/search/workers/${pick(workerIds)}/slots?date=${day}`,
+      as: pick(customers),
+    }),
+  },
+  {
     name: 'my-bookings',
     weight: 15,
     req: () => ({ path: '/api/v1/bookings?limit=20', as: pick(customers) }),

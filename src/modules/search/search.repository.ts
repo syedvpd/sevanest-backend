@@ -77,20 +77,17 @@ export class SearchRepository {
     lengthMinutes: number,
   ): Promise<Set<number>> {
     if (starts.length === 0) return new Set();
-    const [busy, interviews] = await Promise.all([
-      Promise.all(
-        starts.map(async (from) => {
-          const rows = await this.prisma.$queryRaw<Array<{ busy: boolean }>>(Prisma.sql`
-            SELECT ${workerBusyCondition(Prisma.sql`${workerId}::uuid`, {
-              startDate: date,
-              engagement: 'HOURLY',
-              fromMinute: from,
-              toMinute: from + lengthMinutes,
-              bufferMinutes: this.config.travelBufferMinutes,
-            })} AS busy`);
-          return rows[0]?.busy === true;
-        }),
-      ),
+    // One statement tests every candidate window (was one query per slot: up to a dozen concurrent queries against a pool of ten).
+    const [busyRows, interviews] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ start: number; busy: boolean }>>(Prisma.sql`
+        SELECT s.m AS start, ${workerBusyCondition(Prisma.sql`${workerId}::uuid`, {
+          startDate: date,
+          engagement: 'HOURLY',
+          fromMinute: Prisma.sql`s.m`,
+          toMinute: Prisma.sql`s.m + ${lengthMinutes}::int`,
+          bufferMinutes: this.config.travelBufferMinutes,
+        })} AS busy
+        FROM unnest(${starts}::int[]) AS s(m)`),
       this.prisma.$queryRaw<Array<{ minute: number }>>(Prisma.sql`
         SELECT (extract(hour FROM it.scheduled_at AT TIME ZONE 'Asia/Kolkata') * 60
               + extract(minute FROM it.scheduled_at AT TIME ZONE 'Asia/Kolkata'))::int AS minute
@@ -98,13 +95,14 @@ export class SearchRepository {
         WHERE b.worker_id = ${workerId}::uuid AND it.status = 'CONFIRMED'
           AND (it.scheduled_at AT TIME ZONE 'Asia/Kolkata')::date = ${date}::date`),
     ]);
+    const busy = new Set(busyRows.filter((r) => r.busy === true).map((r) => Number(r.start)));
     const taken = new Set<number>();
-    starts.forEach((from, i) => {
+    for (const from of starts) {
       const clash = interviews.some(
         (x) => x.minute < from + lengthMinutes && from < x.minute + lengthMinutes,
       );
-      if (busy[i] || clash) taken.add(from);
-    });
+      if (busy.has(from) || clash) taken.add(from);
+    }
     return taken;
   }
 

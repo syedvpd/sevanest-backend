@@ -16,8 +16,9 @@ export interface BusyRequest {
   startDate: string;
   /** Undefined is treated as a single day (the least aggressive reading; the booking itself is checked with its real engagement). */
   engagement?: string;
-  fromMinute: number;
-  toMinute: number;
+  /** A literal minute, or an SQL expression (e.g. a column of an unnest) to test many windows in one statement. */
+  fromMinute: number | Prisma.Sql;
+  toMinute: number | Prisma.Sql;
   /** A booking that must not count against itself. */
   excludeBookingId?: string;
   /** Minutes a worker needs between two jobs (travel). Each existing booking is widened by this on both sides. Default 0. */

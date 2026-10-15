@@ -94,6 +94,11 @@ export class EnvironmentVariables {
   @IsIn(LOG_LEVELS)
   LOG_LEVEL: (typeof LOG_LEVELS)[number] = 'info';
 
+  /** One structured line per request (route, status, ms, database statements and their time); no bodies, params or tokens. Off by default. */
+  @Transform(toBoolean)
+  @IsBoolean()
+  REQUEST_TIMING_LOG: boolean = false;
+
   /** Interactive OpenAPI docs. Off unless explicitly enabled. */
   @Transform(toBoolean)
   @IsBoolean()

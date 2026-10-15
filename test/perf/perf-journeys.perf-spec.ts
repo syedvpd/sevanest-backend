@@ -3,7 +3,8 @@ import '../support/env-api-integration';
 // Tokens must outlive the run; throttles are lifted so a single-user sequential run is never limited.
 process.env.JWT_ACCESS_TTL_SECONDS = '28800';
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { Logger } from '@nestjs/common';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import type { AddressInfo } from 'node:net';
@@ -124,6 +125,23 @@ describe('Performance journeys', () => {
 
   beforeAll(async () => {
     api = await createApiApp();
+    if (api.config.requestTimingLog) {
+      // Per-request timing lines (route, ms, database statements) go to a JSONL file, not the console; analysed by scripts/perf/timing-report.mjs.
+      const out = process.env.PERF_OUT ?? join(__dirname, 'out');
+      mkdirSync(out, { recursive: true });
+      const file = join(out, 'timing.jsonl');
+      writeFileSync(file, '');
+      Logger.overrideLogger({
+        log: (m: unknown) =>
+          appendFileSync(
+            file,
+            `${JSON.stringify(m)}
+`,
+          ),
+        error: () => undefined,
+        warn: () => undefined,
+      });
+    }
     // the starter in-app wording a real deployment gets from `npm run seed:launch`, so lifecycle events produce notifications
     const templates = new NotificationsRepository(api.prisma);
     for (const t of DEFAULT_IN_APP_TEMPLATES) {
