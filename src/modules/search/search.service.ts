@@ -262,6 +262,13 @@ export class SearchService {
       }
       window = { fromMinute, toMinute };
     }
+    if (input.minRating !== undefined && input.minRating > this.config.ratingScaleMax) {
+      // Ratings use the configured scale (reference-data ratingScaleMax): a minimum above it can never match.
+      throw this.invalid(
+        'minRating',
+        `minRating must be at most ${this.config.ratingScaleMax} (the rating scale)`,
+      );
+    }
     const [category, area] = await Promise.all([
       this.categories.requireEnabledByCode(input.category),
       this.areas.requireEnabled(input.areaId),

@@ -65,7 +65,7 @@ export class SearchWorkersQuery extends PageQueryDto {
     minimum: 1,
     maximum: 10,
     description:
-      'Only workers whose average rating is at least this (workers with no rating are excluded).',
+      'Only workers whose average rating is at least this (workers with no rating are excluded). Must not exceed `ratingScaleMax` from GET /reference-data (400 otherwise).',
   })
   @IsOptional()
   @Type(() => Number)

@@ -45,6 +45,8 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { CustomersModule } from './modules/customers/customers.module';
+import { CustomerPhotoModule } from './modules/customer-photo/customer-photo.module';
+import { CustomerPhotoWorkerModule } from './modules/customer-photo/customer-photo.worker';
 import { ServiceCategoriesModule } from './modules/service-categories/service-categories.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkersModule } from './modules/workers/workers.module';
@@ -63,6 +65,7 @@ const embeddedWorkers =
         PaymentWorkerModule,
         BookingWorkerModule,
         SupportWorkerModule,
+        CustomerPhotoWorkerModule,
       ]
     : [];
 
@@ -90,6 +93,7 @@ const embeddedWorkers =
     LegalModule,
     AuthModule,
     WorkerPhotoModule,
+    CustomerPhotoModule,
     ShortlistModule,
     HomeModule,
     HistoryModule,

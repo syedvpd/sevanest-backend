@@ -80,3 +80,16 @@ Evidence for every row: `test/integration/module10.support-safety-notifications.
 
 ### Not backend items (unchanged)
 Firebase projects (`google-services.json`, `GoogleService-Info.plist`), the Android release keystore and iOS builds block verification of push on a real device. The backend needs `PUSH_PROVIDER=fcm` and `FCM_SERVICE_ACCOUNT_JSON` in the target environment. The local `.env` has both set, but this work deliberately did not send anything through Firebase, so FCM delivery, the real error codes for dead tokens and push on a device remain **unverified**.
+
+## Gap-closure run 2026-10-15 (requests 8, 9, 12, 13, 55-57)
+Full matrix: `docs/qa/customer-app-backend-gap-closure.md`. Local tests only (`test/integration/customer.gapclosure.int-spec.ts`).
+
+| Ask | Status |
+|---|---|
+| 8 Customer photo | **Implemented (owner-only).** `POST /customers/me/photo {contentType, sizeBytes}` -> upload link; PUT the bytes; `POST /customers/me/photo/{photoId}/confirm`; `GET /customers/me/photo` -> `{url, largeUrl, expiresAt, cacheKey}` (404 `PHOTO_NOT_FOUND` when none). JPEG/PNG up to `PROFILE_PHOTO_MAX_BYTES` (503 `PHOTO_NOT_CONFIGURED` until set), unconfirmed uploads are discarded after 24 h, a new photo replaces the old one. Not shown to workers or staff and not part of `GET /customers/me` until the client decides scope and visibility (Q-113). Real bucket not exercised. |
+| 9 Booking actions | **Verified.** Customer actions and source states are in `allowedActions` on every booking (they agree with the server). `reopen-matching` -> status `MATCHED`, `workerId` kept, schedule cleared. `schedule` only from `MATCHED` and cannot be repeated (409 `INVALID_TRANSITION`); to move an interview use `POST /interviews/{id}/reschedule`. A worker's decline reason is no longer in the customer `timeline[].note`. Slot rules: the backend enforces only "in the future" for the time; `GET /search/workers/{id}/slots` (1 h, 14 days) is guidance (Q-115). |
+| 12 Fee before payment | **Implemented.** `GET /fees/booking` -> `{code, amountMinor, currency}` (paise); add `?bookingId=` (own booking) to get the amount of its open payment. 422 `FEE_NOT_CONFIGURED` when none is active. Policy text is not served (Q-114). |
+| 13 Cancellation reasons / refund | **Unchanged, blocked on policy (Q-114).** `cancel` takes free text; refund state is on the payment (`GET /payments?bookingId=`). |
+| 55 Legal URLs | **Already supported; configuration.** `GET /app-config` `legal.terms.url` / `legal.privacy.url` are `null` until `LEGAL_TERMS_URL` / `LEGAL_PRIVACY_URL` are set (and their `*_VERSION`; the object is `null` without a version). Blank counts as unset. |
+| 56 Account deletion | **Blocked (Q-112).** No endpoint. |
+| 57 Store URL / minVersion | **Already supported** (see section 57 above). |

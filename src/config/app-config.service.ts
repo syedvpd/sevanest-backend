@@ -143,28 +143,28 @@ export class AppConfigService {
     return {
       termsVersion: this.get('LEGAL_TERMS_VERSION'),
       privacyVersion: this.get('LEGAL_PRIVACY_VERSION'),
-      termsUrl: this.get('LEGAL_TERMS_URL'),
-      privacyUrl: this.get('LEGAL_PRIVACY_URL'),
+      termsUrl: this.get('LEGAL_TERMS_URL')?.trim() || undefined,
+      privacyUrl: this.get('LEGAL_PRIVACY_URL')?.trim() || undefined,
       required: this.get('LEGAL_ACCEPTANCE_REQUIRED'),
     };
   }
   get appPolicy(): {
     minVersionCustomer?: string;
     minVersionWorker?: string;
+    storeUrlCustomer?: string;
+    storeUrlWorker?: string;
     maintenance: boolean;
     supportPhone?: string;
     supportEmail?: string;
-    storeUrlCustomer?: string;
-    storeUrlWorker?: string;
   } {
     return {
       minVersionCustomer: this.get('APP_MIN_VERSION_CUSTOMER'),
       minVersionWorker: this.get('APP_MIN_VERSION_WORKER'),
+      storeUrlCustomer: this.get('APP_STORE_URL_CUSTOMER')?.trim() || undefined,
+      storeUrlWorker: this.get('APP_STORE_URL_WORKER')?.trim() || undefined,
       maintenance: this.get('APP_MAINTENANCE_MODE'),
       // A blank value counts as not configured, so the app never shows an empty "Call support" target.
       supportPhone: this.get('SUPPORT_CONTACT_PHONE')?.trim() || undefined,
-      storeUrlCustomer: this.get('APP_STORE_URL_CUSTOMER')?.trim() || undefined,
-      storeUrlWorker: this.get('APP_STORE_URL_WORKER')?.trim() || undefined,
       supportEmail: this.get('SUPPORT_CONTACT_EMAIL')?.trim() || undefined,
     };
   }

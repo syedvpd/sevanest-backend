@@ -53,3 +53,29 @@ describe('AppConfigService.appPolicy support contact', () => {
     expect(blank.supportEmail).toBeUndefined();
   });
 });
+
+describe('AppConfigService.legal URLs', () => {
+  it('passes configured URLs through trimmed and treats blank or unset as not configured', () => {
+    const set = make({
+      LEGAL_TERMS_URL: ' https://example.test/terms ',
+      LEGAL_PRIVACY_URL: 'https://example.test/privacy',
+    }).legal;
+    expect(set.termsUrl).toBe('https://example.test/terms');
+    expect(set.privacyUrl).toBe('https://example.test/privacy');
+    const blank = make({ LEGAL_TERMS_URL: '  ', LEGAL_PRIVACY_URL: '' }).legal;
+    expect(blank.termsUrl).toBeUndefined();
+    expect(blank.privacyUrl).toBeUndefined();
+    expect(make({}).legal.termsUrl).toBeUndefined();
+  });
+});
+
+describe('AppConfigService.appPolicy store URL', () => {
+  it('passes the https store URLs through and leaves blank ones undefined', () => {
+    const policy = make({
+      APP_STORE_URL_CUSTOMER: ' https://play.google.com/store/apps/details?id=x ',
+      APP_STORE_URL_WORKER: ' ',
+    }).appPolicy;
+    expect(policy.storeUrlCustomer).toBe('https://play.google.com/store/apps/details?id=x');
+    expect(policy.storeUrlWorker).toBeUndefined();
+  });
+});

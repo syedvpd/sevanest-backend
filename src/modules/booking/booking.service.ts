@@ -1562,8 +1562,9 @@ export class BookingService {
       from: event.fromStatus,
       to: event.toStatus,
       by: event.actorKind,
-      // Staff notes (cancellation reasons, interview outcomes) are part of the customer's own booking history.
-      note: event.note,
+      // Staff notes (cancellation reasons, interview outcomes) are part of the customer's own booking history. A worker's own
+      // free text (the reason for declining) is not shown to the customer.
+      note: !forAdmin && event.actorKind === 'WORKER' ? null : event.note,
       at: event.createdAt,
       ...(forAdmin ? { actorUserId: event.actorUserId } : {}),
     };

@@ -581,11 +581,6 @@ export class EnvironmentVariables {
   @Matches(/^\d+\.\d+\.\d+$/)
   APP_MIN_VERSION_WORKER?: string;
 
-  @Transform(toBoolean)
-  @IsBoolean()
-  APP_MAINTENANCE_MODE: boolean = false;
-
-  @IsOptional()
   /** Store page the "Update required" button opens (https). Unset = the app hides the button. */
   @IsOptional()
   @Matches(/^https:\/\/\S+$/, { message: 'APP_STORE_URL_CUSTOMER must be an https URL' })
@@ -595,6 +590,11 @@ export class EnvironmentVariables {
   @Matches(/^https:\/\/\S+$/, { message: 'APP_STORE_URL_WORKER must be an https URL' })
   APP_STORE_URL_WORKER?: string;
 
+  @Transform(toBoolean)
+  @IsBoolean()
+  APP_MAINTENANCE_MODE: boolean = false;
+
+  @IsOptional()
   @IsString()
   SUPPORT_CONTACT_PHONE?: string;
 

@@ -38,6 +38,8 @@ import {
   AdminPaymentListQuery,
   AdminPaymentView,
   BOOKING_FEE_CODE,
+  BookingFeeQuote,
+  BookingFeeQuoteQuery,
   CreatePaymentDto,
   CreatePaymentResponse,
   FEE_CODE_PATTERN,
@@ -62,6 +64,20 @@ import { ExceptionView, PaymentActor, PaymentService } from './payment.service';
 @Controller({ version: '1' })
 export class PaymentsController {
   constructor(private readonly payments: PaymentService) {}
+
+  @Get('fees/booking')
+  @ApiModelResponse(BookingFeeQuote)
+  @ApiOperation({
+    summary: 'The booking fee I will be charged, before the payment step',
+    description:
+      'Same source as POST /payments, so the amount is exactly what is charged. Pass bookingId (mine) to get the amount of its already-open payment. 422 FEE_NOT_CONFIGURED when no active fee exists (then POST /payments fails the same way), 404 BOOKING_NOT_FOUND for a booking that is not mine. Cancellation, refund and replacement terms are not part of this response: no approved policy exists.',
+  })
+  quoteBookingFee(
+    @Query() query: BookingFeeQuoteQuery,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BookingFeeQuote> {
+    return this.payments.quoteBookingFee(user.userId, query.bookingId);
+  }
 
   @Idempotent()
   @Post('payments')

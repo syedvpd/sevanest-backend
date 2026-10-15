@@ -30,6 +30,7 @@ import {
   BOOKING_FEE_CODE,
   CheckoutView,
   CreatePaymentResponse,
+  BookingFeeQuote,
   FeeView,
   PaymentListQuery,
   PaymentView,
@@ -147,6 +148,37 @@ export class PaymentService {
 
   // --- customer ----------------------------------------------------------------------------------------------
 
+  /** The one place that decides which fee a new booking payment charges (used by the quote and by createForBooking). */
+  private async requireActiveBookingFee(): Promise<FeeRecord> {
+    const fee = await this.repository.findFee(BOOKING_FEE_CODE);
+    if (!fee || !fee.isActive) {
+      throw new DomainException(
+        PaymentErrorCode.FEE_NOT_CONFIGURED,
+        'The booking fee has not been configured',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    return fee;
+  }
+
+  /**
+   * What paying a booking costs, before the payment step. Without a booking it is the active fee configuration; with one of my
+   * bookings that already has a payment, it is that payment's own amount (a later fee change never alters an open payment).
+   * 422 FEE_NOT_CONFIGURED when nothing would be charged; another customer's booking answers 404.
+   */
+  async quoteBookingFee(customerUserId: string, bookingId?: string): Promise<BookingFeeQuote> {
+    if (bookingId) {
+      const booking = await this.bookings.getSummary(bookingId).catch(() => null);
+      if (!booking || booking.customerUserId !== customerUserId) throw this.bookingNotFound();
+      const open = await this.repository.findOpenForBooking(bookingId);
+      if (open) {
+        return { code: open.feeCode, amountMinor: open.amountMinor, currency: open.currency };
+      }
+    }
+    const fee = await this.requireActiveBookingFee();
+    return { code: fee.code, amountMinor: fee.amountMinor, currency: fee.currency };
+  }
+
   /** Starts (or resumes) the payment of a booking the customer owns. The amount always comes from the fee configuration. */
   async createForBooking(
     customerUserId: string,
@@ -170,14 +202,7 @@ export class PaymentService {
       );
     }
     if (!payment) {
-      const fee = await this.repository.findFee(BOOKING_FEE_CODE);
-      if (!fee || !fee.isActive) {
-        throw new DomainException(
-          PaymentErrorCode.FEE_NOT_CONFIGURED,
-          'The booking fee has not been configured',
-          HttpStatus.UNPROCESSABLE_ENTITY,
-        );
-      }
+      const fee = await this.requireActiveBookingFee();
       try {
         payment = await this.repository.transaction(async (tx) => {
           // Re-check under the booking lock: a cancellation that committed meanwhile must not get a new payable order.

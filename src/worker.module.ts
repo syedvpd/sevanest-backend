@@ -13,6 +13,7 @@ import { OutboxModule } from './common/outbox/outbox.module';
 import { BookingWorkerModule } from './modules/booking/booking.worker';
 import { PaymentWorkerModule } from './modules/payment/payment.worker';
 import { SupportWorkerModule } from './modules/support/support.worker';
+import { CustomerPhotoWorkerModule } from './modules/customer-photo/customer-photo.worker';
 import { VerificationWorkerModule } from './modules/verification/verification.worker';
 
 /**
@@ -36,6 +37,7 @@ import { VerificationWorkerModule } from './modules/verification/verification.wo
     PaymentWorkerModule,
     BookingWorkerModule,
     SupportWorkerModule,
+    CustomerPhotoWorkerModule,
   ],
 })
 export class WorkerModule {}

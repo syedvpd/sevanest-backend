@@ -118,6 +118,25 @@ export class FeeView {
   @ApiProperty() isActive!: boolean;
 }
 
+export class BookingFeeQuoteQuery {
+  @ApiPropertyOptional({
+    description:
+      'My booking. When a payment for it is already open, the quote is the amount that payment was created with.',
+  })
+  @IsOptional()
+  @IsUUID()
+  bookingId?: string;
+}
+
+export class BookingFeeQuote {
+  @ApiProperty({ example: BOOKING_FEE_CODE }) code!: string;
+  @ApiProperty({
+    description: 'Smallest currency unit (paise). Exactly what POST /payments charges.',
+  })
+  amountMinor!: number;
+  @ApiProperty() currency!: string;
+}
+
 export class PaymentView {
   @ApiProperty() id!: string;
   @ApiProperty() bookingId!: string;

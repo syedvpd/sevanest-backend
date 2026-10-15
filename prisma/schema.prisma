@@ -49,6 +49,7 @@ model User {
   workerProfile             WorkerProfile?
   verificationReviews       WorkerVerificationCheck[] @relation("VerificationReviewer")
   verificationEvents        WorkerVerificationEvent[] @relation("VerificationEventActor")
+  customerPhotos            CustomerProfilePhoto[]    @relation("CustomerPhotos")
   bookings                  Booking[]                 @relation("BookingCustomer")
   bookingsCancelled         Booking[]                 @relation("BookingCancelledBy")
   bookingEvents             BookingEvent[]            @relation("BookingEventActor")
@@ -1215,6 +1216,27 @@ model WorkerProfilePhoto {
 
   @@index([workerId, status, confirmedAt])
   @@map("worker_profile_photos")
+}
+
+/// A customer's own profile photo (customer-app request 8). Private to the customer: no other role is shown it. The newest READY row
+/// is current; a replaced photo is removed together with its renditions at confirmation.
+model CustomerProfilePhoto {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  customerUserId String      @map("customer_user_id") @db.Uuid
+  objectKey      String      @unique @map("object_key")
+  contentType    String      @map("content_type")
+  sizeBytes      Int         @map("size_bytes")
+  status         PhotoStatus @default(PENDING_UPLOAD)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  confirmedAt    DateTime?   @map("confirmed_at") @db.Timestamptz(6)
+  cardObjectKey  String?     @map("card_object_key")
+  largeObjectKey String?     @map("large_object_key")
+
+  customer User @relation("CustomerPhotos", fields: [customerUserId], references: [id], onDelete: Restrict)
+
+  @@index([customerUserId, status, confirmedAt])
+  @@index([status, createdAt])
+  @@map("customer_profile_photos")
 }
 
 /// A customer's shortlist / favourites (FR-WD-005). One row per (customer, worker); owned by the customer.
