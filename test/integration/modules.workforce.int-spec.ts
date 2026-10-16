@@ -32,7 +32,8 @@ describe('Module boundaries (static)', () => {
       auth: ['users'],
       customers: ['users'],
       'service-categories': ['users'],
-      workers: ['users', 'service-categories'],
+      // Workers imports only Verification's pure SQL definition of "verified" (verification-eligibility), never its services.
+      workers: ['users', 'service-categories', 'verification'],
       availability: ['users', 'workers'],
       verification: ['users', 'workers'],
       search: ['service-categories', 'availability', 'verification', 'worker-photo'],
@@ -45,8 +46,10 @@ describe('Module boundaries (static)', () => {
       payment: ['booking', 'users'],
       notifications: ['users', 'auth'],
       attendance: ['booking', 'users', 'workers'],
+      // Earnings reference (DEC-05): reads the booking's worker through Booking's contract and resolves the signed-in worker through Workers.
+      earnings: ['booking', 'users', 'workers'],
       // Replacement shows customer-safe alternative worker cards through Search (read-only contract).
-      replacement: ['booking', 'matching', 'search', 'users', 'workers'],
+      replacement: ['booking', 'matching', 'search', 'users', 'workers', 'alerts'],
       ratings: ['booking', 'users', 'workers'],
       support: ['booking', 'users', 'workers'],
       // Reports read other modules' tables with SELECTs only; the sole code it imports is Verification's SQL definition of "verified" and Users (permissions).
@@ -128,6 +131,7 @@ describe('Module boundaries (static)', () => {
       outboxEvent: 'common',
       attendanceRecord: 'attendance',
       attendanceEvent: 'attendance',
+      workerPaymentReference: 'earnings',
       replacementRequest: 'replacement',
       rating: 'ratings',
       workerRatingSummary: 'ratings',

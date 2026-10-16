@@ -68,6 +68,7 @@ model User {
   notifications             Notification[]            @relation("NotificationRecipient")
   attendanceRecorded        AttendanceRecord[]        @relation("AttendanceRecorder")
   attendanceEvents          AttendanceEvent[]         @relation("AttendanceEventActor")
+  workerPaymentsRecorded    WorkerPaymentReference[]  @relation("WorkerPaymentRecordedBy")
   replacementsRequested     ReplacementRequest[]      @relation("ReplacementRequester")
   replacementsDecided       ReplacementRequest[]      @relation("ReplacementDecider")
   customerNotesAuthored     CustomerNote[]
@@ -411,6 +412,7 @@ model WorkerProfile {
   references         WorkerReference[]
 
   @@index([onboardingStatus, createdAt])
+  paymentReferences WorkerPaymentReference[]
   @@map("worker_profiles")
 }
 
@@ -704,6 +706,7 @@ model Booking {
   @@index([areaId])
   @@index([categoryId])
   @@index([addressId])
+  paymentReferences WorkerPaymentReference[]
   @@map("bookings")
 }
 
@@ -1486,4 +1489,41 @@ model PricingGuidance {
 
   @@index([areaId])
   @@map("pricing_guidance")
+}
+
+enum WagePaymentMethod {
+  CASH
+  BANK_TRANSFER
+  UPI
+  CHEQUE
+  OTHER
+}
+
+/// DEC-05: a wage payment the platform did NOT make (V1 is not payroll). Staff record that the customer paid the worker off-platform, for the
+/// worker's information. Append-only (database trigger): a mistake is fixed by a new row that `corrects` the old one (or voids it); the old row
+/// stays as history. A row counts toward the worker's totals only while nothing corrects it and it is not a void.
+model WorkerPaymentReference {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  bookingId        String            @map("booking_id") @db.Uuid
+  workerId         String            @map("worker_id") @db.Uuid
+  amountMinor      Int               @map("amount_minor")
+  currency         String            @default("INR")
+  periodLabel      String            @map("period_label")
+  method           WagePaymentMethod
+  referenceText    String            @map("reference_text")
+  /// The earlier row this one replaces (a correction) or cancels (isVoid). At most one correction per row.
+  correctsId       String?           @unique @map("corrects_id") @db.Uuid
+  isVoid           Boolean           @default(false) @map("is_void")
+  recordedByUserId String            @map("recorded_by_user_id") @db.Uuid
+  recordedAt       DateTime          @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  booking    Booking                 @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  worker     WorkerProfile           @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  recordedBy User                    @relation("WorkerPaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  corrects   WorkerPaymentReference? @relation("WorkerPaymentCorrection", fields: [correctsId], references: [id], onDelete: Restrict)
+  correctedBy WorkerPaymentReference[] @relation("WorkerPaymentCorrection")
+
+  @@index([workerId, recordedAt])
+  @@index([bookingId])
+  @@map("worker_payment_references")
 }

@@ -27,6 +27,7 @@ import { WorkerPhotoModule } from './modules/worker-photo/worker-photo.module';
 import { AvailabilityModule } from './modules/availability/availability.module';
 import { BookingModule } from './modules/booking/booking.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
+import { EarningsModule } from './modules/earnings/earnings.module';
 import { ReplacementModule } from './modules/replacement/replacement.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
 import { SupportModule } from './modules/support/support.module';
@@ -111,6 +112,7 @@ const embeddedWorkers =
     PaymentModule,
     NotificationsModule,
     AttendanceModule,
+    EarningsModule,
     ReplacementModule,
     RatingsModule,
     SupportModule,

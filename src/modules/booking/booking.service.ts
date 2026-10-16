@@ -768,6 +768,7 @@ export class BookingService {
   async getRequirement(bookingId: string): Promise<{
     customerUserId: string;
     workerId: string | null;
+    status: BookingRecord['status'];
     category: string;
     areaId: string;
     engagement: BookingRecord['engagement'];
@@ -780,6 +781,7 @@ export class BookingService {
     return {
       customerUserId: booking.customerUserId,
       workerId: booking.workerId,
+      status: booking.status,
       category: category.code,
       areaId: booking.areaId,
       engagement: booking.engagement,
