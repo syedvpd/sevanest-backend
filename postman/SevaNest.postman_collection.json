@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SevaNest Backend API",
-    "description": "All 271 operations of the SevaNest API (OpenAPI generated). Folders follow the module lifecycle (create, list, read, update, state change, delete). Ids are captured into collection variables by the tests of create/list requests. Each request checks: no 5xx, a documented status or a business-state answer (404/409/422), response time under slowMs, the standard error envelope.\n\nOrder: run \"00 Start here\" first, then the module folders from top to bottom. Some operations only succeed once earlier state exists (for example a booking must be ACTIVE before attendance); a 409/422 there is an accepted answer.",
+    "description": "All 290 operations of the SevaNest API (OpenAPI generated). Folders follow the module lifecycle (create, list, read, update, state change, delete). Ids are captured into collection variables by the tests of create/list requests. Each request checks: no 5xx, a documented status or a business-state answer (404/409/422), response time under slowMs, the standard error envelope.\n\nOrder: run \"00 Start here\" first, then the module folders from top to bottom. Some operations only succeed once earlier state exists (for example a booking must be ACTIVE before attendance); a 409/422 there is an accepted answer.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -612,7 +612,7 @@
               ],
               "query": []
             },
-            "description": "Send a login OTP to a customer or worker mobile number\n\nRate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). Suspended accounts are refused before anything is sent.",
+            "description": "Send a login OTP to a customer or worker mobile number\n\nRate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). The answer is identical for every number (known, unknown, suspended); nothing is sent to a suspended account or to a number registered for the other app.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"mobile\": \"{{uniqueMobile}}\",\n  \"appType\": \"CUSTOMER\"\n}",
@@ -717,7 +717,7 @@
               ],
               "query": []
             },
-            "description": "Rotate the refresh token and get a new access token\n\nThe refresh token is single-use. Presenting an already-used token revokes the session (possible token theft).",
+            "description": "Rotate the refresh token and get a new access token\n\nThe refresh token is single-use. Presenting an already-used token revokes the session (possible token theft), except when the same deviceId replays it within REFRESH_REUSE_GRACE_SECONDS: that answers 409 REFRESH_IN_PROGRESS and the client retries with the newest token.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"Postman refreshToken\"\n}",
@@ -1100,6 +1100,105 @@
               "query": []
             },
             "description": "Who am I: identity, type, status, roles and permissions"
+          }
+        },
+        {
+          "name": "GET /users/me/notification-preferences",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/notification-preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "notification-preferences"
+              ],
+              "query": []
+            },
+            "description": "My notification preferences (e-mail on/off)"
+          }
+        },
+        {
+          "name": "PUT /users/me/notification-preferences",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/notification-preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "notification-preferences"
+              ],
+              "query": []
+            },
+            "description": "Turn e-mail notifications on or off for me\n\nE-mail is only ever sent when the platform has an e-mail channel configured and an address on file for you.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
@@ -2472,7 +2571,7 @@
                 }
               ]
             },
-            "description": "Verification queue, oldest submission first (paginated)"
+            "description": "Verification queue, oldest submission first (paginated)\n\nFilters: status, checkType, categoryId, search (worker name), assignedTo=me (My Reviews, from the token) or reviewerId. Order: check submission time, then id."
           }
         },
         {
@@ -2794,7 +2893,7 @@
               ],
               "query": []
             },
-            "description": "Take a submitted check into review (SUBMITTED to IN_REVIEW)"
+            "description": "Claim a check for review (SUBMITTED to IN_REVIEW; persists the reviewer and claim time)\n\nRepeating on my own claim changes nothing. 409 CHECK_ALREADY_ASSIGNED when another reviewer holds it; there is no reassignment (no rule is defined)."
           }
         },
         {
@@ -3919,6 +4018,61 @@
       "name": "Admin - Payments",
       "item": [
         {
+          "name": "POST /admin/fees",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([201, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/fees",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "fees"
+              ],
+              "query": []
+            },
+            "description": "Add a fee to the catalogue (audited)\n\n409 FEE_EXISTS. A PLACEMENT, VERIFICATION or REPLACEMENT_PLAN fee becomes payable by customers (POST /fee-payments) as soon as it is active.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PLACEMENT_FEE\",\n  \"kind\": \"BOOKING\",\n  \"amountMinor\": 50000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "GET /admin/fees",
           "event": [
             {
@@ -3945,7 +4099,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/fees",
+              "raw": "{{baseUrl}}/api/v1/admin/fees?kind=Postman kind",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3955,9 +4109,14 @@
                 "admin",
                 "fees"
               ],
-              "query": []
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "Postman kind"
+                }
+              ]
             },
-            "description": "Configured fees (empty until an administrator sets them, Q-01)"
+            "description": "Fee catalogue (empty until an administrator sets fees, Q-01); filter by kind\n\nEach fee carries kind (BOOKING, PLACEMENT, VERIFICATION, REPLACEMENT_PLAN, SUBSCRIPTION, CANCELLATION) and updatedAt (the version for If-Match). SUBSCRIPTION and B2B models are catalogued only: nothing charges them in V1."
           }
         },
         {
@@ -4367,6 +4526,49 @@
           }
         },
         {
+          "name": "GET /admin/fees/{code}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/fees/{{code}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "fees",
+                "{{code}}"
+              ],
+              "query": []
+            },
+            "description": "One fee (ETag for If-Match)"
+          }
+        },
+        {
           "name": "GET /admin/payments/{paymentId}",
           "event": [
             {
@@ -4453,7 +4655,7 @@
               ],
               "query": []
             },
-            "description": "Set any configured fee by code (placement, verification, replacement plan ...); audited with before and after\n\nFee values are configuration (PRD 10). Only BOOKING_FEE is charged by the current flows; other codes are stored for the revenue models the business enables later.",
+            "description": "Set any configured fee by code (placement, verification, replacement plan ...); audited with before and after\n\nCreate-or-replace upsert (use POST/PATCH /admin/fees for the catalogue). Fee values are configuration (PRD 10). BOOKING_FEE is charged by the booking flow; PLACEMENT, VERIFICATION and REPLACEMENT_PLAN fees are charged through POST /fee-payments; others are catalogued only. Send If-Match: * when the code does not exist yet.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"amountMinor\": 50000\n}",
@@ -4463,6 +4665,105 @@
                 }
               }
             }
+          }
+        },
+        {
+          "name": "PATCH /admin/fees/{code}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/fees/{{code}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "fees",
+                "{{code}}"
+              ],
+              "query": []
+            },
+            "description": "Change a fee amount or switch it on/off (If-Match required: 428 without it, 412 when stale)\n\nA fee already used by a payment is deactivated, not deleted.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "DELETE /admin/fees/{code}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([204, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/fees/{{code}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "fees",
+                "{{code}}"
+              ],
+              "query": []
+            },
+            "description": "Delete a fee that was never charged (If-Match required)\n\n409 FEE_IN_USE once any payment used it; 409 FEE_PROTECTED for the booking fee."
           }
         }
       ]
@@ -5255,6 +5556,62 @@
           }
         },
         {
+          "name": "PUT /workers/me/criminal-declaration",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{workerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workers/me/criminal-declaration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workers",
+                "me",
+                "criminal-declaration"
+              ],
+              "query": []
+            },
+            "description": "Save my criminal self-declaration and consent\n\nBody: hasCriminalRecord (my own statement), details (only when true), accepted (must be true). The server stamps the acceptance time; the saved declaration comes back as criminalDeclaration on this response, on GET /workers/me and on the admin worker detail. It can be repeated: the latest statement replaces the previous one. Saving it never blocks submission or verification.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hasCriminalRecord\": true,\n  \"accepted\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "PUT /workers/me/references",
           "event": [
             {
@@ -5934,6 +6291,179 @@
               ]
             },
             "description": "List workers (paginated, mobile masked)"
+          }
+        },
+        {
+          "name": "POST /admin/workers/{workerId}/blacklist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/workers/{{workerId}}/blacklist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "workers",
+                "{{workerId}}",
+                "blacklist"
+              ],
+              "query": []
+            },
+            "description": "Blacklist a worker (reason required, audited)\n\nThe worker leaves search, matching and eligibility at once, their account is suspended (sessions end), and staff get an alert for each open booking they hold. Repeating is safe. Only a Super Admin can lift it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /admin/workers/{workerId}/blacklist/lift",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/workers/{{workerId}}/blacklist/lift",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "workers",
+                "{{workerId}}",
+                "blacklist",
+                "lift"
+              ],
+              "query": []
+            },
+            "description": "Lift a blacklisting (Super Admin only; reason required, audited)\n\nThe account is reactivated. The worker is searchable again only if still verified.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /admin/workers/{workerId}/emergency-contact/reveal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/workers/{{workerId}}/emergency-contact/reveal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "workers",
+                "{{workerId}}",
+                "emergency-contact",
+                "reveal"
+              ],
+              "query": []
+            },
+            "description": "Reveal a worker's emergency contact (reason required; every reveal is audited)\n\nThe general staff profile never contains the emergency contact. 422 without a reason; 404 EMERGENCY_CONTACT_NOT_FOUND when none is on file.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -7175,7 +7705,7 @@
               ],
               "query": []
             },
-            "description": "Create a booking request (NEW_REQUEST, or MATCHED when an eligible worker is chosen)\n\n422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / WORKER_NOT_ELIGIBLE, 409 DUPLICATE_BOOKING for a second open booking with the same worker and service.",
+            "description": "Create a booking request (NEW_REQUEST, or MATCHED when an eligible worker is chosen)\n\nWithout workerId this is the customer asking staff to find a worker (admin matching, offered when GET /search/workers answers canRequestAdminMatching): the booking is a NEW_REQUEST and staff get a BOOKING_NEEDS_MATCH alert. 422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / WORKER_NOT_ELIGIBLE, 409 DUPLICATE_BOOKING for a second open booking with the same worker and service.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"category\": \"HOUSE_MAID\",\n  \"areaId\": \"{{areaId}}\",\n  \"engagement\": \"FULL_TIME\",\n  \"availableFrom\": \"09:00\",\n  \"availableTo\": \"13:00\",\n  \"workerId\": \"{{workerId}}\",\n  \"addressId\": \"{{addressId}}\"\n}",
@@ -8528,6 +9058,60 @@
       "name": "Payments",
       "item": [
         {
+          "name": "POST /fee-payments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([201, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/fee-payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "fee-payments"
+              ],
+              "query": []
+            },
+            "description": "Start (or resume) payment of an extra fee against my booking\n\nThe amount comes from the fee configuration and cannot be sent. One open payment per booking and fee; paying a fee that is already paid answers 409 ALREADY_PAID. The booking itself does not change. 422 FEE_NOT_CONFIGURED (no active fee) / FEE_NOT_PAYABLE, 409 BOOKING_NOT_PAYABLE (cancelled), 404 for a booking that is not mine. Verify the checkout with POST /payments/{id}/verify.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"feeCode\": \"PLACEMENT_FEE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "POST /payments",
           "event": [
             {
@@ -8625,6 +9209,48 @@
               "query": []
             },
             "description": "The booking fee I will be charged, before the payment step\n\nSame source as POST /payments, so the amount is exactly what is charged. Pass bookingId (mine) to get the amount of its already-open payment. 422 FEE_NOT_CONFIGURED when no active fee exists (then POST /payments fails the same way), 404 BOOKING_NOT_FOUND for a booking that is not mine. Cancellation, refund and replacement terms are not part of this response: no approved policy exists."
+          }
+        },
+        {
+          "name": "GET /fees/payable",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/fees/payable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "fees",
+                "payable"
+              ],
+              "query": []
+            },
+            "description": "Extra fees I can pay against a booking (placement, verification, replacement plan)\n\nOnly ACTIVE fees of those kinds are listed: with none configured the list is empty and the feature is off. Pay one with POST /fee-payments."
           }
         },
         {
@@ -12885,7 +13511,7 @@
                 }
               ]
             },
-            "description": "Search the audit log (newest first, paginated)"
+            "description": "Search the audit log (newest first)\n\nOffset pages (page, limit; counts the total) or, for deep walks, keyset pages: take meta.nextCursor from any response and send it as cursor."
           }
         }
       ]
@@ -12938,6 +13564,63 @@
               ]
             },
             "description": "Account deletion requests (newest first)"
+          }
+        },
+        {
+          "name": "POST /admin/deletion-requests/{requestId}/reject",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/deletion-requests/{{requestId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "deletion-requests",
+                "{{requestId}}",
+                "reject"
+              ],
+              "query": []
+            },
+            "description": "Refuse an open deletion request (reason required, audited)\n\nThe account stays as it is. A request is otherwise anonymised automatically once the cooling-off period has passed and nothing is in progress (retention must be enabled). 409 DELETION_REQUEST_NOT_OPEN when it is already completed, cancelled or rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
@@ -13948,6 +14631,328 @@
               "query": []
             },
             "description": "Confirm the upload; the photo becomes current once its size, file signature and content check out\n\nErrors: 422 PHOTO_NOT_UPLOADED, PHOTO_CONTENT_MISMATCH or PHOTO_MALWARE_DETECTED; 404 for an unknown photo or a photo of another customer. Repeating is harmless. The previous photo is removed."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Earnings",
+      "item": [
+        {
+          "name": "GET /workers/me/earnings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{workerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workers/me/earnings?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workers",
+                "me",
+                "earnings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "My earnings reference: wage payments recorded by staff, newest first, with my total\n\nInformation only: SevaNest does not pay wages (V1 is not payroll). Corrected or cancelled entries are not shown or counted. `totals` covers all of my counted entries, not only this page."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Earnings",
+      "item": [
+        {
+          "name": "POST /admin/wage-payments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([201, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/wage-payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "wage-payments"
+              ],
+              "query": []
+            },
+            "description": "Record a wage payment made off-platform for the worker of a started booking (audited)\n\n409 NO_WORKER_ASSIGNED / BOOKING_NOT_STARTED; 404 for an unknown booking. The platform moves no money.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountMinor\": 50000,\n  \"periodLabel\": \"2026-11\",\n  \"method\": \"CASH\",\n  \"referenceText\": \"Postman referenceText\",\n  \"bookingId\": \"{{bookingId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /admin/wage-payments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/wage-payments?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "wage-payments"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "All wage payment entries including corrections and voids (paginated, filter by worker or booking)"
+          }
+        },
+        {
+          "name": "POST /admin/wage-payments/{id}/correct",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([201, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/wage-payments/{{pricingBandId}}/correct",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "wage-payments",
+                "{{pricingBandId}}",
+                "correct"
+              ],
+              "query": []
+            },
+            "description": "Correct an entry with a new one (the old row stays as history and stops counting)\n\n409 WAGE_PAYMENT_ALREADY_CORRECTED when a newer row already replaced it; 409 WAGE_PAYMENT_IS_VOID for a cancelling row.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountMinor\": 50000,\n  \"periodLabel\": \"2026-11\",\n  \"method\": \"CASH\",\n  \"referenceText\": \"Postman referenceText\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /admin/wage-payments/{id}/void",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([201, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/wage-payments/{{pricingBandId}}/void",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "wage-payments",
+                "{{pricingBandId}}",
+                "void"
+              ],
+              "query": []
+            },
+            "description": "Cancel an entry that should not exist (a new voiding row; the old one stays as history)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman test {{uniqueSuffix}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Retention",
+      "item": [
+        {
+          "name": "GET /admin/retention/preview",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/retention/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "retention",
+                "preview"
+              ],
+              "query": []
+            },
+            "description": "Dry run: how much data is past its retention period (changes nothing)\n\nCounts per task (notifications, processed outbox events, rejected KYC files) and the account deletions that are past the cooling-off period. Works whether or not RETENTION_ENABLED is on. Super Admin only (audit.view)."
           }
         }
       ]

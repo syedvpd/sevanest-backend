@@ -3,6 +3,7 @@
   "paths": {
     "/api/v1/admin/audit-logs": {
       "get": {
+        "description": "Offset pages (page, limit; counts the total) or, for deep walks, keyset pages: take meta.nextCursor from any response and send it as cursor.",
         "operationId": "AuditLogController_search_v1",
         "parameters": [
           {
@@ -24,6 +25,15 @@
               "maximum": 100,
               "default": 20,
               "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Keyset paging: the nextCursor of the previous response (offset pages carry one too). With a cursor the page number is ignored, no total is counted, and the answer is { data, meta: { limit, nextCursor } } (nextCursor is null on the last page). Cheap on any depth.",
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -111,7 +121,7 @@
             "bearer": []
           }
         ],
-        "summary": "Search the audit log (newest first, paginated)",
+        "summary": "Search the audit log (newest first)",
         "tags": [
           "Admin - Audit"
         ]
@@ -139,6 +149,69 @@
           }
         ],
         "summary": "Who am I: identity, type, status, roles and permissions",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/users/me/notification-preferences": {
+      "get": {
+        "operationId": "NotificationPreferencesController_get_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "My notification preferences (e-mail on/off)",
+        "tags": [
+          "Users"
+        ]
+      },
+      "put": {
+        "description": "E-mail is only ever sent when the platform has an e-mail channel configured and an address on file for you.",
+        "operationId": "NotificationPreferencesController_set_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferencesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn e-mail notifications on or off for me",
         "tags": [
           "Users"
         ]
@@ -968,7 +1041,8 @@
               "enum": [
                 "REQUESTED",
                 "CANCELLED",
-                "COMPLETED"
+                "COMPLETED",
+                "REJECTED"
               ]
             }
           }
@@ -1011,9 +1085,56 @@
         ]
       }
     },
+    "/api/v1/admin/deletion-requests/{requestId}/reject": {
+      "post": {
+        "description": "The account stays as it is. A request is otherwise anonymised automatically once the cooling-off period has passed and nothing is in progress (retention must be enabled). 409 DELETION_REQUEST_NOT_OPEN when it is already completed, cancelled or rejected.",
+        "operationId": "AdminDeletionController_reject_v1",
+        "parameters": [
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectDeletionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionRequestView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refuse an open deletion request (reason required, audited)",
+        "tags": [
+          "Admin - Account deletion"
+        ]
+      }
+    },
     "/api/v1/auth/otp/request": {
       "post": {
-        "description": "Rate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). Suspended accounts are refused before anything is sent.",
+        "description": "Rate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). The answer is identical for every number (known, unknown, suspended); nothing is sent to a suspended account or to a number registered for the other app.",
         "operationId": "AuthController_requestOtp_v1",
         "parameters": [],
         "requestBody": {
@@ -1112,7 +1233,7 @@
     },
     "/api/v1/auth/token/refresh": {
       "post": {
-        "description": "The refresh token is single-use. Presenting an already-used token revokes the session (possible token theft).",
+        "description": "The refresh token is single-use. Presenting an already-used token revokes the session (possible token theft), except when the same deviceId replays it within REFRESH_REUSE_GRACE_SECONDS: that answers 409 REFRESH_IN_PROGRESS and the client retries with the newest token.",
         "operationId": "AuthController_refresh_v1",
         "parameters": [],
         "requestBody": {
@@ -1801,6 +1922,15 @@
             }
           },
           {
+            "name": "verified",
+            "required": false,
+            "in": "query",
+            "description": "true = only fully verified workers (every required check approved, none due for re-check); false = the others. Verified workers are the ones awaiting any operations follow-up: verification does not change the account status.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "createdFrom",
             "required": false,
             "in": "query",
@@ -2020,6 +2150,147 @@
           }
         ],
         "summary": "Set a worker's roles (service categories) on their behalf",
+        "tags": [
+          "Admin - Workers"
+        ]
+      }
+    },
+    "/api/v1/admin/workers/{workerId}/blacklist": {
+      "post": {
+        "description": "The worker leaves search, matching and eligibility at once, their account is suspended (sessions end), and staff get an alert for each open booking they hold. Repeating is safe. Only a Super Admin can lift it.",
+        "operationId": "AdminWorkersController_blacklist_v1",
+        "parameters": [
+          {
+            "name": "workerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlacklistWorkerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Blacklist a worker (reason required, audited)",
+        "tags": [
+          "Admin - Workers"
+        ]
+      }
+    },
+    "/api/v1/admin/workers/{workerId}/blacklist/lift": {
+      "post": {
+        "description": "The account is reactivated. The worker is searchable again only if still verified.",
+        "operationId": "AdminWorkersController_liftBlacklist_v1",
+        "parameters": [
+          {
+            "name": "workerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlacklistWorkerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Lift a blacklisting (Super Admin only; reason required, audited)",
+        "tags": [
+          "Admin - Workers"
+        ]
+      }
+    },
+    "/api/v1/admin/workers/{workerId}/emergency-contact/reveal": {
+      "post": {
+        "description": "The general staff profile never contains the emergency contact. 422 without a reason; 404 EMERGENCY_CONTACT_NOT_FOUND when none is on file.",
+        "operationId": "AdminWorkersController_revealEmergencyContact_v1",
+        "parameters": [
+          {
+            "name": "workerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealEmergencyContactDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevealedEmergencyContact"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reveal a worker's emergency contact (reason required; every reveal is audited)",
         "tags": [
           "Admin - Workers"
         ]
@@ -2893,15 +3164,37 @@
             "name": "sort",
             "required": false,
             "in": "query",
-            "description": "A stable ordering by the stated attribute, not a relevance ranking (none is defined). Unknown values are rejected (400).",
+            "description": "A stable ordering by the stated attribute, not a relevance ranking (none is defined). DISTANCE_ASC needs latitude and longitude (the job location) and lists the nearest workers first, using an approximate home location (about 1 km); workers without a known location come last. Unknown values are rejected (400).",
             "schema": {
               "default": "EXPERIENCE_DESC",
               "type": "string",
               "enum": [
                 "EXPERIENCE_DESC",
                 "EXPERIENCE_ASC",
-                "RATING_DESC"
+                "RATING_DESC",
+                "DISTANCE_ASC"
               ]
+            }
+          },
+          {
+            "name": "latitude",
+            "required": false,
+            "in": "query",
+            "description": "With sort=DISTANCE_ASC: where the job is.",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "name": "longitude",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
             }
           }
         ],
@@ -2931,6 +3224,10 @@
                           "type": "number"
                         }
                       }
+                    },
+                    "canRequestAdminMatching": {
+                      "type": "boolean",
+                      "description": "True when no worker matches: offer the customer to ask staff to find one with POST /bookings WITHOUT workerId (it creates a NEW_REQUEST and alerts staff)."
                     }
                   }
                 }
@@ -3649,7 +3946,7 @@
     },
     "/api/v1/bookings": {
       "post": {
-        "description": "422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / WORKER_NOT_ELIGIBLE, 409 DUPLICATE_BOOKING for a second open booking with the same worker and service.",
+        "description": "Without workerId this is the customer asking staff to find a worker (admin matching, offered when GET /search/workers answers canRequestAdminMatching): the booking is a NEW_REQUEST and staff get a BOOKING_NEEDS_MATCH alert. 422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / WORKER_NOT_ELIGIBLE, 409 DUPLICATE_BOOKING for a second open booking with the same worker and service.",
         "operationId": "BookingsController_create_v1",
         "parameters": [
           {
@@ -4025,6 +4322,14 @@
             }
           },
           {
+            "name": "action",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "Idempotency-Key",
             "in": "header",
             "description": "Optional, 8-100 characters. Repeating the same request with the same key returns the first response instead of acting again; the same key with a different request is 422 IDEMPOTENCY_KEY_REUSED; a repeat while the first is still running is 409 IDEMPOTENCY_IN_PROGRESS. Keys last 24 hours.",
@@ -4307,6 +4612,14 @@
         "parameters": [
           {
             "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
             "required": true,
             "in": "path",
             "schema": {
@@ -4757,6 +5070,14 @@
         "parameters": [
           {
             "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
             "required": true,
             "in": "path",
             "schema": {
@@ -7590,6 +7911,104 @@
         ]
       }
     },
+    "/api/v1/fees/payable": {
+      "get": {
+        "description": "Only ACTIVE fees of those kinds are listed: with none configured the list is empty and the feature is off. Pay one with POST /fee-payments.",
+        "operationId": "PaymentsController_payableFees_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "PLACEMENT",
+                          "VERIFICATION",
+                          "REPLACEMENT_PLAN"
+                        ]
+                      },
+                      "amountMinor": {
+                        "type": "number"
+                      },
+                      "currency": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Extra fees I can pay against a booking (placement, verification, replacement plan)",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/api/v1/fee-payments": {
+      "post": {
+        "description": "The amount comes from the fee configuration and cannot be sent. One open payment per booking and fee; paying a fee that is already paid answers 409 ALREADY_PAID. The booking itself does not change. 422 FEE_NOT_CONFIGURED (no active fee) / FEE_NOT_PAYABLE, 409 BOOKING_NOT_PAYABLE (cancelled), 404 for a booking that is not mine. Verify the checkout with POST /payments/{id}/verify.",
+        "operationId": "PaymentsController_createFeePayment_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional, 8-100 characters. Repeating the same request with the same key returns the first response instead of acting again; the same key with a different request is 422 IDEMPOTENCY_KEY_REUSED; a repeat while the first is still running is 409 IDEMPOTENCY_IN_PROGRESS. Keys last 24 hours.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFeePaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePaymentResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start (or resume) payment of an extra fee against my booking",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
     "/api/v1/payments": {
       "post": {
         "description": "The amount comes from the fee configuration. Calling again while a payment is open returns the same payment. 409 BOOKING_NOT_PAYABLE, 422 FEE_NOT_CONFIGURED, 503 PAYMENT_PROVIDER_UNAVAILABLE.",
@@ -8334,8 +8753,18 @@
     },
     "/api/v1/admin/fees": {
       "get": {
+        "description": "Each fee carries kind (BOOKING, PLACEMENT, VERIFICATION, REPLACEMENT_PLAN, SUBSCRIPTION, CANCELLATION) and updatedAt (the version for If-Match). SUBSCRIPTION and B2B models are catalogued only: nothing charges them in V1.",
         "operationId": "AdminPaymentsController_fees_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -8356,22 +8785,102 @@
             "bearer": []
           }
         ],
-        "summary": "Configured fees (empty until an administrator sets them, Q-01)",
+        "summary": "Fee catalogue (empty until an administrator sets fees, Q-01); filter by kind",
         "tags": [
           "Admin - Payments"
         ]
-      }
-    },
-    "/api/v1/admin/fees/booking-fee": {
-      "put": {
-        "operationId": "AdminPaymentsController_setBookingFee_v1",
+      },
+      "post": {
+        "description": "409 FEE_EXISTS. A PLACEMENT, VERIFICATION or REPLACEMENT_PLAN fee becomes payable by customers (POST /fee-payments) as soon as it is active.",
+        "operationId": "AdminPaymentsController_createFee_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetFeeDto"
+                "$ref": "#/components/schemas/CreateFeeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a fee to the catalogue (audited)",
+        "tags": [
+          "Admin - Payments"
+        ]
+      }
+    },
+    "/api/v1/admin/fees/{code}": {
+      "get": {
+        "operationId": "AdminPaymentsController_fee_v1",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One fee (ETag for If-Match)",
+        "tags": [
+          "Admin - Payments"
+        ]
+      },
+      "patch": {
+        "description": "A fee already used by a payment is deactivated, not deleted.",
+        "operationId": "AdminPaymentsController_updateFee_v1",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFeeDto"
               }
             }
           }
@@ -8393,15 +8902,41 @@
             "bearer": []
           }
         ],
-        "summary": "Set the booking/platform fee (BOOKING_FEE); audited with before and after",
+        "summary": "Change a fee amount or switch it on/off (If-Match required: 428 without it, 412 when stale)",
         "tags": [
           "Admin - Payments"
         ]
-      }
-    },
-    "/api/v1/admin/fees/{code}": {
+      },
+      "delete": {
+        "description": "409 FEE_IN_USE once any payment used it; 409 FEE_PROTECTED for the booking fee.",
+        "operationId": "AdminPaymentsController_deleteFee_v1",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a fee that was never charged (If-Match required)",
+        "tags": [
+          "Admin - Payments"
+        ]
+      },
       "put": {
-        "description": "Fee values are configuration (PRD 10). Only BOOKING_FEE is charged by the current flows; other codes are stored for the revenue models the business enables later.",
+        "description": "Create-or-replace upsert (use POST/PATCH /admin/fees for the catalogue). Fee values are configuration (PRD 10). BOOKING_FEE is charged by the booking flow; PLACEMENT, VERIFICATION and REPLACEMENT_PLAN fees are charged through POST /fee-payments; others are catalogued only. Send If-Match: * when the code does not exist yet.",
         "operationId": "AdminPaymentsController_setFee_v1",
         "parameters": [
           {
@@ -8441,6 +8976,43 @@
           }
         ],
         "summary": "Set any configured fee by code (placement, verification, replacement plan ...); audited with before and after",
+        "tags": [
+          "Admin - Payments"
+        ]
+      }
+    },
+    "/api/v1/admin/fees/booking-fee": {
+      "put": {
+        "operationId": "AdminPaymentsController_setBookingFee_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetFeeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the booking/platform fee (BOOKING_FEE); audited with before and after",
         "tags": [
           "Admin - Payments"
         ]
@@ -8909,7 +9481,16 @@
       "post": {
         "description": "Upload the file to the returned URL with HTTP PUT, then confirm it. Needs a submitted profile. 422 DOCUMENT_TYPE_NOT_ALLOWED, 413 when too large, 409 CHECK_NOT_EDITABLE while the check is in review or approved, 503 when storage is not configured.",
         "operationId": "WorkerVerificationController_requestUpload_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "checkType",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -8984,7 +9565,16 @@
       "post": {
         "description": "Identity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved.",
         "operationId": "WorkerVerificationController_submit_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "checkType",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -9010,6 +9600,7 @@
     },
     "/api/v1/admin/verification/queue": {
       "get": {
+        "description": "Filters: status, checkType, categoryId, search (worker name), assignedTo=me (My Reviews, from the token) or reviewerId. Order: check submission time, then id.",
         "operationId": "AdminVerificationController_queue_v1",
         "parameters": [
           {
@@ -9064,6 +9655,45 @@
                 "SKILL_CERTIFICATE",
                 "LICENSE"
               ]
+            }
+          },
+          {
+            "name": "assignedTo",
+            "required": false,
+            "in": "query",
+            "description": "My Reviews: only checks assigned to the signed-in reviewer (resolved from the token, never from the request). Cannot be combined with reviewerId.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "me"
+              ]
+            }
+          },
+          {
+            "name": "reviewerId",
+            "required": false,
+            "in": "query",
+            "description": "Only checks assigned to this reviewer (user id).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "description": "Only workers who offer this service category.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Part of the worker name (case-insensitive).",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -9170,6 +9800,7 @@
     },
     "/api/v1/admin/verification/checks/{checkId}/start-review": {
       "post": {
+        "description": "Repeating on my own claim changes nothing. 409 CHECK_ALREADY_ASSIGNED when another reviewer holds it; there is no reassignment (no rule is defined).",
         "operationId": "AdminVerificationController_startReview_v1",
         "parameters": [
           {
@@ -9198,7 +9829,7 @@
             "bearer": []
           }
         ],
-        "summary": "Take a submitted check into review (SUBMITTED to IN_REVIEW)",
+        "summary": "Claim a check for review (SUBMITTED to IN_REVIEW; persists the reviewer and claim time)",
         "tags": [
           "Admin - Verification"
         ]
@@ -10170,6 +10801,316 @@
         "summary": "Correct an entry (reason required; the previous value stays in the history)",
         "tags": [
           "Admin - Attendance"
+        ]
+      }
+    },
+    "/api/v1/workers/me/earnings": {
+      "get": {
+        "description": "Information only: SevaNest does not pay wages (V1 is not payroll). Corrected or cancelled entries are not shown or counted. `totals` covers all of my counted entries, not only this page.",
+        "operationId": "WorkerEarningsController_list_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerEarningsView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "My earnings reference: wage payments recorded by staff, newest first, with my total",
+        "tags": [
+          "Earnings"
+        ]
+      }
+    },
+    "/api/v1/admin/wage-payments": {
+      "post": {
+        "description": "409 NO_WORKER_ASSIGNED / BOOKING_NOT_STARTED; 404 for an unknown booking. The platform moves no money.",
+        "operationId": "AdminEarningsController_record_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional, 8-100 characters. Repeating the same request with the same key returns the first response instead of acting again; the same key with a different request is 422 IDEMPOTENCY_KEY_REUSED; a repeat while the first is still running is 409 IDEMPOTENCY_IN_PROGRESS. Keys last 24 hours.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWagePaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWagePaymentView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record a wage payment made off-platform for the worker of a started booking (audited)",
+        "tags": [
+          "Admin - Earnings"
+        ]
+      },
+      "get": {
+        "operationId": "AdminEarningsController_list_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "workerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "bookingId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminWagePaymentView"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaView"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "All wage payment entries including corrections and voids (paginated, filter by worker or booking)",
+        "tags": [
+          "Admin - Earnings"
+        ]
+      }
+    },
+    "/api/v1/admin/wage-payments/{id}/correct": {
+      "post": {
+        "description": "409 WAGE_PAYMENT_ALREADY_CORRECTED when a newer row already replaced it; 409 WAGE_PAYMENT_IS_VOID for a cancelling row.",
+        "operationId": "AdminEarningsController_correct_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional, 8-100 characters. Repeating the same request with the same key returns the first response instead of acting again; the same key with a different request is 422 IDEMPOTENCY_KEY_REUSED; a repeat while the first is still running is 409 IDEMPOTENCY_IN_PROGRESS. Keys last 24 hours.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordWagePaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWagePaymentView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Correct an entry with a new one (the old row stays as history and stops counting)",
+        "tags": [
+          "Admin - Earnings"
+        ]
+      }
+    },
+    "/api/v1/admin/wage-payments/{id}/void": {
+      "post": {
+        "operationId": "AdminEarningsController_voidEntry_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional, 8-100 characters. Repeating the same request with the same key returns the first response instead of acting again; the same key with a different request is 422 IDEMPOTENCY_KEY_REUSED; a repeat while the first is still running is 409 IDEMPOTENCY_IN_PROGRESS. Keys last 24 hours.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidWagePaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWagePaymentView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cancel an entry that should not exist (a new voiding row; the old one stays as history)",
+        "tags": [
+          "Admin - Earnings"
+        ]
+      }
+    },
+    "/api/v1/admin/retention/preview": {
+      "get": {
+        "description": "Counts per task (notifications, processed outbox events, rejected KYC files) and the account deletions that are past the cooling-off period. Works whether or not RETENTION_ENABLED is on. Super Admin only (audit.view).",
+        "operationId": "RetentionController_preview_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dry run: how much data is past its retention period (changes nothing)",
+        "tags": [
+          "Admin - Retention"
         ]
       }
     },
@@ -12350,6 +13291,14 @@
         "operationId": "ReportsController_export_v1",
         "parameters": [
           {
+            "name": "report",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "from",
             "required": false,
             "in": "query",
@@ -13424,6 +14373,29 @@
           "createdAt"
         ]
       },
+      "NotificationPreferencesView": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "boolean",
+            "description": "Receive e-mail notifications (when an e-mail address is on file and the platform sends e-mail)."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "UpdateNotificationPreferencesDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
       "AdminUserListItem": {
         "type": "object",
         "properties": {
@@ -13830,7 +14802,8 @@
             "enum": [
               "REQUESTED",
               "CANCELLED",
-              "COMPLETED"
+              "COMPLETED",
+              "REJECTED"
             ]
           },
           "requestedAt": {
@@ -13846,6 +14819,15 @@
             "format": "date-time",
             "type": "string",
             "nullable": true
+          },
+          "rejectedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "rejectedReason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -13854,7 +14836,9 @@
           "status",
           "requestedAt",
           "cancelledAt",
-          "completedAt"
+          "completedAt",
+          "rejectedAt",
+          "rejectedReason"
         ]
       },
       "RequestDeletionDto": {
@@ -13865,6 +14849,19 @@
             "maxLength": 500
           }
         }
+      },
+      "RejectDeletionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why the request is refused; kept with the request and in the audit log."
+          }
+        },
+        "required": [
+          "reason"
+        ]
       },
       "OtpRequestedResponse": {
         "type": "object",
@@ -14040,6 +15037,10 @@
           "refreshToken": {
             "type": "string",
             "description": "The current refresh token. It is single-use: a new one is returned."
+          },
+          "deviceId": {
+            "type": "string",
+            "description": "The same install id used at login. Lets the server tell a retried refresh from this device (409 REFRESH_IN_PROGRESS) from token theft."
           }
         },
         "required": [
@@ -14659,6 +15660,27 @@
           "references"
         ]
       },
+      "BlacklistInfo": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "byUserId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "at",
+          "reason",
+          "byUserId"
+        ]
+      },
       "AdminWorkerDetail": {
         "type": "object",
         "properties": {
@@ -14772,6 +15794,20 @@
               "ACTIVE",
               "SUSPENDED"
             ]
+          },
+          "hasEmergencyContact": {
+            "type": "boolean",
+            "description": "DEC-09: the emergency contact is not part of this view (emergencyContact is always null here). Use POST /admin/workers/{id}/emergency-contact/reveal with a reason."
+          },
+          "blacklist": {
+            "nullable": true,
+            "description": "Set while the worker is blacklisted (DEC-06).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BlacklistInfo"
+              }
+            ]
           }
         },
         "required": [
@@ -14794,7 +15830,9 @@
           "createdAt",
           "updatedAt",
           "userId",
-          "accountStatus"
+          "accountStatus",
+          "hasEmergencyContact",
+          "blacklist"
         ]
       },
       "AdminCreateWorkerDto": {
@@ -14867,6 +15905,48 @@
           "accountStatus",
           "categories",
           "createdAt"
+        ]
+      },
+      "BlacklistWorkerDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why; kept on the profile and in the audit log."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "RevealedEmergencyContact": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "mobile": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "mobile"
+        ]
+      },
+      "RevealEmergencyContactDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 300,
+            "description": "Why the contact is needed. Mandatory (422 REASON_REQUIRED when missing or shorter than 5 characters); written to the audit log with the reveal."
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "ServiceCategoryResponse": {
@@ -16512,7 +17592,7 @@
               "MONTH",
               "ONE_TIME"
             ],
-            "description": "What the budget is per. A label only: matching does not compare budgets (Q-39)."
+            "description": "What the budget is per. A label only: matching does not compare budgets (Q-39). A \"monthly driver/cook\" (DEC-07) is FULL_TIME or PART_TIME with budgetPeriod MONTH; MONTHLY is accepted as an alias and stored as MONTH."
           },
           "requirementNote": {
             "type": "string",
@@ -17076,7 +18156,7 @@
               "MONTH",
               "ONE_TIME"
             ],
-            "description": "What the budget is per. A label only: matching does not compare budgets (Q-39)."
+            "description": "What the budget is per. A label only: matching does not compare budgets (Q-39). A \"monthly driver/cook\" (DEC-07) is FULL_TIME or PART_TIME with budgetPeriod MONTH; MONTHLY is accepted as an alias and stored as MONTH."
           },
           "requirementNote": {
             "type": "string",
@@ -18166,6 +19246,7 @@
               "PUSH",
               "SMS",
               "WHATSAPP",
+              "EMAIL",
               "IN_APP"
             ]
           },
@@ -18217,6 +19298,7 @@
               "PUSH",
               "SMS",
               "WHATSAPP",
+              "EMAIL",
               "IN_APP"
             ]
           },
@@ -18285,6 +19367,7 @@
               "PUSH",
               "SMS",
               "WHATSAPP",
+              "EMAIL",
               "IN_APP"
             ]
           },
@@ -18824,6 +19907,24 @@
           "checkout"
         ]
       },
+      "CreateFeePaymentDto": {
+        "type": "object",
+        "properties": {
+          "bookingId": {
+            "type": "string",
+            "description": "My booking the fee is charged against."
+          },
+          "feeCode": {
+            "type": "string",
+            "example": "PLACEMENT_FEE",
+            "description": "Code of an ACTIVE PLACEMENT, VERIFICATION or REPLACEMENT_PLAN fee. The amount is never sent: it comes from the fee configuration."
+          }
+        },
+        "required": [
+          "bookingId",
+          "feeCode"
+        ]
+      },
       "CreatePaymentDto": {
         "type": "object",
         "properties": {
@@ -19204,6 +20305,22 @@
           "code": {
             "type": "string"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "BOOKING",
+              "PLACEMENT",
+              "VERIFICATION",
+              "REPLACEMENT_PLAN",
+              "SUBSCRIPTION",
+              "CANCELLATION"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Version of the fee: send it as If-Match (it is also the ETag of GET /admin/fees/{code}) when changing it."
+          },
           "amountMinor": {
             "type": "number"
           },
@@ -19216,18 +20333,36 @@
         },
         "required": [
           "code",
+          "kind",
+          "updatedAt",
           "amountMinor",
           "currency",
           "isActive"
         ]
       },
-      "SetFeeDto": {
+      "CreateFeeDto": {
         "type": "object",
         "properties": {
+          "code": {
+            "type": "string",
+            "example": "PLACEMENT_FEE",
+            "description": "Upper case letters, digits and underscores."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "BOOKING",
+              "PLACEMENT",
+              "VERIFICATION",
+              "REPLACEMENT_PLAN",
+              "SUBSCRIPTION",
+              "CANCELLATION"
+            ]
+          },
           "amountMinor": {
             "type": "number",
-            "minimum": 1,
-            "description": "Amount in the smallest currency unit (paise)."
+            "minimum": 0,
+            "description": "Paise. 0 only for the CANCELLATION kind."
           },
           "currency": {
             "type": "string",
@@ -19236,6 +20371,53 @@
           "isActive": {
             "type": "boolean",
             "default": true
+          }
+        },
+        "required": [
+          "code",
+          "kind",
+          "amountMinor"
+        ]
+      },
+      "UpdateFeeDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "minimum": 0
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SetFeeDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Amount in the smallest currency unit (paise). 0 is allowed only for CANCELLATION_FEE (no fee)."
+          },
+          "currency": {
+            "type": "string",
+            "default": "INR"
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "BOOKING",
+              "PLACEMENT",
+              "VERIFICATION",
+              "REPLACEMENT_PLAN",
+              "SUBSCRIPTION",
+              "CANCELLATION"
+            ],
+            "description": "Needed when the code is new and not a known code; an existing fee keeps its kind unless one is sent."
           }
         },
         "required": [
@@ -19696,6 +20878,7 @@
             }
           },
           "budgetPeriods": {
+            "description": "MONTH is the monthly budget (DEC-07): a monthly driver or cook is FULL_TIME or PART_TIME with budgetPeriod MONTH. MONTHLY is accepted on input as an alias.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19913,7 +21096,7 @@
             "nullable": true
           },
           "toStatus": {
-            "type": "object"
+            "type": "string"
           },
           "actorUserId": {
             "type": "string"
@@ -19998,6 +21181,11 @@
             "type": "string",
             "nullable": true
           },
+          "claimedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
           "history": {
             "description": "Full history, oldest first.",
             "type": "array",
@@ -20017,6 +21205,7 @@
           "documents",
           "checkId",
           "reviewerUserId",
+          "claimedAt",
           "history"
         ]
       },
@@ -20127,14 +21316,25 @@
             "type": "string",
             "description": "Short-lived signed URL. Do not log or share it."
           },
+          "signedUrl": {
+            "type": "string",
+            "description": "Same value as url (the name the admin web app asks for)."
+          },
           "expiresAt": {
             "format": "date-time",
-            "type": "string"
+            "type": "string",
+            "description": "ISO-8601 instant at which the link stops working."
+          },
+          "expiresInSeconds": {
+            "type": "number",
+            "description": "Seconds from now until expiresAt, computed when the link was issued."
           }
         },
         "required": [
           "url",
-          "expiresAt"
+          "signedUrl",
+          "expiresAt",
+          "expiresInSeconds"
         ]
       },
       "RequirementsResponse": {
@@ -20167,7 +21367,17 @@
             "type": "string"
           },
           "workerId": {
+            "type": "string",
+            "description": "WorkerProfile id. It is also the application identity: there is no separate application number."
+          },
+          "workerName": {
             "type": "string"
+          },
+          "applicationSubmittedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When the worker submitted the profile for verification (application submission time)."
           },
           "checkType": {
             "type": "string",
@@ -20194,7 +21404,19 @@
           "submittedAt": {
             "format": "date-time",
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "When this check was submitted for review."
+          },
+          "reviewerUserId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Persisted reviewer (user id), set by start-review. Null = unassigned. Admin display names are not stored."
+          },
+          "claimedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When the reviewer took the check into review."
           },
           "uploadedDocuments": {
             "type": "number"
@@ -20203,9 +21425,13 @@
         "required": [
           "checkId",
           "workerId",
+          "workerName",
+          "applicationSubmittedAt",
           "checkType",
           "status",
           "submittedAt",
+          "reviewerUserId",
+          "claimedAt",
           "uploadedDocuments"
         ]
       },
@@ -20949,6 +22175,284 @@
         },
         "required": [
           "status",
+          "reason"
+        ]
+      },
+      "WagePaymentView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bookingId": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER",
+              "UPI",
+              "CHEQUE",
+              "OTHER"
+            ]
+          },
+          "referenceText": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bookingId",
+          "amountMinor",
+          "currency",
+          "periodLabel",
+          "method",
+          "referenceText",
+          "recordedAt"
+        ]
+      },
+      "EarningsPageMeta": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total"
+        ]
+      },
+      "EarningsTotalsView": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Sum of the entries that count (not corrected, not voided)."
+          },
+          "paymentCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "currency",
+          "amountMinor",
+          "paymentCount"
+        ]
+      },
+      "WorkerEarningsView": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WagePaymentView"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EarningsPageMeta"
+          },
+          "totals": {
+            "description": "Totals over ALL of the worker's counted entries, not just this page. Information only: the platform does not pay wages.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EarningsTotalsView"
+              }
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "totals"
+        ]
+      },
+      "AdminWagePaymentView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bookingId": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER",
+              "UPI",
+              "CHEQUE",
+              "OTHER"
+            ]
+          },
+          "referenceText": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workerId": {
+            "type": "string"
+          },
+          "recordedByUserId": {
+            "type": "string"
+          },
+          "correctsId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The earlier row this one replaces or cancels."
+          },
+          "isVoid": {
+            "type": "boolean",
+            "description": "A cancelling row: it removes the row it points to from the totals."
+          },
+          "superseded": {
+            "type": "boolean",
+            "description": "True once a later row corrected or voided this one (it no longer counts)."
+          }
+        },
+        "required": [
+          "id",
+          "bookingId",
+          "amountMinor",
+          "currency",
+          "periodLabel",
+          "method",
+          "referenceText",
+          "recordedAt",
+          "workerId",
+          "recordedByUserId",
+          "correctsId",
+          "isVoid",
+          "superseded"
+        ]
+      },
+      "CreateWagePaymentDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Amount in paise (smallest currency unit)."
+          },
+          "periodLabel": {
+            "type": "string",
+            "example": "2026-11",
+            "description": "Free label for what the payment covers (month, week, \"advance\" ...)."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER",
+              "UPI",
+              "CHEQUE",
+              "OTHER"
+            ]
+          },
+          "referenceText": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Reference the worker can recognise (UPI id, receipt number, \"paid in cash on 3 Nov\" ...)."
+          },
+          "bookingId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A started booking that has a worker."
+          }
+        },
+        "required": [
+          "amountMinor",
+          "periodLabel",
+          "method",
+          "referenceText",
+          "bookingId"
+        ]
+      },
+      "RecordWagePaymentDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Amount in paise (smallest currency unit)."
+          },
+          "periodLabel": {
+            "type": "string",
+            "example": "2026-11",
+            "description": "Free label for what the payment covers (month, week, \"advance\" ...)."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER",
+              "UPI",
+              "CHEQUE",
+              "OTHER"
+            ]
+          },
+          "referenceText": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Reference the worker can recognise (UPI id, receipt number, \"paid in cash on 3 Nov\" ...)."
+          }
+        },
+        "required": [
+          "amountMinor",
+          "periodLabel",
+          "method",
+          "referenceText"
+        ]
+      },
+      "VoidWagePaymentDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Why the entry is cancelled; kept as the reference of the voiding row."
+          }
+        },
+        "required": [
           "reason"
         ]
       },
@@ -21949,6 +23453,11 @@
             "nullable": true,
             "description": "Set once when the resolution target passed while the ticket was open."
           },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Version of the ticket. GET also sends it as the ETag header; send it back in If-Match on assign, priority, escalate and close (412 STALE_VERSION when it changed)."
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -21972,6 +23481,7 @@
           "closedByUserId",
           "dueAt",
           "slaBreachedAt",
+          "updatedAt",
           "createdAt"
         ]
       },
@@ -22014,7 +23524,9 @@
             "type": "string"
           },
           "actorUserId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "Null when the system acted (automatic SLA escalation)."
           },
           "internalNote": {
             "type": "string",
@@ -22116,6 +23628,11 @@
             "nullable": true,
             "description": "Set once when the resolution target passed while the ticket was open."
           },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Version of the ticket. GET also sends it as the ETag header; send it back in If-Match on assign, priority, escalate and close (412 STALE_VERSION when it changed)."
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -22145,6 +23662,7 @@
           "closedByUserId",
           "dueAt",
           "slaBreachedAt",
+          "updatedAt",
           "createdAt",
           "history"
         ]
