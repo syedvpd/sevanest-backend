@@ -56,7 +56,7 @@ export class OtpService {
    */
   async issue(mobile: string, clientIp: string): Promise<OtpIssueResult> {
     // Staging/demo only (DEMO_OTP_ACCEPT_ANY): the app shows its own code, nothing is stored or sent.
-    if (this.config.demoOtpAcceptAny) {
+    if (this.config.demoOtpAccepts(mobile)) {
       return {
         expiresInSeconds: this.settings.ttlSeconds,
         resendAfterSeconds: this.settings.resendCooldownSeconds,
@@ -154,7 +154,7 @@ export class OtpService {
 
   /** Single-use check. Throws a DomainException for every failure; returns normally only for a valid OTP. */
   async verify(mobile: string, code: string): Promise<void> {
-    if (this.config.demoOtpAcceptAny) {
+    if (this.config.demoOtpAccepts(mobile)) {
       this.logger.warn('Demo OTP accepted without checking the code (DEMO_OTP_ACCEPT_ANY)');
       return;
     }

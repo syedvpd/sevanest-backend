@@ -24,6 +24,13 @@ export enum NodeEnv {
   Production = 'production',
 }
 
+/** Deployment tier (DEC-12). production and staging apply every production guard; demo OTP flags are allowed only in development and staging. */
+export enum AppEnv {
+  Production = 'production',
+  Staging = 'staging',
+  Development = 'development',
+}
+
 /** `memory` keeps OTPs in process memory for automated tests and local work. It is refused in production. */
 export enum SmsProviderKind {
   Memory = 'memory',
@@ -85,6 +92,11 @@ const toBoolean = ({ value }: { value: unknown }): unknown =>
 export class EnvironmentVariables {
   @IsEnum(NodeEnv)
   NODE_ENV: NodeEnv = NodeEnv.Development;
+
+  /** Unset = production when NODE_ENV=production, else development. A staging service sets APP_ENV=staging and keeps the production guards. */
+  @IsOptional()
+  @IsEnum(AppEnv)
+  APP_ENV?: AppEnv;
 
   @Type(() => Number)
   @IsInt()
@@ -664,6 +676,15 @@ export class EnvironmentVariables {
   @IsBoolean()
   DEMO_OTP_ACCEPT_ANY: boolean = false;
 
+  /** Comma-separated E.164 numbers allowed to use DEMO_OTP_ACCEPT_ANY. Required when it is on: no other number is ever accepted without a real code. */
+  @ValidateIf((o: EnvironmentVariables) => o.DEMO_OTP_ACCEPT_ANY)
+  @IsString()
+  @Matches(/^\+[1-9]\d{9,14}(,\s*\+[1-9]\d{9,14})*$/, {
+    message:
+      'DEMO_OTP_NUMBERS must be a comma-separated list of E.164 numbers such as +919999900001',
+  })
+  DEMO_OTP_NUMBERS?: string;
+
   /** Number of reverse-proxy hops in front of the API (0 = none). Needed for correct client IPs behind a load balancer. */
   @Type(() => Number)
   @IsInt()
@@ -703,10 +724,15 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       });
     }
   }
+  const appEnv =
+    config.APP_ENV ??
+    (config.NODE_ENV === NodeEnv.Production ? AppEnv.Production : AppEnv.Development);
+  const isProductionTier = config.NODE_ENV === NodeEnv.Production || appEnv === AppEnv.Production;
+  const isStrictTier = isProductionTier || appEnv === AppEnv.Staging;
   if (config.DEMO_OTP_ACCEPT_ANY) {
-    if (config.NODE_ENV === NodeEnv.Production) {
+    if (isProductionTier) {
       throw new Error(
-        'Invalid environment configuration: DEMO_OTP_ACCEPT_ANY=true is not allowed with NODE_ENV=production (staging must run NODE_ENV=development)',
+        'Invalid environment configuration: DEMO_OTP_ACCEPT_ANY=true is not allowed in production (NODE_ENV=production or APP_ENV=production)',
       );
     }
     process.emitWarning(
@@ -716,9 +742,9 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
   }
   if (config.ALLOW_TEST_OTP) {
     // D-70: a fixed login code must never reach real users, so production refuses to start with it (fail closed).
-    if (config.NODE_ENV === NodeEnv.Production) {
+    if (isProductionTier) {
       throw new Error(
-        'Invalid environment configuration: ALLOW_TEST_OTP=true is not allowed with NODE_ENV=production (staging must run NODE_ENV=development)',
+        'Invalid environment configuration: ALLOW_TEST_OTP=true is not allowed in production (NODE_ENV=production or APP_ENV=production)',
       );
     }
     if (config.TEST_OTP_CODE!.length !== config.OTP_LENGTH) {
@@ -764,7 +790,7 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       'ConfigWarning',
     );
   }
-  if (config.NODE_ENV === NodeEnv.Production) {
+  if (isStrictTier) {
     if (/change-me|example|secret/i.test(config.JWT_ACCESS_SECRET)) {
       throw new Error(
         'Invalid environment configuration: JWT_ACCESS_SECRET looks like a placeholder',

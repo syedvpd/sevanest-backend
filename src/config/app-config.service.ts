@@ -4,6 +4,7 @@ import {
   EnvironmentVariables,
   MessagingProviderKind,
   WhatsAppProviderKind,
+  AppEnv,
   NodeEnv,
   PaymentProviderKind,
   SmsProviderKind,
@@ -40,8 +41,15 @@ export class AppConfigService {
   get nodeEnv(): NodeEnv {
     return this.get('NODE_ENV');
   }
+  /** DEC-12 tier: APP_ENV, or production when NODE_ENV=production, else development. */
+  get appEnv(): AppEnv {
+    return (
+      this.get('APP_ENV') ??
+      (this.nodeEnv === NodeEnv.Production ? AppEnv.Production : AppEnv.Development)
+    );
+  }
   get isProduction(): boolean {
-    return this.nodeEnv === NodeEnv.Production;
+    return this.nodeEnv === NodeEnv.Production || this.appEnv === AppEnv.Production;
   }
   get isTest(): boolean {
     return this.nodeEnv === NodeEnv.Test;
@@ -104,6 +112,14 @@ export class AppConfigService {
   /** Staging/demo: accept any OTP for any number, send no SMS (see DEMO_OTP_ACCEPT_ANY). Never honoured in production. */
   get demoOtpAcceptAny(): boolean {
     return !this.isProduction && this.get('DEMO_OTP_ACCEPT_ANY');
+  }
+  /** True only for a number on the DEMO_OTP_NUMBERS allow-list while the demo flag is on (never in production). */
+  demoOtpAccepts(mobile: string): boolean {
+    if (!this.demoOtpAcceptAny) return false;
+    return (this.get('DEMO_OTP_NUMBERS') ?? '')
+      .split(',')
+      .map((n) => n.trim())
+      .includes(mobile);
   }
   /** Staging/demo login for allow-listed numbers (see ALLOW_TEST_OTP). Returns the fixed code for such a number, else null. */
   testOtpCodeFor(mobile: string): string | null {

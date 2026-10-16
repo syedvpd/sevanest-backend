@@ -350,26 +350,96 @@ describe('validateEnvironment', () => {
       });
     });
 
-    describe('staging accept-any demo OTP', () => {
-      it('is off by default, works outside production and is refused in production', () => {
+    describe('staging accept-any demo OTP (DEC-12)', () => {
+      const numbers = { DEMO_OTP_NUMBERS: '+919999900001' };
+      let warn: jest.SpyInstance;
+      beforeEach(() => {
+        warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+      });
+      afterEach(() => warn.mockRestore());
+
+      it('is off by default and works in development with an allow-list', () => {
         expect(validateEnvironment(production).DEMO_OTP_ACCEPT_ANY).toBe(false);
-        const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
-        try {
-          expect(
-            validateEnvironment({ ...valid, DEMO_OTP_ACCEPT_ANY: 'true' }).DEMO_OTP_ACCEPT_ANY,
-          ).toBe(true);
-        } finally {
-          warn.mockRestore();
-        }
+        expect(
+          validateEnvironment({ ...valid, DEMO_OTP_ACCEPT_ANY: 'true', ...numbers })
+            .DEMO_OTP_ACCEPT_ANY,
+        ).toBe(true);
+      });
+
+      it('requires an explicit number allow-list', () => {
+        expect(() => validateEnvironment({ ...valid, DEMO_OTP_ACCEPT_ANY: 'true' })).toThrow(
+          'DEMO_OTP_NUMBERS',
+        );
+        expect(() =>
+          validateEnvironment({
+            ...valid,
+            DEMO_OTP_ACCEPT_ANY: 'true',
+            DEMO_OTP_NUMBERS: '9999900001',
+          }),
+        ).toThrow('DEMO_OTP_NUMBERS');
+      });
+
+      it('is refused when NODE_ENV=production or APP_ENV=production', () => {
         for (const flag of ['true', '1', 'yes', true]) {
           expect(() =>
-            validateEnvironment({
-              ...production,
-              NODE_ENV: 'production',
-              DEMO_OTP_ACCEPT_ANY: flag,
-            }),
+            validateEnvironment({ ...production, DEMO_OTP_ACCEPT_ANY: flag, ...numbers }),
           ).toThrow();
         }
+        expect(() =>
+          validateEnvironment({
+            ...valid,
+            APP_ENV: 'production',
+            DEMO_OTP_ACCEPT_ANY: 'true',
+            ...numbers,
+          }),
+        ).toThrow('not allowed in production');
+        expect(() =>
+          validateEnvironment({
+            ...valid,
+            APP_ENV: 'production',
+            ALLOW_TEST_OTP: 'true',
+            TEST_OTP_NUMBERS: '+919999900001',
+            TEST_OTP_CODE: '123456',
+          }),
+        ).toThrow('not allowed in production');
+      });
+    });
+
+    describe('APP_ENV=staging keeps the production guards (DEC-12)', () => {
+      const staging = { ...production, NODE_ENV: 'development', APP_ENV: 'staging' };
+
+      it('accepts a proper staging environment and allows demo OTP there', () => {
+        const env = validateEnvironment({
+          ...staging,
+          DEMO_OTP_ACCEPT_ANY: 'true',
+          DEMO_OTP_NUMBERS: '+919999900001',
+        });
+        expect(env.APP_ENV).toBe('staging');
+      });
+
+      it.each([
+        ['PAYMENT_PROVIDER', 'fake'],
+        ['SMS_PROVIDER', 'memory'],
+        ['STORAGE_PROVIDER', 'memory'],
+        ['PUSH_PROVIDER', 'memory'],
+        ['WHATSAPP_PROVIDER', 'memory'],
+      ])('refuses %s=%s', (key, value) => {
+        expect(() => validateEnvironment({ ...staging, [key]: value })).toThrow();
+      });
+
+      it('requires TRUST_PROXY_HOPS and a non-placeholder secret', () => {
+        const { TRUST_PROXY_HOPS: _t, ...rest } = staging;
+        expect(() => validateEnvironment(rest)).toThrow('TRUST_PROXY_HOPS');
+        expect(() =>
+          validateEnvironment({ ...staging, JWT_ACCESS_SECRET: 'change-me'.repeat(6) }),
+        ).toThrow('JWT_ACCESS_SECRET');
+      });
+
+      it('leaves development loose and rejects an unknown APP_ENV', () => {
+        expect(validateEnvironment({ ...valid, APP_ENV: 'development' }).APP_ENV).toBe(
+          'development',
+        );
+        expect(() => validateEnvironment({ ...valid, APP_ENV: 'prod' })).toThrow('APP_ENV');
       });
     });
 
@@ -397,7 +467,7 @@ describe('validateEnvironment', () => {
 
       it('refuses to start in production (fail closed, D-70)', () => {
         expect(() => validateEnvironment({ ...production, ...on, NODE_ENV: 'production' })).toThrow(
-          'ALLOW_TEST_OTP=true is not allowed with NODE_ENV=production',
+          'ALLOW_TEST_OTP=true is not allowed in production',
         );
       });
 

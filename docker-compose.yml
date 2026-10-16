@@ -76,7 +76,8 @@ services:
     init: true
     env_file: docker.env
     environment:
-      NODE_ENV: ${APP_ENV:-development}
+      NODE_ENV: development
+      APP_ENV: ${APP_ENV:-development} # DEC-12: production | staging | development
       PORT: '3000'
       DATABASE_URL: postgresql://${POSTGRES_USER:-sevanest}:${POSTGRES_PASSWORD:-sevanest-local}@postgres:5432/${POSTGRES_DB:-sevanest}?schema=public
       REDIS_URL: redis://redis:6379
@@ -96,7 +97,8 @@ services:
     init: true
     env_file: docker.env
     environment:
-      NODE_ENV: ${APP_ENV:-development}
+      NODE_ENV: development
+      APP_ENV: ${APP_ENV:-development} # DEC-12: production | staging | development
       DATABASE_URL: postgresql://${POSTGRES_USER:-sevanest}:${POSTGRES_PASSWORD:-sevanest-local}@postgres:5432/${POSTGRES_DB:-sevanest}?schema=public
       REDIS_URL: redis://redis:6379
     healthcheck:
