@@ -15,6 +15,7 @@ import {
   OnboardedWorker,
   setRequiredChecks,
 } from '../support/workforce';
+import { SearchService } from '../../src/modules/search/search.service';
 import { REPLACEMENT_POLICY } from '../../src/modules/replacement/replacement.policy';
 
 const UNKNOWN_ID = '00000000-0000-7000-8000-000000000000';
@@ -404,6 +405,33 @@ describe('Replacement API (integration)', () => {
         where: { entityId: first, action: { startsWith: 'replacement.' } },
       });
       expect(rows).toHaveLength(2);
+    });
+
+    it('with no alternative the request stays open, staff are alerted once, and the alert closes when one appears (FM-11)', async () => {
+      const { id } = await approved();
+      const search = api.app.get(SearchService);
+      const spy = jest.spyOn(search, 'findEligible').mockResolvedValue({ items: [], total: 0 });
+      try {
+        await as(api, customer).get(`${R}/${id}/alternatives`).expect(200);
+        await as(api, customer).get(`${R}/${id}/alternatives`).expect(200);
+      } finally {
+        spy.mockRestore();
+      }
+      const alerts = await api.prisma.adminAlert.findMany({ where: { entityId: id } });
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toMatchObject({
+        type: 'REPLACEMENT_NO_ALTERNATIVE',
+        status: 'OPEN',
+        requiredPermission: 'replacement.manage',
+      });
+      expect(
+        (await api.prisma.replacementRequest.findUniqueOrThrow({ where: { id } })).status,
+      ).toBe('APPROVED');
+      await alternative();
+      await as(api, customer).get(`${R}/${id}/alternatives`).expect(200);
+      expect(
+        (await api.prisma.adminAlert.findFirstOrThrow({ where: { entityId: id } })).status,
+      ).toBe('RESOLVED');
     });
 
     it('lists alternatives only for the owner of an APPROVED request, and selection uses one of them', async () => {
