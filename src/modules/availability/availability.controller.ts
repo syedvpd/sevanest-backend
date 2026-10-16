@@ -33,6 +33,7 @@ import {
   WorkerAvailabilityResponse,
 } from './dto/availability.dto';
 import { ServiceAreasService } from './service-areas.service';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 
 /** Read-only for every signed-in user: enabled service areas (workers choose preferred locations; customers choose a location). */
 @ApiTags('Service Areas')
@@ -121,6 +122,7 @@ export class AdminServiceAreasController {
   }
 
   @Patch(':areaId')
+  @RequireIfMatch()
   @ApiModelResponse(AdminServiceAreaResponse)
   @ApiOperation({
     summary: 'Rename, move, enable or disable an area',

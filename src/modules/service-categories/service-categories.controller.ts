@@ -31,6 +31,7 @@ import {
   UpdateServiceCategoryDto,
 } from './dto/categories.dto';
 import { ServiceCategoriesService } from './service-categories.service';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 
 /** Read-only for every signed-in user (customers choose a category; workers choose roles). Enabled categories only. */
 @ApiTags('Service Categories')
@@ -119,6 +120,7 @@ export class AdminServiceCategoriesController {
   }
 
   @Patch(':categoryId')
+  @RequireIfMatch()
   @ApiModelResponse(AdminServiceCategoryResponse)
   @ApiOperation({
     summary: 'Rename, describe, enable or disable a category',

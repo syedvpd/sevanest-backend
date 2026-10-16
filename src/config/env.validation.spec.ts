@@ -52,6 +52,7 @@ describe('validateEnvironment', () => {
     const env = validateEnvironment(valid);
     expect(env.PROFILE_PHOTO_MAX_BYTES).toBe(5_242_880);
     expect(env.PROFILE_PHOTO_REQUIRED).toBe(true);
+    expect(env.ADMIN_IF_MATCH_REQUIRED).toBe(true);
     expect(
       validateEnvironment({ ...valid, PROFILE_PHOTO_REQUIRED: 'false' }).PROFILE_PHOTO_REQUIRED,
     ).toBe(false);

@@ -26,6 +26,7 @@ export interface TicketRecord {
   dueAt: Date | null;
   slaBreachedAt: Date | null;
   createdAt: Date;
+  updatedAt: Date;
   category: { id: string; code: string; name: string };
 }
 

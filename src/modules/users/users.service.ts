@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { assertIfMatch } from '../../common/concurrency/if-match';
 import { randomInt } from 'node:crypto';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
@@ -366,6 +367,7 @@ export class UsersService {
     reason: string | undefined,
     actor: Actor & { userId: string },
     actorPermissions: string[],
+    ifMatch?: string,
   ): Promise<UserRecord> {
     if (actor.userId === targetId) {
       throw new DomainException(
@@ -389,6 +391,7 @@ export class UsersService {
           HttpStatus.FORBIDDEN,
         );
       }
+      assertIfMatch(ifMatch, before.updatedAt);
       if (before.status === status) {
         return { user: before, changed: false, from: before.status };
       }

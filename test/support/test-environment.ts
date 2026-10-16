@@ -26,6 +26,8 @@ export function applyTestEnvironment(overrides: Record<string, string> = {}): vo
     PROFILE_PHOTO_MAX_BYTES: '200000',
     // Most suites onboard workers without a photo; the photo gate has its own test that switches it on.
     PROFILE_PHOTO_REQUIRED: 'false',
+    // Most suites edit without If-Match; the concurrency suite switches the requirement on.
+    ADMIN_IF_MATCH_REQUIRED: 'false',
     VERIFICATION_DOCUMENT_CONTENT_TYPES: 'application/pdf,image/jpeg,image/png',
     SIGNED_URL_TTL_SECONDS: '120',
     OTP_LENGTH: '6',

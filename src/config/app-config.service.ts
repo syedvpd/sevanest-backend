@@ -147,6 +147,9 @@ export class AppConfigService {
     const numbers = (this.get('TEST_OTP_NUMBERS') ?? '').split(',').map((n) => n.trim());
     return numbers.includes(mobile) ? (this.get('TEST_OTP_CODE') ?? null) : null;
   }
+  get adminIfMatchRequired(): boolean {
+    return this.get('ADMIN_IF_MATCH_REQUIRED');
+  }
   get autoRefundOnCancel(): boolean {
     return this.get('AUTO_REFUND_ON_CANCEL');
   }

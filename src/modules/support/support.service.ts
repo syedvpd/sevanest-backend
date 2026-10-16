@@ -4,6 +4,7 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { NotificationEvent } from '../../common/outbox/notification-events';
 import { OutboxService } from '../../common/outbox/outbox.service';
+import { assertIfMatch } from '../../common/concurrency/if-match';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import type { Prisma } from '../../generated/prisma/client';
 import { AppConfigService } from '../../config/app-config.service';
@@ -448,35 +449,40 @@ export class SupportService {
     assigneeUserId: string | undefined,
     note: string | undefined,
     actor: StaffActor,
+    ifMatch?: string,
   ): Promise<AdminTicketDetailView> {
     const assignee = assigneeUserId ?? actor.userId;
     await this.requireAssignee(assignee);
-    await this.transition(ticketId, async (ticket, tx) => {
-      const toStatus = ticket.status === 'OPEN' ? 'IN_PROGRESS' : ticket.status;
-      await this.repository.update(
-        ticketId,
-        { status: toStatus, assignedToUserId: assignee, assignedAt: new Date() },
-        tx,
-      );
-      await this.repository.addEvent(
-        {
+    await this.transition(
+      ticketId,
+      async (ticket, tx) => {
+        const toStatus = ticket.status === 'OPEN' ? 'IN_PROGRESS' : ticket.status;
+        await this.repository.update(
           ticketId,
-          type: 'ASSIGNED',
-          fromStatus: ticket.status,
-          toStatus,
-          actorUserId: actor.userId,
-          internalNote: note ?? null,
-        },
-        tx,
-      );
-      await this.auditStep('ticket.assign', ticket, actor, tx, {
-        from: ticket.status,
-        to: toStatus,
-        assigneeUserId: assignee,
-        previousAssigneeUserId: ticket.assignedToUserId,
-      });
-      if (toStatus !== ticket.status) await this.notifyCreator(ticket, toStatus, tx);
-    });
+          { status: toStatus, assignedToUserId: assignee, assignedAt: new Date() },
+          tx,
+        );
+        await this.repository.addEvent(
+          {
+            ticketId,
+            type: 'ASSIGNED',
+            fromStatus: ticket.status,
+            toStatus,
+            actorUserId: actor.userId,
+            internalNote: note ?? null,
+          },
+          tx,
+        );
+        await this.auditStep('ticket.assign', ticket, actor, tx, {
+          from: ticket.status,
+          to: toStatus,
+          assigneeUserId: assignee,
+          previousAssigneeUserId: ticket.assignedToUserId,
+        });
+        if (toStatus !== ticket.status) await this.notifyCreator(ticket, toStatus, tx);
+      },
+      ifMatch,
+    );
     return this.adminGet(ticketId);
   }
 
@@ -484,31 +490,36 @@ export class SupportService {
     ticketId: string,
     priority: TicketPriorityValue,
     actor: StaffActor,
+    ifMatch?: string,
   ): Promise<AdminTicketDetailView> {
-    await this.transition(ticketId, async (ticket, tx) => {
-      if (ticket.priority === priority) return;
-      // The target follows the priority, counted from when the ticket was raised; no target configured = none.
-      await this.repository.update(
-        ticketId,
-        { priority, dueAt: this.dueAtFor(priority, ticket.createdAt) },
-        tx,
-      );
-      await this.repository.addEvent(
-        {
+    await this.transition(
+      ticketId,
+      async (ticket, tx) => {
+        if (ticket.priority === priority) return;
+        // The target follows the priority, counted from when the ticket was raised; no target configured = none.
+        await this.repository.update(
           ticketId,
-          type: 'PRIORITY_SET',
-          fromStatus: ticket.status,
-          toStatus: ticket.status,
-          actorUserId: actor.userId,
-          internalNote: `priority ${ticket.priority ?? 'none'} -> ${priority}`,
-        },
-        tx,
-      );
-      await this.auditStep('ticket.priority', ticket, actor, tx, {
-        from: ticket.priority,
-        to: priority,
-      });
-    });
+          { priority, dueAt: this.dueAtFor(priority, ticket.createdAt) },
+          tx,
+        );
+        await this.repository.addEvent(
+          {
+            ticketId,
+            type: 'PRIORITY_SET',
+            fromStatus: ticket.status,
+            toStatus: ticket.status,
+            actorUserId: actor.userId,
+            internalNote: `priority ${ticket.priority ?? 'none'} -> ${priority}`,
+          },
+          tx,
+        );
+        await this.auditStep('ticket.priority', ticket, actor, tx, {
+          from: ticket.priority,
+          to: priority,
+        });
+      },
+      ifMatch,
+    );
     return this.adminGet(ticketId);
   }
 
@@ -517,27 +528,36 @@ export class SupportService {
     ticketId: string,
     reason: string,
     actor: StaffActor,
+    ifMatch?: string,
   ): Promise<AdminTicketDetailView> {
-    await this.transition(ticketId, async (ticket, tx) => {
-      if (ticket.status === 'ESCALATED') return;
-      await this.repository.update(ticketId, { status: 'ESCALATED', escalatedAt: new Date() }, tx);
-      await this.repository.addEvent(
-        {
+    await this.transition(
+      ticketId,
+      async (ticket, tx) => {
+        if (ticket.status === 'ESCALATED') return;
+        await this.repository.update(
           ticketId,
-          type: 'ESCALATED',
-          fromStatus: ticket.status,
-          toStatus: 'ESCALATED',
-          actorUserId: actor.userId,
-          internalNote: reason,
-        },
-        tx,
-      );
-      await this.auditStep('ticket.escalate', ticket, actor, tx, {
-        from: ticket.status,
-        to: 'ESCALATED',
-      });
-      await this.notifyCreator(ticket, 'ESCALATED', tx);
-    });
+          { status: 'ESCALATED', escalatedAt: new Date() },
+          tx,
+        );
+        await this.repository.addEvent(
+          {
+            ticketId,
+            type: 'ESCALATED',
+            fromStatus: ticket.status,
+            toStatus: 'ESCALATED',
+            actorUserId: actor.userId,
+            internalNote: reason,
+          },
+          tx,
+        );
+        await this.auditStep('ticket.escalate', ticket, actor, tx, {
+          from: ticket.status,
+          to: 'ESCALATED',
+        });
+        await this.notifyCreator(ticket, 'ESCALATED', tx);
+      },
+      ifMatch,
+    );
     return this.adminGet(ticketId);
   }
 
@@ -546,30 +566,39 @@ export class SupportService {
     ticketId: string,
     resolution: string,
     actor: StaffActor,
+    ifMatch?: string,
   ): Promise<AdminTicketDetailView> {
-    await this.transition(ticketId, async (ticket, tx) => {
-      await this.repository.update(
-        ticketId,
-        { status: 'CLOSED', resolution, closedAt: new Date(), closedByUserId: actor.userId },
-        tx,
-      );
-      await this.repository.addEvent(
-        {
+    await this.transition(
+      ticketId,
+      async (ticket, tx) => {
+        await this.repository.update(
           ticketId,
-          type: 'CLOSED',
-          fromStatus: ticket.status,
-          toStatus: 'CLOSED',
-          actorUserId: actor.userId,
-        },
-        tx,
-      );
-      await this.auditStep('ticket.close', ticket, actor, tx, {
-        from: ticket.status,
-        to: 'CLOSED',
-      });
-      await this.alerts.autoResolve(`SUPPORT_SLA_BREACH:${ticketId}`, 'the ticket was closed', tx);
-      await this.notifyCreator(ticket, 'CLOSED', tx);
-    });
+          { status: 'CLOSED', resolution, closedAt: new Date(), closedByUserId: actor.userId },
+          tx,
+        );
+        await this.repository.addEvent(
+          {
+            ticketId,
+            type: 'CLOSED',
+            fromStatus: ticket.status,
+            toStatus: 'CLOSED',
+            actorUserId: actor.userId,
+          },
+          tx,
+        );
+        await this.auditStep('ticket.close', ticket, actor, tx, {
+          from: ticket.status,
+          to: 'CLOSED',
+        });
+        await this.alerts.autoResolve(
+          `SUPPORT_SLA_BREACH:${ticketId}`,
+          'the ticket was closed',
+          tx,
+        );
+        await this.notifyCreator(ticket, 'CLOSED', tx);
+      },
+      ifMatch,
+    );
     return this.adminGet(ticketId);
   }
 
@@ -579,10 +608,12 @@ export class SupportService {
   private async transition(
     ticketId: string,
     work: (ticket: TicketRecord, tx: Prisma.TransactionClient) => Promise<void>,
+    ifMatch?: string,
   ): Promise<void> {
     await this.repository.transaction(async (tx) => {
       const ticket = await this.repository.lock(ticketId, tx);
       if (!ticket) throw this.notFound();
+      assertIfMatch(ifMatch, ticket.updatedAt);
       if (ticket.status === 'CLOSED') {
         throw new DomainException(
           SupportErrorCode.TICKET_CLOSED,
@@ -757,6 +788,7 @@ export class SupportService {
       closedByUserId: t.closedByUserId,
       dueAt: t.dueAt,
       slaBreachedAt: t.slaBreachedAt,
+      updatedAt: t.updatedAt,
       createdAt: t.createdAt,
     };
   }

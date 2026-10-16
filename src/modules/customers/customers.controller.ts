@@ -42,6 +42,7 @@ import {
   UpdateCustomerProfileDto,
   UpdateVerificationStatusDto,
 } from './dto/customers.dto';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 
 /** The signed-in customer's own profile and addresses. Everything is scoped to the authenticated user, never to an id from the client. */
 @ApiTags('Customers')
@@ -211,6 +212,7 @@ export class AdminCustomersController {
   }
 
   @Patch(':customerId/verification-status')
+  @RequireIfMatch()
   @ApiModelResponse(AdminCustomerSummary)
   @Permissions(PermissionCode.CUSTOMER_MANAGE)
   @ApiOperation({

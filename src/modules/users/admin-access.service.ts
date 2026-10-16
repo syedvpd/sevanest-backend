@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { assertIfMatch } from '../../common/concurrency/if-match';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -176,6 +177,7 @@ export class AdminAccessService {
     roleCode: AdminRoleCodeValue,
     reason: string | undefined,
     actor: AccessActor,
+    ifMatch?: string,
   ): Promise<AdminUserListItem> {
     if (targetUserId === actor.userId) {
       throw new DomainException(
@@ -194,6 +196,7 @@ export class AdminAccessService {
           HttpStatus.NOT_FOUND,
         );
       }
+      assertIfMatch(ifMatch, target.updatedAt);
       if (target.type !== 'ADMIN') {
         throw new DomainException(
           AdminAccessErrorCode.NOT_AN_ADMIN,

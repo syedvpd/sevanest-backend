@@ -9,7 +9,12 @@ import {
   Patch,
   Post,
   Query,
+  Headers,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { etagOf } from '../../common/concurrency/if-match';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
@@ -160,11 +165,17 @@ export class AdminSupportController {
   @ApiModelResponse(AdminTicketDetailView)
   @Permissions(PermissionCode.SUPPORT_VIEW)
   @ApiOperation({ summary: 'One ticket with the full history including internal notes' })
-  get(@Param('ticketId', ParseUUIDPipe) ticketId: string): Promise<AdminTicketDetailView> {
-    return this.support.adminGet(ticketId);
+  async get(
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AdminTicketDetailView> {
+    const detail = await this.support.adminGet(ticketId);
+    res.setHeader('ETag', etagOf(detail.updatedAt));
+    return detail;
   }
 
   @Post('tickets/:ticketId/assign')
+  @RequireIfMatch()
   @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
@@ -175,11 +186,19 @@ export class AdminSupportController {
     @Param('ticketId', ParseUUIDPipe) ticketId: string,
     @Body() dto: AssignTicketDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminTicketDetailView> {
-    return this.support.assign(ticketId, dto.assigneeUserId, dto.note, await this.actor(admin));
+    return this.support.assign(
+      ticketId,
+      dto.assigneeUserId,
+      dto.note,
+      await this.actor(admin),
+      ifMatch,
+    );
   }
 
   @Post('tickets/:ticketId/priority')
+  @RequireIfMatch()
   @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
@@ -188,11 +207,13 @@ export class AdminSupportController {
     @Param('ticketId', ParseUUIDPipe) ticketId: string,
     @Body() dto: SetPriorityDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminTicketDetailView> {
-    return this.support.setPriority(ticketId, dto.priority, await this.actor(admin));
+    return this.support.setPriority(ticketId, dto.priority, await this.actor(admin), ifMatch);
   }
 
   @Post('tickets/:ticketId/escalate')
+  @RequireIfMatch()
   @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
@@ -201,11 +222,13 @@ export class AdminSupportController {
     @Param('ticketId', ParseUUIDPipe) ticketId: string,
     @Body() dto: EscalateTicketDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminTicketDetailView> {
-    return this.support.escalate(ticketId, dto.reason, await this.actor(admin));
+    return this.support.escalate(ticketId, dto.reason, await this.actor(admin), ifMatch);
   }
 
   @Post('tickets/:ticketId/close')
+  @RequireIfMatch()
   @ApiModelResponse(AdminTicketDetailView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.SUPPORT_MANAGE)
@@ -216,8 +239,9 @@ export class AdminSupportController {
     @Param('ticketId', ParseUUIDPipe) ticketId: string,
     @Body() dto: CloseTicketDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminTicketDetailView> {
-    return this.support.close(ticketId, dto.resolution, await this.actor(admin));
+    return this.support.close(ticketId, dto.resolution, await this.actor(admin), ifMatch);
   }
 
   @Idempotent()

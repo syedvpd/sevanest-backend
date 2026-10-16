@@ -35,6 +35,7 @@ import {
   UpdateTemplateDto,
 } from './dto/notifications.dto';
 import { HealthView, NotificationsService } from './notifications.service';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 
 /** Admin-configurable wording and channels per event (FR-NOT-004) and the delivery log (FR-NOT-005). */
 @ApiTags('Admin - Notifications')
@@ -92,6 +93,7 @@ export class AdminNotificationsController {
   }
 
   @Patch('notification-templates/:templateId')
+  @RequireIfMatch()
   @ApiModelResponse(TemplateView)
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
   @ApiOperation({ summary: 'Change wording or switch a template on or off' })

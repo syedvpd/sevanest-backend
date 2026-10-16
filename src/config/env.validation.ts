@@ -499,6 +499,11 @@ export class EnvironmentVariables {
   @Max(100000)
   WORKER_RESPONSE_HOURS: number = 4;
 
+  /** DEC-16: admin edits of existing records must carry If-Match (428 without it, 412 when stale). false = header optional, as before. */
+  @Transform(toBoolean)
+  @IsBoolean()
+  ADMIN_IF_MATCH_REQUIRED: boolean = true;
+
   /** Refund a paid booking automatically when it is cancelled before it is ACTIVE (DEC-04). After ACTIVE staff decide. */
   @Transform(toBoolean)
   @IsBoolean()

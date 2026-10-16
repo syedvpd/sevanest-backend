@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -11,7 +12,11 @@ import {
   Post,
   Put,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { etagOf } from '../../common/concurrency/if-match';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
@@ -115,11 +120,17 @@ export class AdminUsersController {
   @ApiModelResponse(AdminUserResponse)
   @Permissions(PermissionCode.USER_VIEW)
   @ApiOperation({ summary: 'View an account (mobile masked)' })
-  async getUser(@Param('userId', ParseUUIDPipe) userId: string): Promise<AdminUserResponse> {
-    return toAdminView(await this.users.getByIdOrThrow(userId));
+  async getUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AdminUserResponse> {
+    const user = await this.users.getByIdOrThrow(userId);
+    res.setHeader('ETag', etagOf(user.updatedAt));
+    return toAdminView(user);
   }
 
   @Put(':userId/role')
+  @RequireIfMatch()
   @ApiModelResponse(AdminUserListItem)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.ADMIN_MANAGE_USERS)
@@ -132,12 +143,16 @@ export class AdminUsersController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: ChangeAdminRoleDto,
     @CurrentUser() actor: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminUserListItem> {
     const access = await this.users.getAccess(actor.userId);
-    return this.access.changeAdminRole(userId, dto.roleCode, dto.reason, {
-      userId: actor.userId,
-      roles: access.roles,
-    });
+    return this.access.changeAdminRole(
+      userId,
+      dto.roleCode,
+      dto.reason,
+      { userId: actor.userId, roles: access.roles },
+      ifMatch,
+    );
   }
 
   @Post(':userId/password-reset')
@@ -158,6 +173,7 @@ export class AdminUsersController {
   }
 
   @Patch(':userId/status')
+  @RequireIfMatch()
   @ApiModelResponse(AdminUserResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.USER_STATUS_MANAGE)
@@ -170,6 +186,7 @@ export class AdminUsersController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserStatusDto,
     @CurrentUser() actor: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<AdminUserResponse> {
     const access = await this.users.getAccess(actor.userId);
     const updated = await this.users.changeStatus(
@@ -178,6 +195,7 @@ export class AdminUsersController {
       dto.reason,
       { userId: actor.userId, roles: access.roles },
       access.permissions,
+      ifMatch,
     );
     return toAdminView(updated);
   }

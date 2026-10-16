@@ -269,6 +269,11 @@ export class AdminTicketView {
     type: Date,
   })
   slaBreachedAt!: Date | null;
+  @ApiProperty({
+    description:
+      'Version of the ticket. GET also sends it as the ETag header; send it back in If-Match on assign, priority, escalate and close (412 STALE_VERSION when it changed).',
+  })
+  updatedAt!: Date;
   @ApiProperty() createdAt!: Date;
 }
 

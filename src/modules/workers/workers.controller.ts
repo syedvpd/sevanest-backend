@@ -40,6 +40,7 @@ import {
   WorkerReferenceView,
 } from './dto/workers.dto';
 import { WorkersService } from './workers.service';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 
 /** The signed-in worker's own profile. Scoped to the authenticated user, never to an id from the client. */
 @ApiTags('Workers')
@@ -200,6 +201,7 @@ export class AdminWorkersController {
   }
 
   @Patch(':workerId')
+  @RequireIfMatch()
   @ApiModelResponse(AdminWorkerDetail)
   @Permissions(PermissionCode.WORKER_MANAGE)
   @ApiOperation({
