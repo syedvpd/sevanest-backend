@@ -17,6 +17,9 @@ export const NotificationEvent = {
   RECHECK_DUE: 'RECHECK_DUE',
   /** Customer: a payment was received for a booking that can no longer proceed; staff are reviewing it. */
   PAYMENT_UNDER_REVIEW: 'PAYMENT_UNDER_REVIEW',
+  /** Customer: the booking was cancelled and the refund was started automatically (DEC-04). */
+  PAYMENT_REFUND_INITIATED: 'PAYMENT_REFUND_INITIATED',
+  PAYMENT_REFUNDED: 'PAYMENT_REFUNDED',
   /** Customer: a worker was matched to the request. */
   BOOKING_MATCHED: 'BOOKING_MATCHED',
   /** Customer: the matched worker accepted the opportunity. */
@@ -62,6 +65,8 @@ export const EVENT_PARAMS: Record<NotificationEventCode, readonly string[]> = {
   TICKET_UPDATE: ['ticketId', 'status'],
   RECHECK_DUE: ['checkType'],
   PAYMENT_UNDER_REVIEW: ['bookingId', 'paymentId'],
+  PAYMENT_REFUND_INITIATED: ['bookingId', 'paymentId'],
+  PAYMENT_REFUNDED: ['bookingId', 'paymentId'],
   BOOKING_MATCHED: ['bookingId'],
   WORKER_ACCEPTED: ['bookingId'],
   WORKER_DECLINED: ['bookingId'],

@@ -1078,7 +1078,7 @@ export class BookingService {
           tx,
           { action: audit, note: dto.reason },
         );
-        await this.hooks.cancelled(booking.id, actor, tx);
+        await this.hooks.cancelled(booking.id, actor, tx, booking.status);
         await this.notifyBoth(
           booking,
           NotificationEvent.BOOKING_CANCELLED,
@@ -1658,7 +1658,7 @@ export class BookingService {
         tx,
         { action: 'booking.auto_cancel', note: `Not paid within ${olderThanHours} hours` },
       );
-      await this.hooks.cancelled(booking.id, actor, tx);
+      await this.hooks.cancelled(booking.id, actor, tx, booking.status);
       await this.notifyBoth(
         booking,
         NotificationEvent.BOOKING_CANCELLED,

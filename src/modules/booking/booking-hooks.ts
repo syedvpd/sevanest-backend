@@ -7,6 +7,8 @@ export interface BookingHook {
     bookingId: string,
     actor: { kind: string; userId: string | null },
     tx: Prisma.TransactionClient,
+    /** The status the booking had before this cancellation (a paid CONFIRMED booking is refunded automatically; later ones are not). */
+    fromStatus: string,
   ): Promise<void>;
 }
 
@@ -37,9 +39,10 @@ export class BookingLifecycleHooks {
     bookingId: string,
     actor: { kind: string; userId: string | null },
     tx: Prisma.TransactionClient,
+    fromStatus: string,
   ): Promise<void> {
     for (const hook of this.hooks) {
-      await hook.onCancelled(bookingId, actor, tx);
+      await hook.onCancelled(bookingId, actor, tx, fromStatus);
     }
   }
 }

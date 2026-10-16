@@ -83,6 +83,8 @@ const ENTITY_ROUTES: Record<string, { param: string; type: string }> = {
   PAYMENT_SUCCEEDED: { param: 'paymentId', type: 'payment' },
   PAYMENT_FAILED: { param: 'paymentId', type: 'payment' },
   PAYMENT_UNDER_REVIEW: { param: 'paymentId', type: 'payment' },
+  PAYMENT_REFUND_INITIATED: { param: 'paymentId', type: 'payment' },
+  PAYMENT_REFUNDED: { param: 'paymentId', type: 'payment' },
   REPLACEMENT_UPDATE: { param: 'replacementId', type: 'replacement' },
   INTERVIEW_REQUESTED: { param: 'interviewId', type: 'interview' },
   INTERVIEW_RESPONDED: { param: 'interviewId', type: 'interview' },

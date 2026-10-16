@@ -37,6 +37,16 @@ export const DEFAULT_IN_APP_TEMPLATES: ReadonlyArray<{
     body: 'Your payment did not go through. You can try again from the booking.',
   },
   {
+    event: 'PAYMENT_REFUND_INITIATED',
+    title: 'Refund started',
+    body: 'Your booking was cancelled and we have started a full refund of your payment.',
+  },
+  {
+    event: 'PAYMENT_REFUNDED',
+    title: 'Refund completed',
+    body: 'Your refund has been processed by the payment provider.',
+  },
+  {
     event: 'PAYMENT_UNDER_REVIEW',
     title: 'Payment under review',
     body: 'We received a payment for a booking that can no longer go ahead. Our team is reviewing it and will contact you.',

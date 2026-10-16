@@ -462,6 +462,11 @@ export class EnvironmentVariables {
   @Max(100000)
   WORKER_RESPONSE_HOURS: number = 4;
 
+  /** Refund a paid booking automatically when it is cancelled before it is ACTIVE (DEC-04). After ACTIVE staff decide. */
+  @Transform(toBoolean)
+  @IsBoolean()
+  AUTO_REFUND_ON_CANCEL: boolean = true;
+
   /** Hours after which a matched worker who has not answered loses the booking back to matching (DEC-02). Default 24; 0 = off. */
   @Type(() => Number)
   @IsInt()

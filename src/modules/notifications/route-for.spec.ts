@@ -13,6 +13,8 @@ describe('routeFor (push and inbox deep links)', () => {
     ['PAYMENT_SUCCEEDED', 'payment', 'p1'],
     ['PAYMENT_FAILED', 'payment', 'p1'],
     ['PAYMENT_UNDER_REVIEW', 'payment', 'p1'],
+    ['PAYMENT_REFUND_INITIATED', 'payment', 'p1'],
+    ['PAYMENT_REFUNDED', 'payment', 'p1'],
     ['REPLACEMENT_UPDATE', 'replacement', 'r1'],
     ['INTERVIEW_REQUESTED', 'interview', 'i1'],
     ['INTERVIEW_RESPONDED', 'interview', 'i1'],

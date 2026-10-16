@@ -154,7 +154,7 @@ export interface PaymentChange {
   refundReason?: string;
   refundProviderId?: string | null;
   refundedAt?: Date;
-  refundedByUserId?: string;
+  refundedByUserId?: string | null;
   reconcileAttempts?: number;
   reconcileNextAt?: Date | null;
   reconcileClaimedUntil?: Date | null;

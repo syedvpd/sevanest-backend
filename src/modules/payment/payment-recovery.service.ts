@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { AppConfigService } from '../../config/app-config.service';
 import { NotificationEvent } from '../../common/outbox/notification-events';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -25,7 +26,9 @@ export interface RecoveryRun {
  *  - no gateway order yet            -> the payment is closed (FAILED, BOOKING_CANCELLED)
  *  - gateway order open (PENDING)    -> closed the same way, but the order stays under a short tail of authoritative checks, so a
  *                                       customer who still pays is caught (late success -> exception, never an ordinary payment)
- *  - already paid (SUCCEEDED)        -> a PAID_BOOKING_CANCELLED exception + staff alert + customer notice. NOT refunded here: the
+ *  - already paid, booking was CONFIRMED (not yet ACTIVE) and AUTO_REFUND_ON_CANCEL -> automatic full refund (REFUND_PENDING; the
+ *                                       recovery worker calls the gateway; failures reach the payment-exception queue)
+ *  - already paid otherwise (SUCCEEDED) -> a PAID_BOOKING_CANCELLED exception + staff alert + customer notice. NOT refunded here: the
  *                                       refund policy is open (Q-17/Q-21), so a person decides.
  *  - refund already in progress/done -> untouched.
  */
@@ -40,6 +43,7 @@ export class PaymentRecoveryService implements BookingHook, OnModuleInit {
     private readonly hooks: BookingLifecycleHooks,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly config: AppConfigService,
   ) {}
 
   onModuleInit(): void {
@@ -50,6 +54,7 @@ export class PaymentRecoveryService implements BookingHook, OnModuleInit {
     bookingId: string,
     actor: { kind: string; userId: string | null },
     tx: Prisma.TransactionClient,
+    fromStatus: string,
   ): Promise<void> {
     const payment = await this.repository.lockOpenForBooking(bookingId, tx);
     if (!payment) return;
@@ -79,6 +84,11 @@ export class PaymentRecoveryService implements BookingHook, OnModuleInit {
       return;
     }
     if (payment.status === 'SUCCEEDED') {
+      // DEC-04: a paid booking cancelled before it became ACTIVE is refunded in full automatically; after that staff decide.
+      if (this.config.autoRefundOnCancel && fromStatus === 'CONFIRMED') {
+        await this.payments.requestAutoRefundLocked(payment, actor, tx);
+        return;
+      }
       await this.flagPaidForCancelled(payment, tx, 'cancellation');
     }
   }

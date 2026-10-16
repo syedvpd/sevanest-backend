@@ -90,6 +90,9 @@ interface ApplyContext {
 }
 
 /** Payment states in which no more gateway answer is expected: the recovery schedule is cleared. */
+/** Marks a refund the system started itself when a paid booking was cancelled before it began (DEC-04). */
+export const AUTO_REFUND_REASON = 'Booking cancelled before it started: automatic full refund';
+
 const FINAL_FOR_RECOVERY = new Set(['SUCCEEDED', 'REFUNDED', 'REFUND_FAILED']);
 
 /**
@@ -541,6 +544,53 @@ export class PaymentService {
       !remote.some((r) => r.outcome !== 'PENDING');
     await this.markChecked(payment.id, note, concern, 'RECONCILIATION_EXHAUSTED', opts.actor);
     return note;
+  }
+
+  /**
+   * Starts the automatic full refund of a paid booking that was cancelled before it began. Runs in the cancelling transaction (payment row
+   * locked): it only records the intent, and the recovery worker calls the gateway, retries, and raises a payment exception if it cannot.
+   */
+  async requestAutoRefundLocked(
+    payment: PaymentRecord,
+    actor: { userId: string | null },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.update(
+      payment.id,
+      {
+        status: 'REFUND_PENDING',
+        refundReason: AUTO_REFUND_REASON,
+        refundedByUserId: actor.userId,
+        refundProviderId: null,
+        reconcileAttempts: 0,
+        reconcileNextAt: new Date(),
+        reconcileClaimedUntil: null,
+      },
+      tx,
+    );
+    await this.audit.record(
+      {
+        action: 'payment.refund_request',
+        entityType: 'payment',
+        entityId: payment.id,
+        actorId: actor.userId,
+        metadata: {
+          from: payment.status,
+          to: 'REFUND_PENDING',
+          amountMinor: payment.amountMinor,
+          source: 'auto-refund-on-cancel',
+        },
+      },
+      tx,
+    );
+    await this.outbox.notify(
+      {
+        event: NotificationEvent.PAYMENT_REFUND_INITIATED,
+        recipients: [payment.customerUserId],
+        params: { bookingId: payment.bookingId, paymentId: payment.id },
+      },
+      tx,
+    );
   }
 
   /** Full refund of a succeeded payment (partial refunds and who may refund are open, Q-17/Q-21). Repeating is safe. */
@@ -1183,6 +1233,44 @@ export class PaymentService {
       },
       tx,
     );
+    if (locked.refundReason === AUTO_REFUND_REASON) {
+      if (done) {
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.PAYMENT_REFUNDED,
+            recipients: [locked.customerUserId],
+            params: { bookingId: locked.bookingId, paymentId: locked.id },
+          },
+          tx,
+        );
+      } else {
+        // The gateway refused the automatic refund: a person must finish it (existing exception queue + staff alert), and the customer is told.
+        await this.raiseException(
+          {
+            dedupeKey: `REFUND_STUCK:${locked.id}`,
+            kind: 'REFUND_STUCK',
+            paymentId: locked.id,
+            bookingId: locked.bookingId,
+            paymentStatus: 'REFUND_FAILED',
+            amountMinor: locked.amountMinor,
+            currency: locked.currency,
+            providerOrderId: locked.providerOrderId,
+            providerPaymentId: locked.providerPaymentId,
+            requiredAction: 'RETRY_REFUND_OR_REFUND_OUTSIDE_THE_PLATFORM',
+            details: { source: 'auto-refund-on-cancel', outcome: 'FAILED' },
+          },
+          tx,
+        );
+        await this.outbox.notify(
+          {
+            event: NotificationEvent.PAYMENT_UNDER_REVIEW,
+            recipients: [locked.customerUserId],
+            params: { bookingId: locked.bookingId, paymentId: locked.id },
+          },
+          tx,
+        );
+      }
+    }
   }
 
   private async reconcileRefund(

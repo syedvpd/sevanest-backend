@@ -112,6 +112,9 @@ export class AppConfigService {
     const numbers = (this.get('TEST_OTP_NUMBERS') ?? '').split(',').map((n) => n.trim());
     return numbers.includes(mobile) ? (this.get('TEST_OTP_CODE') ?? null) : null;
   }
+  get autoRefundOnCancel(): boolean {
+    return this.get('AUTO_REFUND_ON_CANCEL');
+  }
   /** Operational thresholds. Built-in defaults (DEC-01/02/03); 0 switches a rule off explicitly. */
   get ops(): {
     workerResponseHours: number;

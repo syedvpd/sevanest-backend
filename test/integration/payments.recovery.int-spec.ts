@@ -9,6 +9,7 @@ import {
 } from '../support/api-app';
 import { ensureFee, fakeGateway, makeBooking, TestBooking } from '../support/bookings';
 import { as, createArea, setRequiredChecks } from '../support/workforce';
+import { AppConfigService } from '../../src/config/app-config.service';
 import { RECOVERY } from '../../src/modules/payment/payment-recovery.constants';
 import { PaymentRecoveryService } from '../../src/modules/payment/payment-recovery.service';
 import type { ProviderPaymentOutcome } from '../../src/integrations/payments/payment-provider.interface';
@@ -175,28 +176,78 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       ).toHaveLength(0);
     });
 
-    it('flags money already held when a confirmed booking is cancelled (exactly once, nothing refunded)', async () => {
+    it('refunds a paid CONFIRMED booking automatically when it is cancelled (once, however often it is cancelled)', async () => {
       const booking = await makeBooking(api, admin, customer, area.id, 'CONFIRMED');
       const paid = await api.prisma.payment.findFirstOrThrow({ where: { bookingId: booking.id } });
       await cancel(booking.id).expect(200);
-      // A repeated or concurrent cancellation cannot produce a second alert.
+      // A repeated or concurrent cancellation is a no-op: no second refund request.
       await Promise.all([cancel(booking.id), cancel(booking.id)]);
       expect(await bookingStatus(booking.id)).toBe('CANCELLED');
-      expect((await payment(paid.id)).status).toBe('SUCCEEDED');
-      const exceptions = await exceptionsOf(paid.id);
-      expect(exceptions).toHaveLength(1);
-      expect(exceptions[0]).toMatchObject({
-        kind: 'PAID_BOOKING_CANCELLED',
-        status: 'OPEN',
-        bookingStatus: 'CANCELLED',
-        paymentStatus: 'SUCCEEDED',
-        requiredAction: 'DECIDE_REFUND_OR_RESOLVE',
-      });
+      expect((await payment(paid.id)).status).toBe('REFUND_PENDING');
+      expect(await exceptionsOf(paid.id)).toHaveLength(0);
+      await recovery.runOnce();
+      await recovery.runOnce();
+      expect((await payment(paid.id)).status).toBe('REFUNDED');
+      expect(
+        gateway().refunds.filter((r) => r.providerPaymentId === paid.providerPaymentId),
+      ).toHaveLength(1);
       expect(await outboxEvents(paid.id)).toEqual([
-        'PAYMENT_EXCEPTION_ALERT',
+        'PAYMENT_REFUNDED',
+        'PAYMENT_REFUND_INITIATED',
         'PAYMENT_SUCCEEDED',
-        'PAYMENT_UNDER_REVIEW',
       ]);
+      const audited = await api.prisma.auditLog.count({
+        where: { entityId: paid.id, action: 'payment.refund_request' },
+      });
+      expect(audited).toBe(1);
+    });
+
+    it('sends a refund the gateway refuses to the payment-exception queue and tells the customer', async () => {
+      const booking = await makeBooking(api, admin, customer, area.id, 'CONFIRMED');
+      const paid = await api.prisma.payment.findFirstOrThrow({ where: { bookingId: booking.id } });
+      gateway().refundOutcome = 'FAILED';
+      try {
+        await cancel(booking.id).expect(200);
+        await recovery.runOnce();
+      } finally {
+        gateway().refundOutcome = 'SUCCEEDED';
+      }
+      expect((await payment(paid.id)).status).toBe('REFUND_FAILED');
+      const exceptions = await exceptionsOf(paid.id);
+      expect(exceptions.map((e) => e.kind)).toEqual(['REFUND_STUCK']);
+      expect(await outboxEvents(paid.id)).toEqual(
+        expect.arrayContaining(['PAYMENT_EXCEPTION_ALERT', 'PAYMENT_UNDER_REVIEW']),
+      );
+    });
+
+    it('does not refund automatically once the booking is past CONFIRMED (staff decide)', async () => {
+      const booking = await makeBooking(api, admin, customer, area.id, 'CONFIRMED');
+      const paid = await api.prisma.payment.findFirstOrThrow({ where: { bookingId: booking.id } });
+      await api.prisma.booking.update({
+        where: { id: booking.id },
+        data: { status: 'REPLACEMENT_REQUESTED' },
+      });
+      await cancel(booking.id).expect(200);
+      expect((await payment(paid.id)).status).toBe('SUCCEEDED');
+      expect((await exceptionsOf(paid.id)).map((e) => e.kind)).toEqual(['PAID_BOOKING_CANCELLED']);
+      expect(
+        gateway().refunds.filter((r) => r.providerPaymentId === paid.providerPaymentId),
+      ).toHaveLength(0);
+    });
+
+    it('flags money for a person (nothing refunded) when AUTO_REFUND_ON_CANCEL is off', async () => {
+      const booking = await makeBooking(api, admin, customer, area.id, 'CONFIRMED');
+      const paid = await api.prisma.payment.findFirstOrThrow({ where: { bookingId: booking.id } });
+      const spy = jest
+        .spyOn(api.app.get(AppConfigService), 'autoRefundOnCancel', 'get')
+        .mockReturnValue(false);
+      try {
+        await cancel(booking.id).expect(200);
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await payment(paid.id)).status).toBe('SUCCEEDED');
+      expect((await exceptionsOf(paid.id)).map((e) => e.kind)).toEqual(['PAID_BOOKING_CANCELLED']);
       expect(
         gateway().refunds.filter((r) => r.providerPaymentId === paid.providerPaymentId),
       ).toHaveLength(0);
