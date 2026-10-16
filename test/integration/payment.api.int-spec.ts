@@ -89,7 +89,13 @@ describe('Payment API (integration)', () => {
       // other fee codes may exist (another suite creates one in the shared test database)
       expect(fees.body).toEqual(
         expect.arrayContaining([
-          { code: 'BOOKING_FEE', amountMinor: 50000, currency: 'INR', isActive: true },
+          expect.objectContaining({
+            code: 'BOOKING_FEE',
+            kind: 'BOOKING',
+            amountMinor: 50000,
+            currency: 'INR',
+            isActive: true,
+          }),
         ]),
       );
       const audit = await api.prisma.auditLog.findFirstOrThrow({

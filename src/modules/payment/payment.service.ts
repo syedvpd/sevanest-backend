@@ -5,6 +5,7 @@ import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { assertIfMatch } from '../../common/concurrency/if-match';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { isRealDate } from '../../common/time/india';
 import { NotificationEvent } from '../../common/outbox/notification-events';
@@ -30,7 +31,11 @@ import {
   BOOKING_FEE_CODE,
   CANCELLATION_FEE_CODE,
   CheckoutView,
+  CreateFeeDto,
   CreatePaymentResponse,
+  FeeKindValue,
+  PAYABLE_FEE_KINDS,
+  UpdateFeeDto,
   BookingFeeQuote,
   FeeView,
   PaymentListQuery,
@@ -61,6 +66,11 @@ export const PaymentErrorCode = {
   NOTHING_TO_RECONCILE: 'NOTHING_TO_RECONCILE',
   EXCEPTION_NOT_FOUND: 'PAYMENT_EXCEPTION_NOT_FOUND',
   EXCEPTION_NOT_OPEN: 'PAYMENT_EXCEPTION_NOT_OPEN',
+  FEE_NOT_FOUND: 'FEE_NOT_FOUND',
+  FEE_EXISTS: 'FEE_EXISTS',
+  FEE_IN_USE: 'FEE_IN_USE',
+  FEE_PROTECTED: 'FEE_PROTECTED',
+  FEE_NOT_PAYABLE: 'FEE_NOT_PAYABLE',
 } as const;
 
 /** Technical cap on one export (not a reporting rule). */
@@ -121,33 +131,84 @@ export class PaymentService {
 
   // --- fees (admin) ------------------------------------------------------------------------------------------
 
-  async listFees(): Promise<FeeView[]> {
-    return this.repository.listFees();
+  async listFees(kind?: FeeKindValue): Promise<FeeView[]> {
+    return (await this.repository.listFees(kind ? [kind] : undefined)).map((f) => this.feeView(f));
   }
 
-  async setFee(code: string, dto: SetFeeDto, admin: PaymentActor): Promise<FeeView> {
+  async getFee(code: string): Promise<FeeView> {
+    const fee = await this.repository.findFee(code);
+    if (!fee) throw this.feeNotFound();
+    return this.feeView(fee);
+  }
+
+  /** Kind of a code that is new and sent without a kind: the known catalogue codes, by prefix. Anything else must say what it is for. */
+  private inferKind(code: string): FeeKindValue | null {
+    if (code === BOOKING_FEE_CODE) return 'BOOKING';
+    if (code === CANCELLATION_FEE_CODE) return 'CANCELLATION';
+    if (code.startsWith('PLACEMENT')) return 'PLACEMENT';
+    if (code.startsWith('VERIFICATION')) return 'VERIFICATION';
+    if (code.startsWith('REPLACEMENT')) return 'REPLACEMENT_PLAN';
+    if (code.startsWith('SUBSCRIPTION')) return 'SUBSCRIPTION';
+    return null;
+  }
+
+  private invalidFee(field: string, message: string): DomainException {
+    return new DomainException(
+      ErrorCode.VALIDATION_FAILED,
+      'Request validation failed',
+      HttpStatus.BAD_REQUEST,
+      [{ field, messages: [message] }],
+    );
+  }
+
+  /**
+   * Creates or changes a fee (the legacy PUT upsert and the catalogue endpoints share it). The row is locked, so two admins serialize;
+   * If-Match refuses a stale edit with 412. Only CANCELLATION_FEE may be 0 (a charged fee must stay positive). A fee that was ever used by
+   * a payment keeps its kind. Audited with before and after.
+   */
+  async setFee(
+    code: string,
+    dto: SetFeeDto,
+    admin: PaymentActor,
+    ifMatch?: string,
+    mode: 'upsert' | 'create' | 'update' = 'upsert',
+  ): Promise<FeeView> {
     if (dto.amountMinor === 0 && code !== CANCELLATION_FEE_CODE) {
-      throw new DomainException(
-        ErrorCode.VALIDATION_FAILED,
-        'Request validation failed',
-        HttpStatus.BAD_REQUEST,
-        [
-          {
-            field: 'amountMinor',
-            messages: ['amountMinor must be at least 1 (0 is allowed only for CANCELLATION_FEE)'],
-          },
-        ],
+      throw this.invalidFee(
+        'amountMinor',
+        'amountMinor must be at least 1 (0 is allowed only for CANCELLATION_FEE)',
       );
     }
-    const fee: FeeRecord = {
-      code,
-      amountMinor: dto.amountMinor,
-      currency: dto.currency ?? 'INR',
-      isActive: dto.isActive ?? true,
-    };
-    await this.repository.transaction(async (tx) => {
-      const before = await this.repository.findFee(code, tx);
-      await this.repository.upsertFee(fee, tx);
+    const saved = await this.repository.transaction(async (tx) => {
+      const before = await this.repository.lockFee(code, tx);
+      if (mode === 'create' && before) {
+        throw new DomainException(
+          PaymentErrorCode.FEE_EXISTS,
+          'A fee with this code already exists',
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (mode === 'update' && !before) throw this.feeNotFound();
+      if (before) assertIfMatch(ifMatch, before.updatedAt!);
+      const kind = dto.kind ?? before?.kind ?? this.inferKind(code);
+      if (!kind) {
+        throw this.invalidFee('kind', 'kind is required for a new fee code');
+      }
+      if (before && kind !== before.kind && (await this.repository.feeInUse(code, tx))) {
+        throw new DomainException(
+          PaymentErrorCode.FEE_IN_USE,
+          'This fee was already charged, so its kind cannot change',
+          HttpStatus.CONFLICT,
+        );
+      }
+      const fee: FeeRecord = {
+        code,
+        kind,
+        amountMinor: dto.amountMinor,
+        currency: dto.currency ?? before?.currency ?? 'INR',
+        isActive: dto.isActive ?? (mode === 'update' ? before!.isActive : true),
+      };
+      const after = await this.repository.upsertFee(fee, tx);
       await this.audit.record(
         {
           action: 'payment.fee_set',
@@ -155,12 +216,107 @@ export class PaymentService {
           entityId: code,
           actorId: admin.userId,
           actorRole: admin.roles.join(',') || null,
-          metadata: { before, after: fee },
+          metadata: {
+            before: before ? this.feeAudit(before) : null,
+            after: this.feeAudit(after),
+          },
+        },
+        tx,
+      );
+      return after;
+    });
+    return this.feeView(saved);
+  }
+
+  createFee(dto: CreateFeeDto, admin: PaymentActor): Promise<FeeView> {
+    return this.setFee(dto.code, dto, admin, undefined, 'create');
+  }
+
+  async updateFee(
+    code: string,
+    dto: UpdateFeeDto,
+    admin: PaymentActor,
+    ifMatch?: string,
+  ): Promise<FeeView> {
+    if (dto.amountMinor === undefined && dto.isActive === undefined) {
+      throw this.invalidFee('amountMinor', 'send amountMinor and/or isActive');
+    }
+    const current = await this.repository.findFee(code);
+    if (!current) throw this.feeNotFound();
+    return this.setFee(
+      code,
+      {
+        amountMinor: dto.amountMinor ?? current.amountMinor,
+        isActive: dto.isActive,
+      },
+      admin,
+      ifMatch,
+      'update',
+    );
+  }
+
+  /** A fee that was never charged can be removed; a used fee is deactivated instead (history keeps pointing at it). */
+  async deleteFee(code: string, admin: PaymentActor, ifMatch?: string): Promise<void> {
+    if (code === BOOKING_FEE_CODE) {
+      throw new DomainException(
+        PaymentErrorCode.FEE_PROTECTED,
+        'The booking fee cannot be deleted; deactivate it to stop charging',
+        HttpStatus.CONFLICT,
+      );
+    }
+    await this.repository.transaction(async (tx) => {
+      const before = await this.repository.lockFee(code, tx);
+      if (!before) throw this.feeNotFound();
+      assertIfMatch(ifMatch, before.updatedAt!);
+      if (await this.repository.feeInUse(code, tx)) {
+        throw new DomainException(
+          PaymentErrorCode.FEE_IN_USE,
+          'This fee was already charged and cannot be deleted; deactivate it instead',
+          HttpStatus.CONFLICT,
+        );
+      }
+      await this.repository.deleteFee(code, tx);
+      await this.audit.record(
+        {
+          action: 'payment.fee_delete',
+          entityType: 'fee_config',
+          entityId: code,
+          actorId: admin.userId,
+          actorRole: admin.roles.join(',') || null,
+          metadata: { before: this.feeAudit(before) },
         },
         tx,
       );
     });
-    return fee;
+  }
+
+  private feeAudit(f: FeeRecord): Record<string, unknown> {
+    return {
+      code: f.code,
+      kind: f.kind,
+      amountMinor: f.amountMinor,
+      currency: f.currency,
+      isActive: f.isActive,
+    };
+  }
+
+  private feeView(f: FeeRecord): FeeView {
+    return {
+      code: f.code,
+      kind: f.kind,
+      amountMinor: f.amountMinor,
+      currency: f.currency,
+      isActive: f.isActive,
+      updatedAt: f.updatedAt!,
+    };
+  }
+
+  private feeNotFound(): DomainException {
+    return new DomainException(
+      PaymentErrorCode.FEE_NOT_FOUND,
+      'Fee not found',
+      HttpStatus.NOT_FOUND,
+    );
   }
 
   // --- customer ----------------------------------------------------------------------------------------------
@@ -256,6 +412,111 @@ export class PaymentService {
       } catch (error) {
         if (!isUniqueViolation(error)) throw error;
         payment = await this.repository.findOpenForBooking(bookingId);
+        if (!payment) throw error;
+      }
+    }
+    if (!payment.providerOrderId) {
+      payment = await this.openOrder(payment);
+    }
+    return { ...this.view(payment), checkout: this.checkout(payment.checkoutPayload) };
+  }
+
+  /**
+   * DEC-11: the fees a customer can pay against a booking (PLACEMENT, VERIFICATION, REPLACEMENT_PLAN). A kind is offered only while an
+   * ACTIVE fee of that kind exists, so with no fee configured the list is empty and the feature is simply off.
+   */
+  async listPayableFees(): Promise<
+    Array<{ code: string; kind: FeeKindValue; amountMinor: number; currency: string }>
+  > {
+    const fees = await this.repository.listFees(PAYABLE_FEE_KINDS, true);
+    return fees.map((f) => ({
+      code: f.code,
+      kind: f.kind,
+      amountMinor: f.amountMinor,
+      currency: f.currency,
+    }));
+  }
+
+  /**
+   * Starts (or resumes) the payment of a PLACEMENT / VERIFICATION / REPLACEMENT_PLAN fee against my booking. Same state machine, idempotency
+   * and recovery as the booking fee; the amount always comes from the active fee configuration (the client cannot send one); a successful
+   * payment of such a fee does not move the booking. One open payment per (booking, fee).
+   */
+  async createForFee(
+    customerUserId: string,
+    bookingId: string,
+    feeCode: string,
+  ): Promise<CreatePaymentResponse> {
+    const fee = await this.repository.findFee(feeCode);
+    if (!fee || !fee.isActive || !(PAYABLE_FEE_KINDS as readonly string[]).includes(fee.kind)) {
+      throw new DomainException(
+        fee && fee.isActive
+          ? PaymentErrorCode.FEE_NOT_PAYABLE
+          : PaymentErrorCode.FEE_NOT_CONFIGURED,
+        fee && fee.isActive
+          ? 'This fee cannot be paid against a booking'
+          : 'This fee has not been configured',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const booking = await this.bookings.getSummary(bookingId).catch(() => null);
+    if (!booking || booking.customerUserId !== customerUserId) throw this.bookingNotFound();
+    if (booking.status === 'CANCELLED') {
+      throw new DomainException(
+        PaymentErrorCode.BOOKING_NOT_PAYABLE,
+        'This booking was cancelled',
+        HttpStatus.CONFLICT,
+      );
+    }
+    let payment = await this.repository.findOpenForBooking(bookingId, undefined, feeCode);
+    if (payment?.status === 'SUCCEEDED' || payment?.status.startsWith('REFUND')) {
+      throw new DomainException(
+        PaymentErrorCode.ALREADY_PAID,
+        'This fee is already paid for this booking',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (!payment) {
+      try {
+        payment = await this.repository.transaction(async (tx) => {
+          await this.bookings.lockBooking(bookingId, tx);
+          if ((await this.bookings.statusInTx(bookingId, tx)) === 'CANCELLED') {
+            throw new DomainException(
+              PaymentErrorCode.BOOKING_NOT_PAYABLE,
+              'This booking was cancelled',
+              HttpStatus.CONFLICT,
+            );
+          }
+          const created = await this.repository.create(
+            {
+              bookingId,
+              customerUserId,
+              feeCode: fee.code,
+              amountMinor: fee.amountMinor,
+              currency: fee.currency,
+            },
+            tx,
+          );
+          await this.audit.record(
+            {
+              action: 'payment.create',
+              entityType: 'payment',
+              entityId: created.id,
+              actorId: customerUserId,
+              metadata: {
+                bookingId,
+                feeCode: fee.code,
+                amountMinor: created.amountMinor,
+                currency: created.currency,
+              },
+            },
+            tx,
+          );
+          return created;
+        });
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        payment = await this.repository.findOpenForBooking(bookingId, undefined, feeCode);
         if (!payment) throw error;
       }
     }
@@ -1033,7 +1294,11 @@ export class PaymentService {
         return finish('IGNORED', `ALREADY_${payment.status}`);
       }
       if (lateSuccess) {
-        const other = await this.repository.findOpenForBooking(payment.bookingId, tx);
+        const other = await this.repository.findOpenForBooking(
+          payment.bookingId,
+          tx,
+          payment.feeCode,
+        );
         if (other && other.id !== payment.id) {
           await this.raiseException(
             {
@@ -1110,7 +1375,12 @@ export class PaymentService {
         },
         tx,
       );
-      const confirmed = await this.bookings.applyPaymentSucceeded(payment.bookingId, tx);
+      // Only the booking fee confirms the booking; any other fee is money for its own purpose and leaves the booking alone (a cancelled
+      // booking still makes it a payment exception below).
+      const confirmed =
+        payment.feeCode === BOOKING_FEE_CODE
+          ? await this.bookings.applyPaymentSucceeded(payment.bookingId, tx)
+          : (await this.bookings.statusInTx(payment.bookingId, tx)) !== 'CANCELLED';
       await this.audit.record(
         {
           action: 'payment.succeeded',

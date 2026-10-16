@@ -747,9 +747,21 @@ enum PaymentStatus {
 }
 
 /// Admin-configured fee (FRD FM-07: from fee configuration, never hard-coded). Empty until an administrator sets it (Q-01).
+/// What a fee is charged for (DEC-11). Only BOOKING is charged by the booking flow; PLACEMENT, VERIFICATION and REPLACEMENT_PLAN are
+/// charged through the generic fee payment once an ACTIVE fee of that kind exists; SUBSCRIPTION is catalogued only (out of V1).
+enum FeeKind {
+  BOOKING
+  PLACEMENT
+  VERIFICATION
+  REPLACEMENT_PLAN
+  SUBSCRIPTION
+  CANCELLATION
+}
+
 model FeeConfig {
   id          String   @id @default(uuid(7)) @db.Uuid
   code        String   @unique
+  kind        FeeKind  @default(BOOKING)
   amountMinor Int      @map("amount_minor")
   currency    String   @default("INR")
   isActive    Boolean  @default(true) @map("is_active")

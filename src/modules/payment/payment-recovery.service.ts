@@ -6,6 +6,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { Prisma } from '../../generated/prisma/client';
 import { BookingLifecycleHooks, type BookingHook } from '../booking/booking-hooks';
 import { BookingService } from '../booking/booking.service';
+import { BOOKING_FEE_CODE } from './dto/payment.dto';
 import { RECOVERY } from './payment-recovery.constants';
 import { PaymentRepository, type PaymentRecord } from './payment.repository';
 import { PaymentService } from './payment.service';
@@ -56,8 +57,19 @@ export class PaymentRecoveryService implements BookingHook, OnModuleInit {
     tx: Prisma.TransactionClient,
     fromStatus: string,
   ): Promise<void> {
-    const payment = await this.repository.lockOpenForBooking(bookingId, tx);
-    if (!payment) return;
+    // A booking can hold several payments (the booking fee and, DEC-11, other fees); each is settled on its own.
+    for (const payment of await this.repository.lockOpenForBooking(bookingId, tx)) {
+      await this.settleOnCancel(payment, bookingId, actor, tx, fromStatus);
+    }
+  }
+
+  private async settleOnCancel(
+    payment: PaymentRecord,
+    bookingId: string,
+    actor: { kind: string; userId: string | null },
+    tx: Prisma.TransactionClient,
+    fromStatus: string,
+  ): Promise<void> {
     if (payment.status === 'CREATED' || payment.status === 'PENDING') {
       const hasOrder = payment.status === 'PENDING';
       await this.repository.update(
@@ -85,7 +97,11 @@ export class PaymentRecoveryService implements BookingHook, OnModuleInit {
     }
     if (payment.status === 'SUCCEEDED') {
       // DEC-04: a paid booking cancelled before it became ACTIVE is refunded in full automatically; after that staff decide.
-      if (this.config.autoRefundOnCancel && fromStatus === 'CONFIRMED') {
+      if (
+        this.config.autoRefundOnCancel &&
+        fromStatus === 'CONFIRMED' &&
+        payment.feeCode === BOOKING_FEE_CODE
+      ) {
         await this.payments.requestAutoRefundLocked(payment, actor, tx);
         return;
       }

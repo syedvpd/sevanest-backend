@@ -29,6 +29,19 @@ export const PAYMENT_STATUSES = [
 ] as const;
 export type PaymentStatusValue = (typeof PAYMENT_STATUSES)[number];
 
+/** What a catalogued fee is for (DEC-11). SUBSCRIPTION and CANCELLATION are catalogued but never charged by a payment endpoint in V1. */
+export const FEE_KINDS = [
+  'BOOKING',
+  'PLACEMENT',
+  'VERIFICATION',
+  'REPLACEMENT_PLAN',
+  'SUBSCRIPTION',
+  'CANCELLATION',
+] as const;
+export type FeeKindValue = (typeof FEE_KINDS)[number];
+/** Kinds a customer can pay through POST /fee-payments once an ACTIVE fee of that kind exists. */
+export const PAYABLE_FEE_KINDS = ['PLACEMENT', 'VERIFICATION', 'REPLACEMENT_PLAN'] as const;
+
 /** The only documented fee: the booking/platform fee (FR-BK-004). Other fee types are open (Q-01). */
 export const BOOKING_FEE_CODE = 'BOOKING_FEE';
 /** DEC-04: no cancellation fee in V1; the row exists with amount 0 and an administrator may set it later. */
@@ -38,6 +51,20 @@ export class CreatePaymentDto {
   @ApiProperty({ description: 'My booking that is waiting for payment.' })
   @IsUUID()
   bookingId!: string;
+}
+
+export class CreateFeePaymentDto {
+  @ApiProperty({ description: 'My booking the fee is charged against.' })
+  @IsUUID()
+  bookingId!: string;
+
+  @ApiProperty({
+    example: 'PLACEMENT_FEE',
+    description:
+      'Code of an ACTIVE PLACEMENT, VERIFICATION or REPLACEMENT_PLAN fee. The amount is never sent: it comes from the fee configuration.',
+  })
+  @Matches(/^[A-Z][A-Z0-9_]{1,49}$/)
+  feeCode!: string;
 }
 
 export class VerifyPaymentDto {
@@ -64,6 +91,53 @@ export class RefundDto {
   reason!: string;
 }
 
+export class CreateFeeDto {
+  @ApiProperty({
+    example: 'PLACEMENT_FEE',
+    description: 'Upper case letters, digits and underscores.',
+  })
+  @Matches(/^[A-Z][A-Z0-9_]{1,49}$/, {
+    message: 'code must be upper case letters, digits and underscores',
+  })
+  code!: string;
+
+  @ApiProperty({ enum: FEE_KINDS })
+  @IsEnum(FEE_KINDS)
+  kind!: FeeKindValue;
+
+  @ApiProperty({ minimum: 0, description: 'Paise. 0 only for the CANCELLATION kind.' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  amountMinor!: number;
+
+  @ApiPropertyOptional({ default: 'INR' })
+  @IsOptional()
+  @Matches(/^INR$/, { message: 'currency must be INR' })
+  currency?: string;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateFeeDto {
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  amountMinor?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class SetFeeDto {
   @ApiProperty({
     minimum: 0,
@@ -85,6 +159,15 @@ export class SetFeeDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    enum: FEE_KINDS,
+    description:
+      'Needed when the code is new and not a known code; an existing fee keeps its kind unless one is sent.',
+  })
+  @IsOptional()
+  @IsEnum(FEE_KINDS)
+  kind?: FeeKindValue;
 }
 
 export class PaymentListQuery extends PageQueryDto {
@@ -119,6 +202,12 @@ export class AdminPaymentListQuery extends PaymentListQuery {
 
 export class FeeView {
   @ApiProperty() code!: string;
+  @ApiProperty({ enum: FEE_KINDS }) kind!: FeeKindValue;
+  @ApiProperty({
+    description:
+      'Version of the fee: send it as If-Match (it is also the ETag of GET /admin/fees/{code}) when changing it.',
+  })
+  updatedAt!: Date;
   @ApiProperty() amountMinor!: number;
   @ApiProperty() currency!: string;
   @ApiProperty() isActive!: boolean;

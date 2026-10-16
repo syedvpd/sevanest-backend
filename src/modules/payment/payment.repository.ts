@@ -1,15 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
-import type { PaymentStatusValue } from './dto/payment.dto';
+import { BOOKING_FEE_CODE, type FeeKindValue, type PaymentStatusValue } from './dto/payment.dto';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
 export interface FeeRecord {
   code: string;
+  kind: FeeKindValue;
   amountMinor: number;
   currency: string;
   isActive: boolean;
+  updatedAt?: Date;
 }
 
 export interface PaymentRecord {
@@ -116,6 +118,17 @@ function toRecord(row: Row): PaymentRecord {
   };
 }
 
+function toFee(row: Prisma.FeeConfigGetPayload<object>): FeeRecord {
+  return {
+    code: row.code,
+    kind: row.kind,
+    amountMinor: row.amountMinor,
+    currency: row.currency,
+    isActive: row.isActive,
+    updatedAt: row.updatedAt,
+  };
+}
+
 type ExceptionRow = Prisma.PaymentExceptionGetPayload<object>;
 
 function toException(row: ExceptionRow): PaymentExceptionRecord {
@@ -175,32 +188,49 @@ export class PaymentRepository {
 
   async findFee(code: string, db: Db = this.prisma): Promise<FeeRecord | null> {
     const row = await db.feeConfig.findUnique({ where: { code } });
-    return row
-      ? {
-          code: row.code,
-          amountMinor: row.amountMinor,
-          currency: row.currency,
-          isActive: row.isActive,
-        }
-      : null;
+    return row ? toFee(row) : null;
   }
 
-  async listFees(): Promise<FeeRecord[]> {
-    const rows = await this.prisma.feeConfig.findMany({ orderBy: { code: 'asc' } });
-    return rows.map((r) => ({
-      code: r.code,
-      amountMinor: r.amountMinor,
-      currency: r.currency,
-      isActive: r.isActive,
-    }));
+  /** Locks the fee row for the rest of the transaction (so two admins editing it serialize). */
+  async lockFee(code: string, tx: Prisma.TransactionClient): Promise<FeeRecord | null> {
+    await tx.$queryRaw`SELECT id FROM fee_configs WHERE code = ${code} FOR UPDATE`;
+    return this.findFee(code, tx);
   }
 
-  async upsertFee(fee: FeeRecord, tx: Prisma.TransactionClient): Promise<void> {
-    await tx.feeConfig.upsert({
-      where: { code: fee.code },
-      create: fee,
-      update: { amountMinor: fee.amountMinor, currency: fee.currency, isActive: fee.isActive },
+  async listFees(kinds?: readonly FeeKindValue[], onlyActive = false): Promise<FeeRecord[]> {
+    const rows = await this.prisma.feeConfig.findMany({
+      where: {
+        ...(kinds ? { kind: { in: [...kinds] } } : {}),
+        ...(onlyActive ? { isActive: true } : {}),
+      },
+      orderBy: { code: 'asc' },
     });
+    return rows.map(toFee);
+  }
+
+  async upsertFee(fee: FeeRecord, tx: Prisma.TransactionClient): Promise<FeeRecord> {
+    const data = {
+      kind: fee.kind,
+      amountMinor: fee.amountMinor,
+      currency: fee.currency,
+      isActive: fee.isActive,
+    };
+    return toFee(
+      await tx.feeConfig.upsert({
+        where: { code: fee.code },
+        create: { code: fee.code, ...data },
+        update: data,
+      }),
+    );
+  }
+
+  async deleteFee(code: string, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.feeConfig.delete({ where: { code } });
+  }
+
+  /** Whether any payment was ever created with this fee (a used fee is deactivated, never deleted). */
+  async feeInUse(code: string, db: Db = this.prisma): Promise<boolean> {
+    return (await db.payment.count({ where: { feeCode: code } })) > 0;
   }
 
   // --- payments ---------------------------------------------------------------------------------------------
@@ -240,10 +270,15 @@ export class PaymentRepository {
   }
 
   /** The payment of a booking that still holds or will hold money (the partial unique index allows at most one). */
-  async findOpenForBooking(bookingId: string, db: Db = this.prisma): Promise<PaymentRecord | null> {
+  async findOpenForBooking(
+    bookingId: string,
+    db: Db = this.prisma,
+    feeCode: string = BOOKING_FEE_CODE,
+  ): Promise<PaymentRecord | null> {
     const row = await db.payment.findFirst({
       where: {
         bookingId,
+        feeCode,
         status: { in: ['CREATED', 'PENDING', 'SUCCEEDED', 'REFUND_PENDING', 'REFUND_FAILED'] },
       },
     });
@@ -452,13 +487,16 @@ export class PaymentRepository {
   async lockOpenForBooking(
     bookingId: string,
     tx: Prisma.TransactionClient,
-  ): Promise<PaymentRecord | null> {
+  ): Promise<PaymentRecord[]> {
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM payments
       WHERE booking_id = ${bookingId}::uuid
         AND status IN ('CREATED', 'PENDING', 'SUCCEEDED', 'REFUND_PENDING', 'REFUND_FAILED')
+      ORDER BY created_at, id
       FOR UPDATE`;
-    return rows.length === 1 ? this.findById(rows[0].id, tx) : null;
+    const payments: PaymentRecord[] = [];
+    for (const row of rows) payments.push((await this.findById(row.id, tx))!);
+    return payments;
   }
 
   /**

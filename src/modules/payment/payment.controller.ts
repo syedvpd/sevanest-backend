@@ -7,12 +7,15 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Delete,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   Query,
   Req,
+  Res,
   StreamableFile,
 } from '@nestjs/common';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
@@ -27,6 +30,9 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
+import type { Response } from 'express';
+import { etagOf } from '../../common/concurrency/if-match';
+import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
@@ -41,7 +47,12 @@ import {
   BookingFeeQuote,
   BookingFeeQuoteQuery,
   CreatePaymentDto,
+  CreateFeeDto,
+  CreateFeePaymentDto,
   CreatePaymentResponse,
+  FEE_KINDS,
+  FeeKindValue,
+  UpdateFeeDto,
   FEE_CODE_PATTERN,
   FeeView,
   PaymentExceptionListQuery,
@@ -77,6 +88,45 @@ export class PaymentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<BookingFeeQuote> {
     return this.payments.quoteBookingFee(user.userId, query.bookingId);
+  }
+
+  @Get('fees/payable')
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          code: { type: 'string' },
+          kind: { type: 'string', enum: ['PLACEMENT', 'VERIFICATION', 'REPLACEMENT_PLAN'] },
+          amountMinor: { type: 'number' },
+          currency: { type: 'string' },
+        },
+      },
+    },
+  })
+  @ApiOperation({
+    summary: 'Extra fees I can pay against a booking (placement, verification, replacement plan)',
+    description:
+      'Only ACTIVE fees of those kinds are listed: with none configured the list is empty and the feature is off. Pay one with POST /fee-payments.',
+  })
+  payableFees(): ReturnType<PaymentService['listPayableFees']> {
+    return this.payments.listPayableFees();
+  }
+
+  @Idempotent()
+  @Post('fee-payments')
+  @ApiModelResponse(CreatePaymentResponse, { status: 201 })
+  @ApiOperation({
+    summary: 'Start (or resume) payment of an extra fee against my booking',
+    description:
+      'The amount comes from the fee configuration and cannot be sent. One open payment per booking and fee; paying a fee that is already paid answers 409 ALREADY_PAID. The booking itself does not change. 422 FEE_NOT_CONFIGURED (no active fee) / FEE_NOT_PAYABLE, 409 BOOKING_NOT_PAYABLE (cancelled), 404 for a booking that is not mine. Verify the checkout with POST /payments/{id}/verify.',
+  })
+  createFeePayment(
+    @Body() dto: CreateFeePaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CreatePaymentResponse> {
+    return this.payments.createForFee(user.userId, dto.bookingId, dto.feeCode);
   }
 
   @Idempotent()
@@ -311,12 +361,91 @@ export class AdminPaymentsController {
   @Get('fees')
   @ApiModelResponse(FeeView, { isArray: true })
   @Permissions(PermissionCode.PAYMENT_VIEW)
-  @ApiOperation({ summary: 'Configured fees (empty until an administrator sets them, Q-01)' })
-  fees(): Promise<FeeView[]> {
-    return this.payments.listFees();
+  @ApiOperation({
+    summary: 'Fee catalogue (empty until an administrator sets fees, Q-01); filter by kind',
+    description:
+      'Each fee carries kind (BOOKING, PLACEMENT, VERIFICATION, REPLACEMENT_PLAN, SUBSCRIPTION, CANCELLATION) and updatedAt (the version for If-Match). SUBSCRIPTION and B2B models are catalogued only: nothing charges them in V1.',
+  })
+  fees(@Query('kind') kind?: string): Promise<FeeView[]> {
+    if (kind !== undefined && !(FEE_KINDS as readonly string[]).includes(kind)) {
+      throw new BadRequestException(`kind must be one of ${FEE_KINDS.join(', ')}`);
+    }
+    return this.payments.listFees(kind as FeeKindValue | undefined);
+  }
+
+  @Get('fees/:code')
+  @ApiModelResponse(FeeView)
+  @Permissions(PermissionCode.PAYMENT_VIEW)
+  @ApiOperation({ summary: 'One fee (ETag for If-Match)' })
+  async fee(
+    @Param('code') code: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<FeeView> {
+    if (!FEE_CODE_PATTERN.test(code)) {
+      throw new BadRequestException('code must be upper case letters, digits and underscores');
+    }
+    const fee = await this.payments.getFee(code);
+    res.setHeader('ETag', etagOf(fee.updatedAt));
+    return fee;
+  }
+
+  @Post('fees')
+  @ApiModelResponse(FeeView, { status: 201 })
+  @Permissions(PermissionCode.PAYMENT_MANAGE)
+  @ApiOperation({
+    summary: 'Add a fee to the catalogue (audited)',
+    description:
+      '409 FEE_EXISTS. A PLACEMENT, VERIFICATION or REPLACEMENT_PLAN fee becomes payable by customers (POST /fee-payments) as soon as it is active.',
+  })
+  async createFee(
+    @Body() dto: CreateFeeDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<FeeView> {
+    return this.payments.createFee(dto, await this.actor(admin));
+  }
+
+  @Patch('fees/:code')
+  @RequireIfMatch()
+  @ApiModelResponse(FeeView)
+  @Permissions(PermissionCode.PAYMENT_MANAGE)
+  @ApiOperation({
+    summary:
+      'Change a fee amount or switch it on/off (If-Match required: 428 without it, 412 when stale)',
+    description: 'A fee already used by a payment is deactivated, not deleted.',
+  })
+  async updateFee(
+    @Param('code') code: string,
+    @Body() dto: UpdateFeeDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
+  ): Promise<FeeView> {
+    if (!FEE_CODE_PATTERN.test(code)) {
+      throw new BadRequestException('code must be upper case letters, digits and underscores');
+    }
+    return this.payments.updateFee(code, dto, await this.actor(admin), ifMatch);
+  }
+
+  @Delete('fees/:code')
+  @RequireIfMatch()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(PermissionCode.PAYMENT_MANAGE)
+  @ApiOperation({
+    summary: 'Delete a fee that was never charged (If-Match required)',
+    description: '409 FEE_IN_USE once any payment used it; 409 FEE_PROTECTED for the booking fee.',
+  })
+  async deleteFee(
+    @Param('code') code: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
+  ): Promise<void> {
+    if (!FEE_CODE_PATTERN.test(code)) {
+      throw new BadRequestException('code must be upper case letters, digits and underscores');
+    }
+    await this.payments.deleteFee(code, await this.actor(admin), ifMatch);
   }
 
   @Put('fees/booking-fee')
+  @RequireIfMatch()
   @ApiModelResponse(FeeView)
   @Permissions(PermissionCode.PAYMENT_MANAGE)
   @ApiOperation({
@@ -325,28 +454,31 @@ export class AdminPaymentsController {
   async setBookingFee(
     @Body() dto: SetFeeDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<FeeView> {
-    return this.payments.setFee(BOOKING_FEE_CODE, dto, await this.actor(admin));
+    return this.payments.setFee(BOOKING_FEE_CODE, dto, await this.actor(admin), ifMatch);
   }
 
   @Put('fees/:code')
+  @RequireIfMatch()
   @ApiModelResponse(FeeView)
   @Permissions(PermissionCode.PAYMENT_MANAGE)
   @ApiOperation({
     summary:
       'Set any configured fee by code (placement, verification, replacement plan ...); audited with before and after',
     description:
-      'Fee values are configuration (PRD 10). Only BOOKING_FEE is charged by the current flows; other codes are stored for the revenue models the business enables later.',
+      'Create-or-replace upsert (use POST/PATCH /admin/fees for the catalogue). Fee values are configuration (PRD 10). BOOKING_FEE is charged by the booking flow; PLACEMENT, VERIFICATION and REPLACEMENT_PLAN fees are charged through POST /fee-payments; others are catalogued only. Send If-Match: * when the code does not exist yet.',
   })
   async setFee(
     @Param('code') code: string,
     @Body() dto: SetFeeDto,
     @CurrentUser() admin: AuthenticatedUser,
+    @Headers('if-match') ifMatch: string | undefined,
   ): Promise<FeeView> {
     if (!FEE_CODE_PATTERN.test(code)) {
       throw new BadRequestException('code must be upper case letters, digits and underscores');
     }
-    return this.payments.setFee(code, dto, await this.actor(admin));
+    return this.payments.setFee(code, dto, await this.actor(admin), ifMatch);
   }
 
   private async actor(admin: AuthenticatedUser): Promise<PaymentActor> {
