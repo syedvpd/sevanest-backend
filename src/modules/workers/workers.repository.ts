@@ -26,6 +26,9 @@ const PROFILE_SELECT = {
   criminalRecordDeclared: true,
   criminalRecordDetails: true,
   criminalDeclaredAt: true,
+  blacklistedAt: true,
+  blacklistReason: true,
+  blacklistedByUserId: true,
   createdAt: true,
   updatedAt: true,
   languages: { select: { languageCode: true }, orderBy: { languageCode: 'asc' } },
@@ -52,6 +55,8 @@ export interface WorkerRecord {
     details: string | null;
     acceptedAt: Date;
   } | null;
+  /** DEC-06: set while blacklisted. */
+  blacklist: { at: Date; reason: string; byUserId: string | null } | null;
   languages: string[];
   categoryIds: string[];
   createdAt: Date;
@@ -93,6 +98,14 @@ function toRecord(row: ProfileRow): WorkerRecord {
             hasCriminalRecord: row.criminalRecordDeclared,
             details: row.criminalRecordDetails,
             acceptedAt: row.criminalDeclaredAt!,
+          },
+    blacklist:
+      row.blacklistedAt === null
+        ? null
+        : {
+            at: row.blacklistedAt,
+            reason: row.blacklistReason ?? '',
+            byUserId: row.blacklistedByUserId,
           },
     languages: row.languages.map((l) => l.languageCode),
     categoryIds: row.skills.map((s) => s.categoryId),
@@ -177,6 +190,25 @@ export class WorkersRepository {
       Array<{ id: string }>
     >`SELECT id FROM worker_profiles WHERE id = ${id}::uuid FOR UPDATE`;
     return rows.length === 1;
+  }
+
+  /** Sets (or, with null, clears) the blacklist columns. Call under lock(). */
+  async setBlacklist(
+    id: string,
+    value: { reason: string; byUserId: string } | null,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.workerProfile.update({
+      where: { id },
+      data: value
+        ? {
+            blacklistedAt: new Date(),
+            blacklistReason: value.reason,
+            blacklistedByUserId: value.byUserId,
+          }
+        : { blacklistedAt: null, blacklistReason: null, blacklistedByUserId: null },
+      select: { id: true },
+    });
   }
 
   async updateScalars(

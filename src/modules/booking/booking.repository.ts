@@ -316,6 +316,28 @@ export class BookingRepository {
     return rows.map((r) => ({ id: r.id, workerId: r.workerId, respondBy: r.respondBy! }));
   }
 
+  /** Ids of the bookings a worker still holds (anything between a match and the end of the engagement). */
+  async findOpenIdsForWorker(workerId: string): Promise<string[]> {
+    const rows = await this.prisma.booking.findMany({
+      where: {
+        workerId,
+        status: {
+          in: [
+            'MATCHED',
+            'INTERVIEW_TRIAL_SCHEDULED',
+            'INTERVIEW_TRIAL_COMPLETED',
+            'PENDING_PAYMENT',
+            'CONFIRMED',
+            'ACTIVE',
+            'REPLACEMENT_REQUESTED',
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
   /** Bookings that have waited in PENDING_PAYMENT since before `olderThan` (the status last changed then). */
   async findWaitingForPayment(
     olderThan: Date,

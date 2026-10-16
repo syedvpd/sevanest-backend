@@ -230,7 +230,12 @@ describe('KYC upload integrity (integration)', () => {
 
       const ok = await as(api, admin).get(`${A}/documents/${id}/link`);
       expect(ok.status).toBe(200);
-      expect(Object.keys(ok.body as object).sort()).toEqual(['expiresAt', 'url']);
+      expect(Object.keys(ok.body as object).sort()).toEqual([
+        'expiresAt',
+        'expiresInSeconds',
+        'signedUrl',
+        'url',
+      ]);
       const audit = await api.prisma.auditLog.findFirstOrThrow({
         where: { action: 'verification.document_view', entityId: id },
       });

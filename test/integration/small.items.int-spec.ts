@@ -678,7 +678,7 @@ describe('Small backlog items and interim defaults (integration)', () => {
       expect(rows).toHaveLength(before + 1);
       expect(rows.at(-1)).toMatchObject({ actorId: admin.userId });
       expect(rows.at(-1)!.metadata).toMatchObject({
-        groups: ['address', 'emergencyContact', 'criminalDeclaration'],
+        groups: ['address', 'criminalDeclaration'],
       });
       // the list never opens the sensitive groups, so it is not an access event
       await as(api, admin).get(`${A}/workers?limit=5`).expect(200);

@@ -22,6 +22,7 @@ import { InterviewRepository } from './interview.repository';
 import { InterviewService } from './interview.service';
 import { BookingRepository } from './booking.repository';
 import { BookingService } from './booking.service';
+import { BookingBlacklistListener } from './booking-blacklist.listener';
 import { BookingSweepService } from './booking-sweep.service';
 
 /**
@@ -55,6 +56,7 @@ import { BookingSweepService } from './booking-sweep.service';
     InterviewService,
     BookingLifecycleHooks,
     BookingSweepService,
+    BookingBlacklistListener,
   ],
   exports: [BookingService, InterviewService, BookingLifecycleHooks, BookingSweepService],
 })

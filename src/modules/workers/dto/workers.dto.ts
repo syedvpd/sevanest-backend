@@ -409,7 +409,51 @@ export class AdminWorkerSummary {
   @ApiProperty() createdAt!: Date;
 }
 
+export class BlacklistInfo {
+  @ApiProperty() at!: Date;
+  @ApiProperty() reason!: string;
+  @ApiProperty({ nullable: true, type: String }) byUserId!: string | null;
+}
+
 export class AdminWorkerDetail extends WorkerProfileResponse {
   @ApiProperty() userId!: string;
   @ApiProperty({ enum: ['ACTIVE', 'SUSPENDED'] }) accountStatus!: string;
+  @ApiProperty({
+    description:
+      'DEC-09: the emergency contact is not part of this view (emergencyContact is always null here). Use POST /admin/workers/{id}/emergency-contact/reveal with a reason.',
+  })
+  hasEmergencyContact!: boolean;
+  @ApiProperty({
+    type: BlacklistInfo,
+    nullable: true,
+    description: 'Set while the worker is blacklisted (DEC-06).',
+  })
+  blacklist!: BlacklistInfo | null;
+}
+
+export class BlacklistWorkerDto {
+  @ApiProperty({ maxLength: 500, description: 'Why; kept on the profile and in the audit log.' })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @Length(5, 500)
+  reason!: string;
+}
+
+export class RevealEmergencyContactDto {
+  @ApiProperty({
+    minLength: 5,
+    maxLength: 300,
+    description:
+      'Why the contact is needed. Mandatory (422 REASON_REQUIRED when missing or shorter than 5 characters); written to the audit log with the reveal.',
+  })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsOptional()
+  @IsString()
+  @Length(0, 300)
+  reason?: string;
+}
+
+export class RevealedEmergencyContact {
+  @ApiProperty() name!: string;
+  @ApiProperty() mobile!: string;
 }

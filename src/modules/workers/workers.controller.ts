@@ -28,7 +28,10 @@ import {
   AdminWorkerDetail,
   AdminWorkerListQuery,
   AdminWorkerSummary,
+  BlacklistWorkerDto,
   CreateWorkerProfileDto,
+  RevealedEmergencyContact,
+  RevealEmergencyContactDto,
   SetCriminalDeclarationDto,
   SetWorkerCategoriesDto,
   SetWorkerReferencesDto,
@@ -242,6 +245,69 @@ export class AdminWorkersController {
   ): Promise<AdminWorkerDetail> {
     const access = await this.users.getAccess(admin.userId);
     return this.workers.adminSetCategories(workerId, dto, {
+      userId: admin.userId,
+      roles: access.roles,
+    });
+  }
+
+  @Post(':workerId/blacklist')
+  @ApiModelResponse(AdminWorkerDetail)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.WORKER_BLACKLIST)
+  @ApiOperation({
+    summary: 'Blacklist a worker (reason required, audited)',
+    description:
+      'The worker leaves search, matching and eligibility at once, their account is suspended (sessions end), and staff get an alert for each open booking they hold. Repeating is safe. Only a Super Admin can lift it.',
+  })
+  async blacklist(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @Body() dto: BlacklistWorkerDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerDetail> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.workers.blacklist(workerId, dto.reason, {
+      userId: admin.userId,
+      roles: access.roles,
+    });
+  }
+
+  @Post(':workerId/blacklist/lift')
+  @ApiModelResponse(AdminWorkerDetail)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.WORKER_BLACKLIST_LIFT)
+  @ApiOperation({
+    summary: 'Lift a blacklisting (Super Admin only; reason required, audited)',
+    description:
+      'The account is reactivated. The worker is searchable again only if still verified.',
+  })
+  async liftBlacklist(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @Body() dto: BlacklistWorkerDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerDetail> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.workers.liftBlacklist(workerId, dto.reason, {
+      userId: admin.userId,
+      roles: access.roles,
+    });
+  }
+
+  @Post(':workerId/emergency-contact/reveal')
+  @ApiModelResponse(RevealedEmergencyContact)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.WORKER_REVEAL_EMERGENCY_CONTACT)
+  @ApiOperation({
+    summary: "Reveal a worker's emergency contact (reason required; every reveal is audited)",
+    description:
+      'The general staff profile never contains the emergency contact. 422 without a reason; 404 EMERGENCY_CONTACT_NOT_FOUND when none is on file.',
+  })
+  async revealEmergencyContact(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @Body() dto: RevealEmergencyContactDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<RevealedEmergencyContact> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.workers.revealEmergencyContact(workerId, dto.reason, {
       userId: admin.userId,
       roles: access.roles,
     });

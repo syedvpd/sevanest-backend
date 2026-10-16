@@ -29,6 +29,7 @@ import {
   WorkerProfileResponse,
   WorkerReferenceView,
 } from './dto/workers.dto';
+import { WorkerBlacklistHooks } from './worker-blacklist.hooks';
 import { WorkerSubmissionRegistry } from './worker-submission.registry';
 import { ProfileScalarUpdate, WorkerRecord, WorkersRepository } from './workers.repository';
 
@@ -38,6 +39,8 @@ export const WorkersErrorCode = {
   WORKER_NOT_FOUND: 'WORKER_NOT_FOUND',
   PROFILE_INCOMPLETE: 'PROFILE_INCOMPLETE',
   MOBILE_IN_USE: 'MOBILE_IN_USE',
+  EMERGENCY_CONTACT_NOT_FOUND: 'EMERGENCY_CONTACT_NOT_FOUND',
+  REASON_REQUIRED: 'REASON_REQUIRED',
 } as const;
 
 /** Who is acting on a worker profile: the worker themself, or an admin (assisted onboarding). */
@@ -75,6 +78,7 @@ export class WorkersService {
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
     private readonly registry: WorkerSubmissionRegistry,
+    private readonly blacklistHooks: WorkerBlacklistHooks,
   ) {}
 
   // --- contract for other modules ---------------------------------------------------------------------------
@@ -471,7 +475,7 @@ export class WorkersService {
       entityId: workerId,
       actorId: actor.userId,
       actorRole: actor.roles?.join(',') || null,
-      metadata: { groups: ['address', 'emergencyContact', 'criminalDeclaration'] },
+      metadata: { groups: ['address', 'criminalDeclaration'] },
     });
     return detail;
   }
@@ -484,9 +488,125 @@ export class WorkersService {
     const user = await this.users.findById(worker.userId);
     return {
       ...(await this.toProfileView(worker, user)),
+      // DEC-09: the emergency contact is never part of the staff profile; it is revealed on request with a reason (audited).
+      emergencyContact: null,
+      hasEmergencyContact: worker.emergencyContact !== null,
+      blacklist: worker.blacklist,
       userId: worker.userId,
       accountStatus: user?.status ?? 'ACTIVE',
     };
+  }
+
+  /**
+   * DEC-09: the one way staff read a worker's emergency contact. A reason is mandatory and the reveal is audited with it (who, which
+   * worker, why). The contact is never returned to customers and the general staff profile redacts it.
+   */
+  async revealEmergencyContact(
+    workerId: string,
+    reason: string | undefined,
+    actor: Actor & { userId: string },
+  ): Promise<{ name: string; mobile: string }> {
+    if (!reason || reason.length < 5) {
+      throw new DomainException(
+        WorkersErrorCode.REASON_REQUIRED,
+        'A reason of at least 5 characters is required to reveal an emergency contact',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        [{ field: 'reason', messages: ['reason is required'] }],
+      );
+    }
+    const worker = await this.repository.findById(workerId);
+    if (!worker) throw this.workerNotFound();
+    if (!worker.emergencyContact) {
+      throw new DomainException(
+        WorkersErrorCode.EMERGENCY_CONTACT_NOT_FOUND,
+        'This worker has no emergency contact on file',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    await this.audit.record({
+      action: 'worker.emergency_contact_reveal',
+      entityType: 'worker_profile',
+      entityId: workerId,
+      actorId: actor.userId,
+      actorRole: actor.roles?.join(',') || null,
+      metadata: { reason },
+    });
+    return worker.emergencyContact;
+  }
+
+  /**
+   * DEC-06: blacklist a worker. They leave search, matching and every eligibility check at once (profile flag), their account is suspended
+   * (so every session ends and they cannot sign in), and staff are alerted to each open booking they hold. Audited with the reason.
+   * Repeating is safe: the flag stays, the account stays suspended, open bookings are flagged again (deduplicated alerts).
+   */
+  async blacklist(
+    workerId: string,
+    reason: string,
+    actor: Actor & { userId: string },
+  ): Promise<AdminWorkerDetail> {
+    const worker = await this.repository.findById(workerId);
+    if (!worker) throw this.workerNotFound();
+    if (!worker.blacklist) {
+      await this.repository.transaction(async (tx) => {
+        if (!(await this.repository.lock(workerId, tx))) throw this.workerNotFound();
+        await this.repository.setBlacklist(workerId, { reason, byUserId: actor.userId }, tx);
+        await this.audit.record(
+          {
+            action: 'worker.blacklist',
+            entityType: 'worker_profile',
+            entityId: workerId,
+            actorId: actor.userId,
+            actorRole: actor.roles?.join(',') || null,
+            metadata: { reason },
+          },
+          tx,
+        );
+      });
+    }
+    // Suspension ends every session and stops sign-in (changeStatus is a no-op when already suspended).
+    await this.users.changeStatus(worker.userId, 'SUSPENDED', `Blacklisted: ${reason}`, actor, []);
+    await this.blacklistHooks.blacklisted({
+      workerId,
+      userId: worker.userId,
+      reason,
+      actorUserId: actor.userId,
+    });
+    return this.adminGet(workerId);
+  }
+
+  /** Lifting is a Super Admin decision (route permission) and reactivates the account. Audited. */
+  async liftBlacklist(
+    workerId: string,
+    reason: string,
+    actor: Actor & { userId: string },
+  ): Promise<AdminWorkerDetail> {
+    const worker = await this.repository.findById(workerId);
+    if (!worker) throw this.workerNotFound();
+    if (worker.blacklist) {
+      await this.repository.transaction(async (tx) => {
+        if (!(await this.repository.lock(workerId, tx))) throw this.workerNotFound();
+        await this.repository.setBlacklist(workerId, null, tx);
+        await this.audit.record(
+          {
+            action: 'worker.blacklist_lift',
+            entityType: 'worker_profile',
+            entityId: workerId,
+            actorId: actor.userId,
+            actorRole: actor.roles?.join(',') || null,
+            metadata: { reason, previousReason: worker.blacklist?.reason },
+          },
+          tx,
+        );
+      });
+      await this.users.changeStatus(
+        worker.userId,
+        'ACTIVE',
+        `Blacklist lifted: ${reason}`,
+        actor,
+        [],
+      );
+    }
+    return this.adminGet(workerId);
   }
 
   async adminUpdate(

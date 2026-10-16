@@ -130,6 +130,7 @@ export class SearchRepository {
       WHERE wp.id = ANY(${ids}::uuid[])
         AND wp.onboarding_status = 'SUBMITTED'
         AND u.type = 'WORKER' AND u.status = 'ACTIVE'
+        AND wp.blacklisted_at IS NULL
         AND ${verifiedWorkerCondition('wp.id')}
         AND ${this.notBlocked(forCustomerUserId)}`);
     return this.hydrate(rows);
@@ -202,6 +203,8 @@ export class SearchRepository {
     const conditions: Prisma.Sql[] = [
       Prisma.sql`wp.onboarding_status = 'SUBMITTED'`,
       Prisma.sql`u.type = 'WORKER' AND u.status = 'ACTIVE'`,
+      // DEC-06: a blacklisted worker is never searchable, matchable or bookable.
+      Prisma.sql`wp.blacklisted_at IS NULL`,
       verifiedWorkerCondition('wp.id'),
       Prisma.sql`EXISTS (SELECT 1 FROM worker_skills ws WHERE ws.worker_id = wp.id AND ws.category_id = ${c.categoryId}::uuid)`,
       Prisma.sql`EXISTS (SELECT 1 FROM worker_preferred_areas wpa WHERE wpa.worker_id = wp.id AND wpa.area_id = ${c.areaId}::uuid)`,

@@ -687,9 +687,12 @@ describe('Workers API (integration)', () => {
         mobile: worker.mobile,
         accountStatus: 'ACTIVE',
         address,
-        emergencyContact: { name: 'Lakshmi Devi', mobile: '+919876543210' },
+        // DEC-09: the staff profile redacts the emergency contact; it is revealed with a reason (worker.blacklist.int-spec).
+        emergencyContact: null,
+        hasEmergencyContact: true,
+        blacklist: null,
       });
-      expect(JSON.stringify(res.body)).not.toMatch(/profilePhotoRef|kyc|document/i);
+      expect(JSON.stringify(res.body)).not.toMatch(/profilePhotoRef|kyc|document|Lakshmi/i);
       expect((await as(superAdmin).get(`${base}/${UNKNOWN_ID}`)).status).toBe(404);
       expect((await as(superAdmin).get(`${base}/nope`)).status).toBe(400);
     });

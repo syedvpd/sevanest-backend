@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ServiceCategoriesModule } from '../service-categories/service-categories.module';
 import { UsersModule } from '../users/users.module';
+import { WorkerBlacklistHooks } from './worker-blacklist.hooks';
 import { WorkerSubmissionRegistry } from './worker-submission.registry';
 import { AdminWorkersController, WorkersController } from './workers.controller';
 import { WorkersRepository } from './workers.repository';
@@ -14,7 +15,7 @@ import { WorkersService } from './workers.service';
 @Module({
   imports: [UsersModule, ServiceCategoriesModule],
   controllers: [WorkersController, AdminWorkersController],
-  providers: [WorkersRepository, WorkersService, WorkerSubmissionRegistry],
-  exports: [WorkersService, WorkerSubmissionRegistry],
+  providers: [WorkersRepository, WorkersService, WorkerSubmissionRegistry, WorkerBlacklistHooks],
+  exports: [WorkersService, WorkerSubmissionRegistry, WorkerBlacklistHooks],
 })
 export class WorkersModule {}

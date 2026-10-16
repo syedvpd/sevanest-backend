@@ -69,6 +69,7 @@ model User {
   attendanceRecorded        AttendanceRecord[]        @relation("AttendanceRecorder")
   attendanceEvents          AttendanceEvent[]         @relation("AttendanceEventActor")
   workerPaymentsRecorded    WorkerPaymentReference[]  @relation("WorkerPaymentRecordedBy")
+  workersBlacklisted        WorkerProfile[]           @relation("WorkerBlacklistedBy")
   replacementsRequested     ReplacementRequest[]      @relation("ReplacementRequester")
   replacementsDecided       ReplacementRequest[]      @relation("ReplacementDecider")
   customerNotesAuthored     CustomerNote[]
@@ -393,10 +394,15 @@ model WorkerProfile {
   criminalRecordDeclared Boolean?               @map("criminal_record_declared")
   criminalRecordDetails  String?                @map("criminal_record_details")
   criminalDeclaredAt     DateTime?              @map("criminal_declared_at") @db.Timestamptz(6)
+  /// DEC-06: set while the worker is blacklisted (excluded from search, matching and eligibility; the account is suspended). Only a Super Admin lifts it.
+  blacklistedAt          DateTime?              @map("blacklisted_at") @db.Timestamptz(6)
+  blacklistReason        String?                @map("blacklist_reason")
+  blacklistedByUserId    String?                @map("blacklisted_by_user_id") @db.Uuid
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user               User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  blacklistedBy      User?                     @relation("WorkerBlacklistedBy", fields: [blacklistedByUserId], references: [id], onDelete: Restrict)
   skills             WorkerSkill[]
   languages          WorkerLanguage[]
   preferredAreas     WorkerPreferredArea[]

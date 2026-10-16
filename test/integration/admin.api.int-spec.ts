@@ -106,7 +106,7 @@ describe('Admin API (integration)', () => {
           .filter((p) => p.superAdminOnly)
           .map((p) => p.code)
           .sort(),
-      ).toEqual(['admin.manage_users', 'audit.view', 'role.manage']);
+      ).toEqual(['admin.manage_users', 'audit.view', 'role.manage', 'worker.blacklist.lift']);
       expect((await as(api, superAdmin).get(`${ROLES}/NO_SUCH_ROLE`)).status).toBe(404);
     });
 

@@ -30,6 +30,12 @@ export const PermissionCode = {
   CUSTOMER_MANAGE: 'customer.manage',
   WORKER_VIEW: 'worker.view',
   WORKER_MANAGE: 'worker.manage',
+  /** DEC-06: blacklist a worker (Operations Admin and Super Admin). */
+  WORKER_BLACKLIST: 'worker.blacklist',
+  /** DEC-06: lift a blacklisting (Super Admin only). */
+  WORKER_BLACKLIST_LIFT: 'worker.blacklist.lift',
+  /** DEC-09: read a worker's emergency contact with a stated reason (audited). */
+  WORKER_REVEAL_EMERGENCY_CONTACT: 'worker.reveal_emergency_contact',
   CATEGORY_MANAGE: 'category.manage',
   AREA_MANAGE: 'area.manage',
   VERIFICATION_REVIEW: 'verification.review',
@@ -84,6 +90,19 @@ export const PERMISSION_CATALOG: ReadonlyArray<{
   {
     code: PermissionCode.WORKER_MANAGE,
     description: 'Edit worker profiles and availability on a worker behalf (assisted onboarding)',
+  },
+  {
+    code: PermissionCode.WORKER_BLACKLIST,
+    description:
+      'Blacklist a worker: excluded from search and matching, account suspended, open bookings flagged',
+  },
+  {
+    code: PermissionCode.WORKER_BLACKLIST_LIFT,
+    description: 'Lift a worker blacklisting (Super Admin only)',
+  },
+  {
+    code: PermissionCode.WORKER_REVEAL_EMERGENCY_CONTACT,
+    description: 'Reveal a worker emergency contact with a stated reason (every reveal is audited)',
   },
   { code: PermissionCode.CATEGORY_MANAGE, description: 'View and manage service categories' },
   { code: PermissionCode.AREA_MANAGE, description: 'View and manage service areas' },
@@ -172,6 +191,7 @@ export const SUPER_ADMIN_ONLY_PERMISSION_CODES: readonly string[] = [
   PermissionCode.ROLE_MANAGE,
   PermissionCode.AUDIT_VIEW,
   PermissionCode.ADMIN_MANAGE_USERS,
+  PermissionCode.WORKER_BLACKLIST_LIFT,
 ];
 
 /**
@@ -188,6 +208,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]
     PermissionCode.CUSTOMER_MANAGE,
     PermissionCode.WORKER_VIEW,
     PermissionCode.WORKER_MANAGE,
+    PermissionCode.WORKER_BLACKLIST,
+    PermissionCode.WORKER_REVEAL_EMERGENCY_CONTACT,
     PermissionCode.MATCHING_RUN,
     PermissionCode.REPLACEMENT_VIEW,
     PermissionCode.REPLACEMENT_MANAGE,
