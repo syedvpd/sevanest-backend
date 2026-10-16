@@ -106,3 +106,7 @@ Source: the customer app team's request list. Full table: `customer-app-api-bloc
 * PARTIALLY_FIXED: price guidance (endpoint built, no approved price data, 404 until an admin enters bands); coordinates to area (admin-set centre and radius, no polygons); start date (used) but weekdays not stored; test customer (local seed only).
 * BLOCKED_BY_DECISION: budget filter (Q-39), customer profile photo (not in FR-CUS), weekday availability, price-band owner.
 * NOT_VERIFIED: Flutter integration, staging with real providers, Docker runtime pass for this round.
+
+## 2026-10-16 audit fixes (branch `fix/audit-2026-10-16`)
+
+The per-finding table, with the test file and result for each, is `docs/audit/FIX_REPORT.md`. Defaults that need owner approval are listed in `docs/audit/DECISIONS_NEEDING_OWNER_SIGNOFF.md`. Earlier entries in this register that say "no earnings model", "cancellation fee undefined", "no stale-write protection beyond categories", "no retention job", "no e-mail/maps" are superseded by those two files.

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AuditModule } from './common/audit/audit.module';
+import { RetentionRegistryModule } from './common/retention/retention.registry';
 import { AppConfigModule } from './config/config.module';
 import { AppConfigService } from './config/app-config.service';
 import { DatabaseModule } from './infrastructure/database/database.module';
@@ -11,7 +12,14 @@ import { RbacSeedService } from './modules/users/rbac-seed.service';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
-  imports: [AppConfigModule, DatabaseModule, AuditModule, UsersModule, ServiceCategoriesModule],
+  imports: [
+    AppConfigModule,
+    DatabaseModule,
+    AuditModule,
+    RetentionRegistryModule,
+    UsersModule,
+    ServiceCategoriesModule,
+  ],
 })
 class SeedModule {}
 

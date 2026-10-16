@@ -234,3 +234,15 @@ Every permission guards at least one route and every permission used by a route 
 | GET | `/health/ready` | public | public | public | public | public | public | any signed-in |
 
 `yes (no permission needed)` = the dashboard only. `public` = authenticated by something other than a session (OTP, credentials, refresh token, gateway signature, health probe).
+
+## Update 2026-10-16 (audit-fix branch)
+
+Source of truth for defaults is `src/modules/users/rbac.constants.ts` (`DEFAULT_ROLE_PERMISSIONS`); the text above this section describes the earlier unseeded state and is superseded where it says the three non-Super roles hold nothing. New permissions:
+
+| Permission | Guards | Super Admin | Operations Admin | Verification Exec | Support Exec | Test |
+|---|---|---|---|---|---|---|
+| `worker.blacklist` | `POST /admin/workers/{id}/blacklist` | granted | default (seed, empty role only) | no | no | `worker.blacklist.int-spec.ts` |
+| `worker.blacklist.lift` | `POST /admin/workers/{id}/blacklist/lift` | **only role allowed** (Super-Admin-only list) | cannot be mapped | no | no | same |
+| `worker.reveal_emergency_contact` | `POST /admin/workers/{id}/emergency-contact/reveal` | granted | default (seed, empty role only) | no | no | same |
+
+Other changed routing: safety reports alert `worker.manage` holders (Operations, Super); SLA breach alerts go to `support.view` holders; replacement "no alternative" alerts to `replacement.manage`; wage payments need `payment.manage` (write) / `payment.view` (read); fee catalogue write needs `payment.manage`; `GET /admin/retention/preview` needs `audit.view` (Super only). The staff worker profile no longer contains the emergency contact for anyone. Admin edits of existing records need `If-Match` (428 without it) when `ADMIN_IF_MATCH_REQUIRED` is true.

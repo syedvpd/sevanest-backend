@@ -182,3 +182,26 @@ Test file names refer to `test/integration/*.int-spec.ts` unless stated. "qa.*" 
 | Q-45..Q-52 | Verification checklist, ranking, location semantics, visibility of in-progress workers, permissions, document handling, partner, card content | OPEN DECISION |
 | Q-53..Q-55 | Attendance statuses, replacement eligibility, **booking state model** | OPEN DECISION (Q-55 is a release blocker) |
 | Q-58..Q-64 | Rating scale, support SLA, rating visibility, report definitions, admin matrix, audit retention, abuse caps | OPEN DECISION |
+
+## Update 2026-10-16 (audit-fix branch)
+
+Rows below supersede the status above for the same requirement. Evidence files are in `test/integration/`; "not executed" means the code exists but nothing was run against the real provider.
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| FR-WJ-008 worker earnings / payment reference | PARTIAL (off-platform wage reference, not payroll; DEC-05 assumption) | `earnings.api.int-spec.ts` |
+| FM-12 / FR-SUP-002 SLA breach auto-escalation | PASS (targets are defaults, DEC-03) | `gap.closing.int-spec.ts` |
+| FM-14 worker blacklist | PASS | `worker.blacklist.int-spec.ts` |
+| FM-14 concurrent-edit flag | PASS | `admin.concurrency.int-spec.ts`, `fees.catalogue.int-spec.ts` |
+| FM-06 cancellation fee / refund | PARTIAL (no fee in V1; automatic full refund before ACTIVE; DEC-04) | `payments.recovery.int-spec.ts` |
+| FM-03 request admin matching on empty search | PASS | `gap.closing.int-spec.ts` |
+| FM-11 no alternative -> admin alert | PASS | `replacement.api.int-spec.ts` |
+| FM-04 profile photo required | PASS | `worker.photo.required.int-spec.ts` |
+| PRD 4 monthly engagement | PASS (as `budgetPeriod` MONTH; `MONTHLY` accepted as alias) | `gap.closing.int-spec.ts` |
+| FR-REV-002 revenue models | PARTIAL (placement / verification / replacement-plan fees payable; subscriptions and B2B catalogued only) | `fees.catalogue.int-spec.ts` |
+| FM-12 safety incident to Operations / Super | PASS | `gap.closing.int-spec.ts` |
+| FM-12 emergency-contact reveal by policy | PASS | `worker.blacklist.int-spec.ts` |
+| TRD 9 e-mail channel | BLOCKED (adapter tested with mocked HTTP only; no live Brevo) | `email.channel.int-spec.ts`, `email-providers.spec.ts` |
+| TRD 9 maps | BLOCKED (Google adapter mocked only) | `maps.int-spec.ts`, `maps-providers.spec.ts` |
+| NFR-SEC-009 retention / erasure | PARTIAL (built, OFF by default, audit archive deferred) | `retention.int-spec.ts` |
+| Auth hardening (OTP leak, refresh grace, ES256) | PASS | `auth.api.int-spec.ts`, `token.service.es256.spec.ts` |
