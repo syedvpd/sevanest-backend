@@ -455,29 +455,33 @@ export class EnvironmentVariables {
   @IsBoolean()
   EMBEDDED_WORKERS: boolean = false;
 
-  /** Hours a worker has to accept/decline a MATCHED opportunity before staff are alerted. Unset = no deadline (Q-55: the response rule is undecided). */
-  @IsOptional()
+  /** Hours a matched worker has to accept/decline before staff are alerted (DEC-02). Default 4; 0 = off. */
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100000)
-  WORKER_RESPONSE_HOURS?: number;
+  WORKER_RESPONSE_HOURS: number = 4;
 
-  /** Hours a booking may wait in PENDING_PAYMENT before staff are alerted. Unset = no alert (Q-78). */
-  @IsOptional()
+  /** Hours after which a matched worker who has not answered loses the booking back to matching (DEC-02). Default 24; 0 = off. */
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100000)
-  PENDING_PAYMENT_ALERT_HOURS?: number;
+  WORKER_REASSIGN_HOURS: number = 24;
 
-  /** Hours after which an unpaid PENDING_PAYMENT booking is cancelled automatically (the payment is closed by the normal cancellation hook). Unset = never auto-cancelled (Q-78). */
-  @IsOptional()
+  /** Hours a booking may wait in PENDING_PAYMENT before staff are alerted (DEC-01). Default 1; 0 = off. */
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100000)
-  PENDING_PAYMENT_AUTO_CANCEL_HOURS?: number;
+  PENDING_PAYMENT_ALERT_HOURS: number = 1;
+
+  /** Hours after which an unpaid PENDING_PAYMENT booking is cancelled automatically (DEC-01). Default 12; 0 = off. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  PENDING_PAYMENT_AUTO_CANCEL_HOURS: number = 12;
 
   /**
    * How many days before the agreed start date a customer or worker may press "start". Default 0 = not before the start date (staff may always
@@ -517,37 +521,33 @@ export class EnvironmentVariables {
   @IsBoolean()
   CUSTOMER_AUTO_VERIFY: boolean = true;
 
-  /** Resolution target in hours for a ticket without a priority. Unset = no target (Q-59). */
-  @IsOptional()
+  /** Resolution target in hours for a ticket without a priority (DEC-03). Default 48; 0 = no target. */
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100000)
-  SUPPORT_SLA_HOURS_DEFAULT?: number;
+  SUPPORT_SLA_HOURS_DEFAULT: number = 48;
 
-  /** Resolution target in hours for LOW priority tickets. Unset = falls back to the default target. */
-  @IsOptional()
+  /** Resolution target in hours for LOW priority tickets (DEC-03). Default 72; 0 = no target. */
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100000)
-  SUPPORT_SLA_HOURS_LOW?: number;
+  SUPPORT_SLA_HOURS_LOW: number = 72;
 
-  /** Resolution target in hours for MEDIUM priority tickets. Unset = falls back to the default target. */
-  @IsOptional()
+  /** Resolution target in hours for MEDIUM priority tickets (DEC-03). Default 48; 0 = no target. */
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100000)
-  SUPPORT_SLA_HOURS_MEDIUM?: number;
+  SUPPORT_SLA_HOURS_MEDIUM: number = 48;
 
-  /** Resolution target in hours for HIGH priority tickets. Unset = falls back to the default target. */
-  @IsOptional()
+  /** Resolution target in hours for HIGH priority tickets (DEC-03). Default 24; 0 = no target. */
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100000)
-  SUPPORT_SLA_HOURS_HIGH?: number;
+  SUPPORT_SLA_HOURS_HIGH: number = 24;
 
   /** Current legal document versions. Unset = no consent is requested or enforced (legal review pending, PRD 13). */
   @IsOptional()
@@ -727,8 +727,8 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     );
   }
   if (
-    config.PENDING_PAYMENT_ALERT_HOURS !== undefined &&
-    config.PENDING_PAYMENT_AUTO_CANCEL_HOURS !== undefined &&
+    config.PENDING_PAYMENT_ALERT_HOURS > 0 &&
+    config.PENDING_PAYMENT_AUTO_CANCEL_HOURS > 0 &&
     config.PENDING_PAYMENT_AUTO_CANCEL_HOURS <= config.PENDING_PAYMENT_ALERT_HOURS
   ) {
     throw new Error(

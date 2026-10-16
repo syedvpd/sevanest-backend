@@ -235,6 +235,26 @@ export class ReadinessService {
           ? 'All background loops are running'
           : `Not seen recently: ${missingLoops.join(', ')}. Deploy the worker service (node dist/worker) or set EMBEDDED_WORKERS=true`,
     );
+    const ops = this.config.ops;
+    const timers: Array<[string, number, string]> = [
+      ['timer_pending_payment_alert', ops.pendingPaymentAlertHours, 'Unpaid-booking alert'],
+      [
+        'timer_pending_payment_auto_cancel',
+        ops.pendingPaymentAutoCancelHours,
+        'Unpaid-booking auto-cancel',
+      ],
+      ['timer_worker_response', ops.workerResponseHours, 'Worker no-response alert'],
+      ['timer_worker_reassign', ops.workerReassignHours, 'Worker no-response reassignment'],
+      ['timer_support_sla', ops.supportSlaHours.default, 'Support SLA target'],
+    ];
+    for (const [key, hours, label] of timers) {
+      add(
+        key,
+        'WARNING',
+        hours > 0,
+        hours > 0 ? `${label}: ON (${hours}h)` : `${label}: OFF (set to 0)`,
+      );
+    }
     const legal = this.config.legal;
     add(
       'legal_documents',

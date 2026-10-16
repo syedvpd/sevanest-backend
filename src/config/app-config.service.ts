@@ -112,16 +112,18 @@ export class AppConfigService {
     const numbers = (this.get('TEST_OTP_NUMBERS') ?? '').split(',').map((n) => n.trim());
     return numbers.includes(mobile) ? (this.get('TEST_OTP_CODE') ?? null) : null;
   }
-  /** Operational thresholds. Every value is optional: unset means the rule is not enforced (nothing is invented). */
+  /** Operational thresholds. Built-in defaults (DEC-01/02/03); 0 switches a rule off explicitly. */
   get ops(): {
-    workerResponseHours?: number;
-    pendingPaymentAlertHours?: number;
-    pendingPaymentAutoCancelHours?: number;
+    workerResponseHours: number;
+    workerReassignHours: number;
+    pendingPaymentAlertHours: number;
+    pendingPaymentAutoCancelHours: number;
     bookingStartEarlyDays: number;
-    supportSlaHours: { default?: number; LOW?: number; MEDIUM?: number; HIGH?: number };
+    supportSlaHours: { default: number; LOW: number; MEDIUM: number; HIGH: number };
   } {
     return {
       workerResponseHours: this.get('WORKER_RESPONSE_HOURS'),
+      workerReassignHours: this.get('WORKER_REASSIGN_HOURS'),
       pendingPaymentAlertHours: this.get('PENDING_PAYMENT_ALERT_HOURS'),
       pendingPaymentAutoCancelHours: this.get('PENDING_PAYMENT_AUTO_CANCEL_HOURS'),
       bookingStartEarlyDays: this.get('BOOKING_START_EARLY_DAYS') ?? 0,

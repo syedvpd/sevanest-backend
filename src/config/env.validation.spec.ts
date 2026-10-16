@@ -48,6 +48,42 @@ describe('validateEnvironment', () => {
     expect(env.TRUST_PROXY_HOPS).toBe(0);
   });
 
+  describe('operational timers (DEC-01/02/03)', () => {
+    it('are ON by default', () => {
+      const env = validateEnvironment(valid);
+      expect(env.PENDING_PAYMENT_ALERT_HOURS).toBe(1);
+      expect(env.PENDING_PAYMENT_AUTO_CANCEL_HOURS).toBe(12);
+      expect(env.WORKER_RESPONSE_HOURS).toBe(4);
+      expect(env.WORKER_REASSIGN_HOURS).toBe(24);
+      expect([
+        env.SUPPORT_SLA_HOURS_HIGH,
+        env.SUPPORT_SLA_HOURS_MEDIUM,
+        env.SUPPORT_SLA_HOURS_LOW,
+      ]).toEqual([24, 48, 72]);
+      expect(env.SUPPORT_SLA_HOURS_DEFAULT).toBe(48);
+    });
+    it('0 switches a timer off explicitly, even with a larger counterpart', () => {
+      const env = validateEnvironment({
+        ...valid,
+        PENDING_PAYMENT_AUTO_CANCEL_HOURS: '0',
+        PENDING_PAYMENT_ALERT_HOURS: '5',
+      });
+      expect(env.PENDING_PAYMENT_AUTO_CANCEL_HOURS).toBe(0);
+    });
+    it('rejects negative values and auto-cancel not greater than the alert', () => {
+      expect(() => validateEnvironment({ ...valid, WORKER_RESPONSE_HOURS: '-1' })).toThrow(
+        'WORKER_RESPONSE_HOURS',
+      );
+      expect(() =>
+        validateEnvironment({
+          ...valid,
+          PENDING_PAYMENT_ALERT_HOURS: '5',
+          PENDING_PAYMENT_AUTO_CANCEL_HOURS: '5',
+        }),
+      ).toThrow('PENDING_PAYMENT_AUTO_CANCEL_HOURS');
+    });
+  });
+
   it.each([
     'JWT_ACCESS_TTL_SECONDS',
     'REFRESH_TOKEN_TTL_SECONDS',
