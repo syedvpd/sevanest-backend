@@ -102,8 +102,9 @@ describe('Operations hardening (integration)', () => {
       expect(await rowsFor(userId, 'security.access_denied')).toHaveLength(1);
       expect(await rowsFor(userId, 'security.access_denied_repeated')).toHaveLength(0);
 
-      // the minute is not over yet: nothing to write
-      expect(await events.flushSuppressed(Date.now())).toBe(0);
+      // the minute is not over yet: this caller's count is not written (other suites may leave older minutes due in the shared Redis)
+      await events.flushSuppressed(Date.now());
+      expect(await rowsFor(userId, 'security.access_denied_repeated')).toHaveLength(0);
       const written = await events.flushSuppressed(Date.now() + 5 * 60_000);
       expect(written).toBeGreaterThanOrEqual(1);
       const [summary] = await rowsFor(userId, 'security.access_denied_repeated');
