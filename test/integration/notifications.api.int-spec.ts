@@ -113,7 +113,7 @@ describe('Notifications (integration)', () => {
     it('validate the event, the channel and the placeholders, and refuse duplicates', async () => {
       for (const bad of [
         { eventCode: 'NO_SUCH_EVENT', channel: 'SMS', body: 'x' },
-        { eventCode: 'BOOKING_CONFIRMED', channel: 'EMAIL', body: 'x' },
+        { eventCode: 'BOOKING_CONFIRMED', channel: 'TELEGRAM', body: 'x' },
         { eventCode: 'BOOKING_CONFIRMED', channel: 'SMS', body: '' },
         { eventCode: 'BOOKING_CONFIRMED', channel: 'SMS', body: 'Hi {{customerMobile}}' },
         { eventCode: 'BOOKING_CONFIRMED', channel: 'SMS', body: 'x', language: 'ENGLISH' },

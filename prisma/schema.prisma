@@ -36,6 +36,8 @@ model User {
   email        String?    @unique
   /// Slow hash (argon2/bcrypt) for credential login; null for OTP-only users. Never returned by any API.
   passwordHash String?    @map("password_hash")
+  /// DEC-17: the user's choice to receive e-mail notifications (only used when an e-mail address is on file). On by default.
+  emailNotifications Boolean @default(true) @map("email_notifications")
   status       UserStatus @default(ACTIVE)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -905,6 +907,8 @@ enum NotificationChannel {
   WHATSAPP
   /// The user's in-app inbox: the notification row itself is the message (no provider involved).
   IN_APP
+  /// E-mail through the configured EMAIL_PROVIDER (DEC-17); off unless a provider and an active EMAIL template exist.
+  EMAIL
 }
 
 enum NotificationStatus {

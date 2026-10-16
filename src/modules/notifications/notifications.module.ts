@@ -11,6 +11,8 @@ import {
 import {
   PUSH_PROVIDER,
   WHATSAPP_PROVIDER,
+  EMAIL_PROVIDER,
+  type EmailProvider,
   type PushProvider,
   type WhatsAppProvider,
 } from '../../integrations/notifications/notification-providers.interface';
@@ -20,6 +22,12 @@ import {
 } from '../../integrations/notifications/fcm.provider';
 import { TwilioWhatsAppProvider } from '../../integrations/notifications/twilio.provider';
 import { QueueModule } from '../../infrastructure/queue/queue.module';
+import {
+  BrevoEmailProvider,
+  DisabledEmailProvider,
+  InMemoryEmailProvider,
+} from '../../integrations/notifications/email-providers';
+import { EmailProviderKind } from '../../config/env.validation';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { AdminNotificationsController, InboxController } from './notifications.controller';
@@ -70,6 +78,20 @@ function whatsAppProviderFor(config: AppConfigService): WhatsAppProvider {
             });
           default:
             return new DisabledPushProvider();
+        }
+      },
+    },
+    {
+      provide: EMAIL_PROVIDER,
+      inject: [AppConfigService],
+      useFactory: (config: AppConfigService): EmailProvider => {
+        switch (config.emailProvider) {
+          case EmailProviderKind.Memory:
+            return new InMemoryEmailProvider();
+          case EmailProviderKind.Brevo:
+            return new BrevoEmailProvider(config.brevo);
+          default:
+            return new DisabledEmailProvider();
         }
       },
     },

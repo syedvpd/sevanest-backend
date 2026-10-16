@@ -4,7 +4,7 @@ import { PrismaService } from '../../infrastructure/database/prisma.service';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
-export type Channel = 'PUSH' | 'SMS' | 'WHATSAPP' | 'IN_APP';
+export type Channel = 'PUSH' | 'SMS' | 'WHATSAPP' | 'EMAIL' | 'IN_APP';
 export type DeliveryStatus = 'QUEUED' | 'SENT' | 'FAILED' | 'SKIPPED';
 
 export interface TemplateRecord {
@@ -110,6 +110,19 @@ export class NotificationsRepository {
     return tx.notificationTemplate.findMany({
       where: { eventCode, language: { in: languages }, isActive: true },
     });
+  }
+
+  /**
+   * Where e-mail for this user goes: the account e-mail, else the customer profile e-mail, and whether the user wants e-mail at all.
+   * Null when the user does not exist.
+   */
+  async emailTarget(userId: string): Promise<{ address: string | null; optedIn: boolean } | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ address: string | null; opted_in: boolean }>>`
+      SELECT COALESCE(u.email, cp.email) AS address, u.email_notifications AS opted_in
+      FROM users u
+      LEFT JOIN customer_profiles cp ON cp.user_id = u.id
+      WHERE u.id = ${userId}::uuid`;
+    return rows.length === 0 ? null : { address: rows[0].address, optedIn: rows[0].opted_in };
   }
 
   /** Preferred language of each user (worker or customer profile); users without a profile or a preference are absent. */

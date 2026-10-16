@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EVENT_PARAMS } from '../../common/outbox/notification-events';
 import { AppConfigService } from '../../config/app-config.service';
 import {
+  EmailProviderKind,
   MessagingProviderKind,
   PaymentProviderKind,
   SmsProviderKind,
@@ -222,6 +223,15 @@ export class ReadinessService {
       this.config.whatsappProvider === WhatsAppProviderKind.Twilio
         ? 'WhatsApp configured'
         : 'WhatsApp is not configured (optional channel)',
+    );
+
+    add(
+      'provider_email',
+      'WARNING',
+      this.config.emailProvider === EmailProviderKind.Brevo,
+      this.config.emailProvider === EmailProviderKind.Brevo
+        ? 'E-mail configured'
+        : 'E-mail is not configured (optional channel)',
     );
 
     const running = new Set((alive ?? []).map((l) => l.name));

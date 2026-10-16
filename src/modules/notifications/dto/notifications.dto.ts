@@ -7,7 +7,7 @@ import { LANGUAGE_CODE } from '../../../common/validation/language';
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-export const CHANNELS = ['PUSH', 'SMS', 'WHATSAPP', 'IN_APP'] as const;
+export const CHANNELS = ['PUSH', 'SMS', 'WHATSAPP', 'EMAIL', 'IN_APP'] as const;
 export const DELIVERY_STATUSES = ['QUEUED', 'SENT', 'FAILED', 'SKIPPED'] as const;
 
 export class CreateTemplateDto {

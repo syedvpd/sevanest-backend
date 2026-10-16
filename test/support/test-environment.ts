@@ -20,6 +20,7 @@ export function applyTestEnvironment(overrides: Record<string, string> = {}): vo
     PAYMENT_PROVIDER: 'fake',
     PAYMENT_FAKE_WEBHOOK_SECRET: 'test-only-webhook-secret-0123456789',
     PUSH_PROVIDER: 'memory',
+    EMAIL_PROVIDER: 'memory',
     WHATSAPP_PROVIDER: 'memory',
     RATING_SCALE_MAX: '5',
     VERIFICATION_DOCUMENT_MAX_BYTES: '1048576',

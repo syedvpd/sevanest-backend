@@ -151,6 +151,19 @@ export class UsersService {
     return this.repository.getRoleAndPermissionCodes(userId);
   }
 
+  /** DEC-17: does this user want e-mail notifications (only used when an e-mail address is on file). */
+  async getEmailPreference(userId: string): Promise<boolean> {
+    const value = await this.repository.emailNotifications(userId);
+    if (value === null) throw this.notFound();
+    return value;
+  }
+
+  async setEmailPreference(userId: string, value: boolean): Promise<boolean> {
+    await this.getEmailPreference(userId);
+    await this.repository.setEmailNotifications(userId, value);
+    return value;
+  }
+
   async getIdentity(userId: string): Promise<UserIdentity> {
     const [user, access] = await Promise.all([
       this.repository.findById(userId),

@@ -6,6 +6,7 @@ import {
   MessagingProviderKind,
   WhatsAppProviderKind,
   AppEnv,
+  EmailProviderKind,
   NodeEnv,
   PaymentProviderKind,
   SmsProviderKind,
@@ -369,6 +370,18 @@ export class AppConfigService {
     return {
       maxBytes: this.get('PROFILE_PHOTO_MAX_BYTES'),
       signedUrlTtlSeconds: this.get('SIGNED_URL_TTL_SECONDS'),
+    };
+  }
+  get emailProvider(): EmailProviderKind {
+    return this.get('EMAIL_PROVIDER');
+  }
+  /** Brevo settings; only meaningful with EMAIL_PROVIDER=brevo (validation guarantees the key and the sender then). */
+  get brevo(): { apiKey: string; fromAddress: string; fromName: string; timeoutMs: number } {
+    return {
+      apiKey: this.get('BREVO_API_KEY') ?? '',
+      fromAddress: this.get('EMAIL_FROM_ADDRESS') ?? '',
+      fromName: this.get('EMAIL_FROM_NAME'),
+      timeoutMs: this.providerHttpTimeoutMs,
     };
   }
   get profilePhotoRequired(): boolean {

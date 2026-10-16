@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ADMIN_ROLE_CODES } from '../rbac.constants';
 import type { AdminRoleCodeValue } from '../rbac.constants';
 
@@ -51,6 +51,20 @@ export class MyIdentityResponse {
 }
 
 /** Admin view of an account. The mobile number is masked (routine screens, FR-SEC-006). */
+export class NotificationPreferencesView {
+  @ApiProperty({
+    description:
+      'Receive e-mail notifications (when an e-mail address is on file and the platform sends e-mail).',
+  })
+  email!: boolean;
+}
+
+export class UpdateNotificationPreferencesDto {
+  @ApiProperty()
+  @IsBoolean()
+  email!: boolean;
+}
+
 export class AdminUserResponse {
   @ApiProperty() id!: string;
   @ApiProperty({ enum: ['CUSTOMER', 'WORKER', 'ADMIN'] }) type!: string;

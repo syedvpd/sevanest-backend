@@ -8,6 +8,7 @@ import { ProviderError } from '../provider-error';
 export const SMS_PROVIDER = Symbol('SMS_PROVIDER');
 export const WHATSAPP_PROVIDER = Symbol('WHATSAPP_PROVIDER');
 export const PUSH_PROVIDER = Symbol('PUSH_PROVIDER');
+export const EMAIL_PROVIDER = Symbol('EMAIL_PROVIDER');
 
 export interface SendResult {
   providerMessageId: string;
@@ -35,6 +36,16 @@ export interface SmsProvider {
 /** Optional channel in V1 (FR-NOT-003). */
 export interface WhatsAppProvider {
   sendWhatsApp(input: { to: string; body: string; idempotencyKey?: string }): Promise<SendResult>;
+}
+
+/** E-mail channel (TRD section 9, DEC-17). Plain-text transactional messages; wording comes from the admin-edited EMAIL template. */
+export interface EmailProvider {
+  sendEmail(input: {
+    to: string;
+    subject: string;
+    body: string;
+    idempotencyKey?: string;
+  }): Promise<SendResult>;
 }
 
 export interface PushProvider {

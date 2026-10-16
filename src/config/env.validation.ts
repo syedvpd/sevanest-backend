@@ -59,6 +59,13 @@ export enum MessagingProviderKind {
   Fcm = 'fcm',
 }
 
+/** E-mail channel (DEC-17). Off unless brevo is configured; `memory` is for tests and refused in production and staging. */
+export enum EmailProviderKind {
+  Memory = 'memory',
+  Disabled = 'disabled',
+  Brevo = 'brevo',
+}
+
 /** Private object storage for KYC documents. `s3` = any S3-compatible endpoint (Supabase Storage); `memory` is for tests and is refused in production. */
 export enum StorageProviderKind {
   S3 = 's3',
@@ -385,6 +392,28 @@ export class EnvironmentVariables {
 
   @IsEnum(WhatsAppProviderKind)
   WHATSAPP_PROVIDER!: WhatsAppProviderKind;
+
+  /** DEC-17: e-mail channel. Default disabled: nothing is sent until brevo + credentials are set. */
+  @IsOptional()
+  @IsEnum(EmailProviderKind)
+  EMAIL_PROVIDER: EmailProviderKind = EmailProviderKind.Disabled;
+
+  @ValidateIf((o: EnvironmentVariables) => o.EMAIL_PROVIDER === EmailProviderKind.Brevo)
+  @IsString()
+  @MinLength(10)
+  BREVO_API_KEY?: string;
+
+  /** The sender address (must be a sender validated in Brevo). Required with EMAIL_PROVIDER=brevo. */
+  @ValidateIf((o: EnvironmentVariables) => o.EMAIL_PROVIDER === EmailProviderKind.Brevo)
+  @Matches(/^[^@\s]+@[^@\s]+\.[^@\s]+$/, {
+    message: 'EMAIL_FROM_ADDRESS must be an e-mail address',
+  })
+  EMAIL_FROM_ADDRESS?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 80)
+  EMAIL_FROM_NAME: string = 'SevaNest';
 
   /** Top of the rating scale (FRD FM-10: "within the configured scale"). The scale is an OPEN decision (Q-58): required, no default. Lowest score is 1. */
   @Type(() => Number)
@@ -909,6 +938,11 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     if (config.PAYMENT_PROVIDER === PaymentProviderKind.Fake) {
       throw new Error(
         'Invalid environment configuration: PAYMENT_PROVIDER=fake is not allowed in production',
+      );
+    }
+    if (config.EMAIL_PROVIDER === EmailProviderKind.Memory) {
+      throw new Error(
+        'Invalid environment configuration: EMAIL_PROVIDER=memory is not allowed in production or staging',
       );
     }
     if (

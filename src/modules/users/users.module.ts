@@ -3,7 +3,12 @@ import { PasswordHasher } from '../../common/security/password-hasher.service';
 import { RbacSeedService } from './rbac-seed.service';
 import { UserEvents } from './user-events';
 import { AdminAccessService } from './admin-access.service';
-import { AdminRolesController, AdminUsersController, UsersController } from './users.controller';
+import {
+  AdminRolesController,
+  AdminUsersController,
+  NotificationPreferencesController,
+  UsersController,
+} from './users.controller';
 import { UsersRepository } from './users.repository';
 import { UsersService } from './users.service';
 import { UserEraser } from './user-eraser';
@@ -14,7 +19,12 @@ import { UserEraser } from './user-eraser';
  * depends on this module (never the reverse; account changes reach Auth through UserEvents).
  */
 @Module({
-  controllers: [UsersController, AdminUsersController, AdminRolesController],
+  controllers: [
+    UsersController,
+    NotificationPreferencesController,
+    AdminUsersController,
+    AdminRolesController,
+  ],
   providers: [
     UserEraser,
     UsersRepository,

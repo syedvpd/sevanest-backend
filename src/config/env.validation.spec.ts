@@ -58,6 +58,36 @@ describe('validateEnvironment', () => {
     ).toBe(false);
   });
 
+  describe('e-mail channel (DEC-17)', () => {
+    it('is disabled by default and needs a key and a sender for brevo', () => {
+      expect(validateEnvironment(valid).EMAIL_PROVIDER).toBe('disabled');
+      expect(() => validateEnvironment({ ...valid, EMAIL_PROVIDER: 'brevo' })).toThrow(
+        'BREVO_API_KEY',
+      );
+      expect(() =>
+        validateEnvironment({ ...valid, EMAIL_PROVIDER: 'brevo', BREVO_API_KEY: 'k'.repeat(20) }),
+      ).toThrow('EMAIL_FROM_ADDRESS');
+      expect(() =>
+        validateEnvironment({
+          ...valid,
+          EMAIL_PROVIDER: 'brevo',
+          BREVO_API_KEY: 'k'.repeat(20),
+          EMAIL_FROM_ADDRESS: 'not-an-address',
+        }),
+      ).toThrow('EMAIL_FROM_ADDRESS');
+      const ok = validateEnvironment({
+        ...valid,
+        EMAIL_PROVIDER: 'brevo',
+        BREVO_API_KEY: 'k'.repeat(20),
+        EMAIL_FROM_ADDRESS: 'no-reply@sevanest.example',
+      });
+      expect(ok.EMAIL_FROM_NAME).toBe('SevaNest');
+      expect(() => validateEnvironment({ ...valid, EMAIL_PROVIDER: 'sendgrid' })).toThrow(
+        'EMAIL_PROVIDER',
+      );
+    });
+  });
+
   describe('operational timers (DEC-01/02/03)', () => {
     it('are ON by default', () => {
       const env = validateEnvironment(valid);
@@ -433,6 +463,7 @@ describe('validateEnvironment', () => {
         ['STORAGE_PROVIDER', 'memory'],
         ['PUSH_PROVIDER', 'memory'],
         ['WHATSAPP_PROVIDER', 'memory'],
+        ['EMAIL_PROVIDER', 'memory'],
       ])('refuses %s=%s', (key, value) => {
         expect(() => validateEnvironment({ ...staging, [key]: value })).toThrow();
       });

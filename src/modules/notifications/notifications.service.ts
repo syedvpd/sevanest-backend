@@ -19,6 +19,8 @@ import {
   PUSH_PROVIDER,
   SMS_PROVIDER,
   WHATSAPP_PROVIDER,
+  EMAIL_PROVIDER,
+  type EmailProvider,
   type PushProvider,
   type SmsProvider,
   type WhatsAppProvider,
@@ -129,6 +131,7 @@ export class NotificationsService {
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     @Inject(PUSH_PROVIDER) private readonly push: PushProvider,
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
+    @Inject(EMAIL_PROVIDER) private readonly email: EmailProvider,
   ) {}
 
   // --- outbox -> notifications -> queue ---------------------------------------------------------------------
@@ -291,11 +294,16 @@ export class NotificationsService {
     }
   }
 
-  private async resolveTarget(
-    notification: NotificationRecord,
-  ): Promise<
+  private async resolveTarget(notification: NotificationRecord): Promise<
     | { kind: 'skip'; reason: string }
-    | { kind: 'send'; text: string; title: string; mobile: string | null; tokens: string[] }
+    | {
+        kind: 'send';
+        text: string;
+        title: string;
+        mobile: string | null;
+        tokens: string[];
+        email?: string;
+      }
   > {
     const [user, template] = await Promise.all([
       this.users.findById(notification.recipientUserId),
@@ -305,6 +313,13 @@ export class NotificationsService {
     if (!template || !template.isActive) return { kind: 'skip', reason: 'TEMPLATE_INACTIVE' };
     const text = render(template.body, notification.params);
     const title = render(template.title ?? '', notification.params);
+    if (notification.channel === 'EMAIL') {
+      // DEC-17: only to an address on file and only for users who did not opt out.
+      const target = await this.repository.emailTarget(user.id);
+      if (!target?.address) return { kind: 'skip', reason: 'NO_EMAIL' };
+      if (!target.optedIn) return { kind: 'skip', reason: 'EMAIL_OPT_OUT' };
+      return { kind: 'send', text, title, mobile: null, tokens: [], email: target.address };
+    }
     if (notification.channel === 'PUSH') {
       const tokens = await this.sessions.listDeviceTokens(user.id);
       return tokens.length === 0
@@ -318,9 +333,24 @@ export class NotificationsService {
 
   private async send(
     notification: NotificationRecord,
-    target: { text: string; title: string; mobile: string | null; tokens: string[] },
+    target: {
+      text: string;
+      title: string;
+      mobile: string | null;
+      tokens: string[];
+      email?: string;
+    },
   ): Promise<string | null> {
     switch (notification.channel) {
+      case 'EMAIL':
+        return (
+          await this.email.sendEmail({
+            to: target.email!,
+            subject: target.title,
+            body: target.text,
+            idempotencyKey: notification.id,
+          })
+        ).providerMessageId;
       case 'SMS':
         return (
           await this.sms.sendSms({

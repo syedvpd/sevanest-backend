@@ -27,6 +27,8 @@ import { maskMobile } from '../../common/validation/indian-mobile';
 import { PermissionCode } from './rbac.constants';
 import {
   AdminUserResponse,
+  NotificationPreferencesView,
+  UpdateNotificationPreferencesDto,
   CreateAdminDto,
   MyIdentityResponse,
   UpdateUserStatusDto,
@@ -76,6 +78,35 @@ export class UsersController {
       permissions: identity.permissions,
       createdAt: identity.createdAt,
     };
+  }
+}
+
+@ApiTags('Users')
+@ApiBearerAuth()
+@Controller({ path: 'users/me/notification-preferences', version: '1' })
+export class NotificationPreferencesController {
+  constructor(private readonly users: UsersService) {}
+
+  @Get()
+  @ApiModelResponse(NotificationPreferencesView)
+  @ApiOperation({ summary: 'My notification preferences (e-mail on/off)' })
+  async get(@CurrentUser() user: AuthenticatedUser): Promise<NotificationPreferencesView> {
+    return { email: await this.users.getEmailPreference(user.userId) };
+  }
+
+  @Put()
+  @ApiModelResponse(NotificationPreferencesView)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Turn e-mail notifications on or off for me',
+    description:
+      'E-mail is only ever sent when the platform has an e-mail channel configured and an address on file for you.',
+  })
+  async set(
+    @Body() dto: UpdateNotificationPreferencesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<NotificationPreferencesView> {
+    return { email: await this.users.setEmailPreference(user.userId, dto.email) };
   }
 }
 

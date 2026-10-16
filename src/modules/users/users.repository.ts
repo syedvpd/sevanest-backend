@@ -29,6 +29,18 @@ export class UsersRepository {
     return db.user.findUnique({ where: { id }, select: PUBLIC_SELECT });
   }
 
+  async emailNotifications(userId: string): Promise<boolean | null> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { emailNotifications: true },
+    });
+    return row ? row.emailNotifications : null;
+  }
+
+  async setEmailNotifications(userId: string, value: boolean): Promise<void> {
+    await this.prisma.user.update({ where: { id: userId }, data: { emailNotifications: value } });
+  }
+
   findManyByIds(ids: string[]): Promise<UserRecord[]> {
     return this.prisma.user.findMany({ where: { id: { in: ids } }, select: PUBLIC_SELECT });
   }
