@@ -36,6 +36,7 @@ export const EXPECTED_LOOPS = [
   'payment-recovery',
   'booking-checks',
   'support-sla',
+  'retention',
 ] as const;
 
 /**

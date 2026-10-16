@@ -147,6 +147,28 @@ export class AppConfigService {
     const numbers = (this.get('TEST_OTP_NUMBERS') ?? '').split(',').map((n) => n.trim());
     return numbers.includes(mobile) ? (this.get('TEST_OTP_CODE') ?? null) : null;
   }
+  /** DEC-08 retention settings. */
+  get retention(): {
+    enabled: boolean;
+    dryRun: boolean;
+    notificationsMonths: number;
+    outboxDays: number;
+    kycRejectedDays: number;
+    deletionCoolingOffDays: number;
+    batchSize: number;
+    intervalMinutes: number;
+  } {
+    return {
+      enabled: this.get('RETENTION_ENABLED'),
+      dryRun: this.get('RETENTION_DRY_RUN'),
+      notificationsMonths: this.get('RETENTION_NOTIFICATIONS_MONTHS'),
+      outboxDays: this.get('RETENTION_OUTBOX_DAYS'),
+      kycRejectedDays: this.get('RETENTION_KYC_REJECTED_DAYS'),
+      deletionCoolingOffDays: this.get('DELETION_COOLING_OFF_DAYS'),
+      batchSize: this.get('RETENTION_BATCH_SIZE'),
+      intervalMinutes: this.get('RETENTION_INTERVAL_MINUTES'),
+    };
+  }
   get adminIfMatchRequired(): boolean {
     return this.get('ADMIN_IF_MATCH_REQUIRED');
   }

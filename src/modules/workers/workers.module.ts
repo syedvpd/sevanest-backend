@@ -6,6 +6,7 @@ import { WorkerSubmissionRegistry } from './worker-submission.registry';
 import { AdminWorkersController, WorkersController } from './workers.controller';
 import { WorkersRepository } from './workers.repository';
 import { WorkersService } from './workers.service';
+import { WorkerEraser } from './worker-eraser';
 
 /**
  * Workers: the worker profile / work profile (FRD FM-04). Owns `worker_profiles`, `worker_skills`, `worker_languages`.
@@ -15,7 +16,13 @@ import { WorkersService } from './workers.service';
 @Module({
   imports: [UsersModule, ServiceCategoriesModule],
   controllers: [WorkersController, AdminWorkersController],
-  providers: [WorkersRepository, WorkersService, WorkerSubmissionRegistry, WorkerBlacklistHooks],
+  providers: [
+    WorkerEraser,
+    WorkersRepository,
+    WorkersService,
+    WorkerSubmissionRegistry,
+    WorkerBlacklistHooks,
+  ],
   exports: [WorkersService, WorkerSubmissionRegistry, WorkerBlacklistHooks],
 })
 export class WorkersModule {}

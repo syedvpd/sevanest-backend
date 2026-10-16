@@ -10,6 +10,14 @@ import { QueueModule } from './infrastructure/queue/queue.module';
 import { NotificationsWorkerModule } from './modules/notifications/notifications.worker';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
+import { RetentionRegistryModule } from './common/retention/retention.registry';
+import { AuthModule } from './modules/auth/auth.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { CustomerPhotoModule } from './modules/customer-photo/customer-photo.module';
+import { RetentionWorkerModule } from './modules/retention/retention.worker';
+import { UsersModule } from './modules/users/users.module';
+import { WorkerPhotoModule } from './modules/worker-photo/worker-photo.module';
+import { WorkersModule } from './modules/workers/workers.module';
 import { BookingWorkerModule } from './modules/booking/booking.worker';
 import { PaymentWorkerModule } from './modules/payment/payment.worker';
 import { SupportWorkerModule } from './modules/support/support.worker';
@@ -29,9 +37,18 @@ import { VerificationWorkerModule } from './modules/verification/verification.wo
     QueueModule,
     AuditModule,
     OutboxModule,
+    RetentionRegistryModule,
     IdempotencyModule,
     AlertsModule,
     LegalModule,
+    // Loaded here so the data owners register their retention tasks and erasers in this process too.
+    UsersModule,
+    AuthModule,
+    CustomersModule,
+    WorkersModule,
+    WorkerPhotoModule,
+    CustomerPhotoModule,
+    RetentionWorkerModule,
     NotificationsWorkerModule,
     VerificationWorkerModule,
     PaymentWorkerModule,

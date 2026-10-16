@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
@@ -6,12 +17,14 @@ import type { AuthenticatedUser } from '../../common/decorators/auth.decorators'
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import type { Page } from '../../common/pagination/pagination';
 import { PermissionCode } from '../users/rbac.constants';
+import { UsersService } from '../users/users.service';
 import {
   AcceptLegalDto,
   DeletionListQuery,
   DeletionRequestView,
   LegalCurrentView,
   LegalStatusView,
+  RejectDeletionDto,
   RequestDeletionDto,
 } from './legal.dto';
 import { LegalService } from './legal.service';
@@ -94,7 +107,10 @@ export class AccountDeletionController {
 @RequireUserType('ADMIN')
 @Controller({ path: 'admin/deletion-requests', version: '1' })
 export class AdminDeletionController {
-  constructor(private readonly legal: LegalService) {}
+  constructor(
+    private readonly legal: LegalService,
+    private readonly users: UsersService,
+  ) {}
 
   @Get()
   @ApiPageResponse(DeletionRequestView)
@@ -102,5 +118,26 @@ export class AdminDeletionController {
   @ApiOperation({ summary: 'Account deletion requests (newest first)' })
   list(@Query() query: DeletionListQuery): Promise<Page<DeletionRequestView>> {
     return this.legal.adminListDeletions(query);
+  }
+
+  @Post(':requestId/reject')
+  @ApiModelResponse(DeletionRequestView)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.USER_STATUS_MANAGE)
+  @ApiOperation({
+    summary: 'Refuse an open deletion request (reason required, audited)',
+    description:
+      'The account stays as it is. A request is otherwise anonymised automatically once the cooling-off period has passed and nothing is in progress (retention must be enabled). 409 DELETION_REQUEST_NOT_OPEN when it is already completed, cancelled or rejected.',
+  })
+  async reject(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: RejectDeletionDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<DeletionRequestView> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.legal.rejectDeletion(requestId, dto.reason, {
+      userId: admin.userId,
+      roles: access.roles,
+    });
   }
 }

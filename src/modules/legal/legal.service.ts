@@ -1,7 +1,12 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { Page, skipFor } from '../../common/pagination/pagination';
+import { RetentionRegistry } from '../../common/retention/retention.registry';
+import {
+  STORAGE_PROVIDER,
+  type StorageProvider,
+} from '../../integrations/storage/storage-provider.interface';
 import { AppConfigService } from '../../config/app-config.service';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
@@ -20,7 +25,17 @@ export const LegalErrorCode = {
   LEGAL_NOT_CONFIGURED: 'LEGAL_NOT_CONFIGURED',
   DELETION_BLOCKED: 'DELETION_BLOCKED',
   DELETION_NOT_FOUND: 'DELETION_REQUEST_NOT_FOUND',
+  DELETION_NOT_OPEN: 'DELETION_REQUEST_NOT_OPEN',
 } as const;
+
+export interface DeletionRunResult {
+  /** Requests past the cooling-off period. */
+  due: number;
+  anonymised: number;
+  /** Due, but the user still has a live booking or money in flight: left for a later run. */
+  blocked: number;
+  failed: number;
+}
 
 /** Bookings in these states are finished; anything else is a live engagement that blocks account deletion. */
 const FINISHED_BOOKING = ['COMPLETED', 'CANCELLED', 'REPLACED'];
@@ -33,11 +48,15 @@ const FINISHED_BOOKING = ['COMPLETED', 'CANCELLED', 'REPLACED'];
  */
 @Injectable()
 export class LegalService {
+  private readonly logger = new Logger(LegalService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
     private readonly alerts: AlertsService,
+    private readonly retention: RetentionRegistry,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   current(): LegalCurrentView {
@@ -198,6 +217,137 @@ export class LegalService {
     });
   }
 
+  /** Staff refuse a request (reason kept, audited); the account stays untouched and the user is free to ask again. */
+  async rejectDeletion(
+    requestId: string,
+    reason: string,
+    actor: { userId: string; roles: string[] },
+  ): Promise<DeletionRequestView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        Array<{ id: string }>
+      >`SELECT id FROM deletion_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
+      const current =
+        locked.length === 1
+          ? await tx.deletionRequest.findUnique({ where: { id: requestId } })
+          : null;
+      if (!current) {
+        throw new DomainException(
+          LegalErrorCode.DELETION_NOT_FOUND,
+          'Deletion request not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      if (current.status !== 'REQUESTED') {
+        throw new DomainException(
+          LegalErrorCode.DELETION_NOT_OPEN,
+          'This deletion request is no longer open',
+          HttpStatus.CONFLICT,
+        );
+      }
+      const updated = await tx.deletionRequest.update({
+        where: { id: requestId },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          rejectedReason: reason,
+          rejectedByUserId: actor.userId,
+        },
+      });
+      await this.alerts.autoResolve(`DELETION_REQUEST:${requestId}`, 'rejected by staff', tx);
+      await this.audit.record(
+        {
+          action: 'account.deletion_rejected',
+          entityType: 'user',
+          entityId: current.userId,
+          actorId: actor.userId,
+          actorRole: actor.roles.join(',') || null,
+          metadata: { requestId, reason },
+        },
+        tx,
+      );
+      return updated;
+    });
+    return this.toView(row);
+  }
+
+  /**
+   * DEC-08: anonymises every account whose deletion request is older than DELETION_COOLING_OFF_DAYS. Never while the user has a booking that is
+   * not finished or a payment/refund in flight (the request just waits). Each account is erased in ONE transaction by the registered erasers
+   * (profile, addresses, contact data, photos, KYC files, inbox, sessions) and the request completes with it; bookings, payments, ratings and audit
+   * rows keep pointing at the anonymous user id. Stored files are deleted after the commit. Re-running is safe: completed requests are not
+   * due again. dryRun only counts.
+   */
+  async processDueDeletions(options: {
+    dryRun: boolean;
+    batchSize: number;
+  }): Promise<DeletionRunResult> {
+    const cutoff = new Date(Date.now() - this.config.retention.deletionCoolingOffDays * 86_400_000);
+    const due = await this.prisma.deletionRequest.findMany({
+      where: { status: 'REQUESTED', requestedAt: { lte: cutoff } },
+      orderBy: { requestedAt: 'asc' },
+      take: options.batchSize,
+    });
+    const result: DeletionRunResult = { due: due.length, anonymised: 0, blocked: 0, failed: 0 };
+    for (const request of due) {
+      if ((await this.deletionBlockers(request.userId)).length > 0) {
+        result.blocked++;
+        continue;
+      }
+      if (options.dryRun) continue;
+      try {
+        const keys = await this.prisma.$transaction(async (tx) => {
+          const locked = await tx.$queryRaw<
+            Array<{ id: string }>
+          >`SELECT id FROM deletion_requests WHERE id = ${request.id}::uuid AND status = 'REQUESTED' FOR UPDATE`;
+          if (locked.length === 0) return null; // withdrawn or handled meanwhile
+          const objectKeys: string[] = [];
+          for (const eraser of this.retention.erasers) {
+            objectKeys.push(...(await eraser.erase(request.userId, tx)).objectKeys);
+          }
+          await tx.deletionRequest.update({
+            where: { id: request.id },
+            data: { status: 'COMPLETED', completedAt: new Date() },
+          });
+          await this.alerts.autoResolve(
+            `DELETION_REQUEST:${request.id}`,
+            'the account was anonymised',
+            tx,
+          );
+          await this.audit.record(
+            {
+              action: 'account.anonymised',
+              entityType: 'user',
+              entityId: request.userId,
+              actorId: null,
+              metadata: {
+                requestId: request.id,
+                erasers: this.retention.erasers.map((e) => e.name),
+              },
+            },
+            tx,
+          );
+          return objectKeys;
+        });
+        if (keys === null) continue;
+        result.anonymised++;
+        for (const key of keys) {
+          await this.storage.deleteObject(key).catch((error: unknown) => {
+            this.logger.warn(
+              `A file of an erased account could not be deleted: ${(error as Error).message}`,
+            );
+          });
+        }
+      } catch (error) {
+        result.failed++;
+        this.logger.error(
+          `Account anonymisation failed for request ${request.id}: ${(error as Error).message}`,
+        );
+      }
+    }
+    return result;
+  }
+
   async myDeletion(userId: string): Promise<DeletionRequestView | null> {
     return this.openRequest(userId);
   }
@@ -261,10 +411,12 @@ export class LegalService {
 
   private toView(row: {
     id: string;
-    status: 'REQUESTED' | 'CANCELLED' | 'COMPLETED';
+    status: 'REQUESTED' | 'CANCELLED' | 'COMPLETED' | 'REJECTED';
     requestedAt: Date;
     cancelledAt: Date | null;
     completedAt: Date | null;
+    rejectedAt: Date | null;
+    rejectedReason: string | null;
     userId: string;
   }): DeletionRequestView {
     return {
@@ -274,6 +426,8 @@ export class LegalService {
       requestedAt: row.requestedAt,
       cancelledAt: row.cancelledAt,
       completedAt: row.completedAt,
+      rejectedAt: row.rejectedAt,
+      rejectedReason: row.rejectedReason,
     };
   }
 }

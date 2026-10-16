@@ -57,6 +57,8 @@ describe('Module boundaries (static)', () => {
       // Gap closing: alerts and legal are leaf services (global); safety talks to the parties' bookings and workers; meta only assembles public reference data.
       alerts: ['users'],
       legal: ['alerts', 'users'],
+      // Retention orchestrates the registered tasks and erasers; it owns no table and talks to Legal for account deletions.
+      retention: ['legal', 'users'],
       safety: ['booking', 'workers', 'users', 'alerts'],
       // Meta also publishes the fixed replacement reason list (a constant of the Replacement module).
       meta: ['booking', 'legal', 'safety', 'support', 'search', 'replacement'],

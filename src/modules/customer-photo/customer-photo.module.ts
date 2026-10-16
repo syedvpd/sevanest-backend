@@ -4,6 +4,7 @@ import { StorageModule } from '../../integrations/storage/storage.module';
 import { CustomerPhotoController } from './customer-photo.controller';
 import { CustomerPhotoRepository } from './customer-photo.repository';
 import { CustomerPhotoService } from './customer-photo.service';
+import { CustomerPhotoEraser } from './customer-photo-eraser';
 
 /**
  * The customer's own profile photo: same private storage, signed links and server-side checks as the worker photo. No other
@@ -12,7 +13,7 @@ import { CustomerPhotoService } from './customer-photo.service';
 @Module({
   imports: [StorageModule, MalwareModule],
   controllers: [CustomerPhotoController],
-  providers: [CustomerPhotoRepository, CustomerPhotoService],
+  providers: [CustomerPhotoEraser, CustomerPhotoRepository, CustomerPhotoService],
   exports: [CustomerPhotoService],
 })
 export class CustomerPhotoModule {}

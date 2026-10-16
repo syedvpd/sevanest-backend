@@ -6,6 +6,7 @@ import { AdminAccessService } from './admin-access.service';
 import { AdminRolesController, AdminUsersController, UsersController } from './users.controller';
 import { UsersRepository } from './users.repository';
 import { UsersService } from './users.service';
+import { UserEraser } from './user-eraser';
 
 /**
  * Users: the common identity/account domain (users, account status, role assignment). Customer- and
@@ -15,6 +16,7 @@ import { UsersService } from './users.service';
 @Module({
   controllers: [UsersController, AdminUsersController, AdminRolesController],
   providers: [
+    UserEraser,
     UsersRepository,
     UsersService,
     AdminAccessService,

@@ -11,6 +11,7 @@ import {
 import { WorkerOnboardingController } from './worker-onboarding.controller';
 import { VerificationRepository } from './verification.repository';
 import { VerificationService } from './verification.service';
+import { VerificationRetention } from './verification-retention';
 
 /**
  * Worker Verification / KYC (FRD FM-05). Owns the verification tables and the definition of "fully verified"
@@ -25,7 +26,7 @@ import { VerificationService } from './verification.service';
     AdminWorkerVerificationController,
     WorkerOnboardingController,
   ],
-  providers: [VerificationRepository, VerificationService],
+  providers: [VerificationRetention, VerificationRepository, VerificationService],
   exports: [VerificationService],
 })
 export class VerificationModule {}

@@ -26,6 +26,7 @@ import { AdminNotificationsController, InboxController } from './notifications.c
 import { NOTIFICATION_QUEUE } from './notifications.constants';
 import { NotificationsRepository } from './notifications.repository';
 import { NotificationsService } from './notifications.service';
+import { NotificationsRetention } from './notifications-retention';
 
 function whatsAppProviderFor(config: AppConfigService): WhatsAppProvider {
   switch (config.whatsappProvider) {
@@ -52,6 +53,7 @@ function whatsAppProviderFor(config: AppConfigService): WhatsAppProvider {
   ],
   controllers: [AdminNotificationsController, InboxController],
   providers: [
+    NotificationsRetention,
     NotificationsRepository,
     NotificationsService,
     {

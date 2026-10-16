@@ -499,6 +499,61 @@ export class EnvironmentVariables {
   @Max(100000)
   WORKER_RESPONSE_HOURS: number = 4;
 
+  /**
+   * DEC-08 retention and erasure. OFF by default (needs legal sign-off). When enabled the worker removes data past its retention period
+   * and anonymises accounts whose deletion request is older than DELETION_COOLING_OFF_DAYS. Audit logs, payments and receipts are never
+   * touched. With RETENTION_DRY_RUN=true (the default) a run only counts what it would remove.
+   */
+  @Transform(toBoolean)
+  @IsBoolean()
+  RETENTION_ENABLED: boolean = false;
+
+  @Transform(toBoolean)
+  @IsBoolean()
+  RETENTION_DRY_RUN: boolean = true;
+
+  /** In-app/push/SMS notification rows older than this many months are removed (DEC-08: 12). */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(240)
+  RETENTION_NOTIFICATIONS_MONTHS: number = 12;
+
+  /** Processed outbox events (with no notification row left) older than this many days are removed (DEC-08: 90). */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  RETENTION_OUTBOX_DAYS: number = 90;
+
+  /** Stored files of rejected KYC checks are deleted after this many days (DEC-08: 90). */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  RETENTION_KYC_REJECTED_DAYS: number = 90;
+
+  /** Days between an account deletion request and the anonymisation (DEC-08: 30); the user can withdraw until then. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  DELETION_COOLING_OFF_DAYS: number = 30;
+
+  /** Rows handled per task per run. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  RETENTION_BATCH_SIZE: number = 500;
+
+  /** Minutes between retention runs in the worker. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  RETENTION_INTERVAL_MINUTES: number = 60;
+
   /** DEC-16: admin edits of existing records must carry If-Match (428 without it, 412 when stale). false = header optional, as before. */
   @Transform(toBoolean)
   @IsBoolean()

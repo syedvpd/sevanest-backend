@@ -70,6 +70,7 @@ model User {
   attendanceEvents          AttendanceEvent[]         @relation("AttendanceEventActor")
   workerPaymentsRecorded    WorkerPaymentReference[]  @relation("WorkerPaymentRecordedBy")
   workersBlacklisted        WorkerProfile[]           @relation("WorkerBlacklistedBy")
+  deletionsRejected         DeletionRequest[]         @relation("DeletionRequestRejectedBy")
   replacementsRequested     ReplacementRequest[]      @relation("ReplacementRequester")
   replacementsDecided       ReplacementRequest[]      @relation("ReplacementDecider")
   customerNotesAuthored     CustomerNote[]
@@ -1412,6 +1413,8 @@ enum DeletionRequestStatus {
   REQUESTED
   CANCELLED
   COMPLETED
+  /// Staff refused the request (reason kept); the account stays as it is.
+  REJECTED
 }
 
 /// A user's request to delete their account and personal data (store policy / privacy law). Nothing is erased automatically: retention
@@ -1424,8 +1427,12 @@ model DeletionRequest {
   requestedAt DateTime              @default(now()) @map("requested_at") @db.Timestamptz(6)
   cancelledAt DateTime?             @map("cancelled_at") @db.Timestamptz(6)
   completedAt DateTime?             @map("completed_at") @db.Timestamptz(6)
+  rejectedAt       DateTime?        @map("rejected_at") @db.Timestamptz(6)
+  rejectedReason   String?          @map("rejected_reason")
+  rejectedByUserId String?          @map("rejected_by_user_id") @db.Uuid
 
-  user User @relation("DeletionRequestUser", fields: [userId], references: [id], onDelete: Restrict)
+  user       User  @relation("DeletionRequestUser", fields: [userId], references: [id], onDelete: Restrict)
+  rejectedBy User? @relation("DeletionRequestRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: Restrict)
 
   @@index([userId, requestedAt])
   @@index([status, requestedAt])

@@ -5,6 +5,7 @@ import { WorkersModule } from '../workers/workers.module';
 import { WorkerPhotoController } from './worker-photo.controller';
 import { WorkerPhotoRepository } from './worker-photo.repository';
 import { WorkerPhotoService } from './worker-photo.service';
+import { WorkerPhotoEraser } from './worker-photo-eraser';
 
 /**
  * Worker profile photo (FR-WON-002): private storage, signed upload and view links, server-side size and signature checks.
@@ -14,7 +15,7 @@ import { WorkerPhotoService } from './worker-photo.service';
 @Module({
   imports: [WorkersModule, StorageModule, MalwareModule],
   controllers: [WorkerPhotoController],
-  providers: [WorkerPhotoRepository, WorkerPhotoService],
+  providers: [WorkerPhotoEraser, WorkerPhotoRepository, WorkerPhotoService],
   exports: [WorkerPhotoService],
 })
 export class WorkerPhotoModule {}

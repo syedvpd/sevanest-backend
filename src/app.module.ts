@@ -4,6 +4,9 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './common/audit/audit.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
+import { RetentionRegistryModule } from './common/retention/retention.registry';
+import { RetentionModule } from './modules/retention/retention.module';
+import { RetentionWorkerModule } from './modules/retention/retention.worker';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { AppConfigModule } from './config/config.module';
 import { AppConfigService } from './config/app-config.service';
@@ -67,6 +70,7 @@ const embeddedWorkers =
         BookingWorkerModule,
         SupportWorkerModule,
         CustomerPhotoWorkerModule,
+        RetentionWorkerModule,
       ]
     : [];
 
@@ -88,6 +92,7 @@ const embeddedWorkers =
     QueueModule,
     AuditModule,
     OutboxModule,
+    RetentionRegistryModule,
     IdempotencyModule,
     UsersModule,
     AlertsModule,
@@ -113,6 +118,7 @@ const embeddedWorkers =
     NotificationsModule,
     AttendanceModule,
     EarningsModule,
+    RetentionModule,
     ReplacementModule,
     RatingsModule,
     SupportModule,

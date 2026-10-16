@@ -51,17 +51,30 @@ export class RequestDeletionDto {
 }
 
 export class DeletionListQuery extends PageQueryDto {
-  @ApiPropertyOptional({ enum: ['REQUESTED', 'CANCELLED', 'COMPLETED'] })
+  @ApiPropertyOptional({ enum: ['REQUESTED', 'CANCELLED', 'COMPLETED', 'REJECTED'] })
   @IsOptional()
-  @IsEnum(['REQUESTED', 'CANCELLED', 'COMPLETED'])
-  status?: 'REQUESTED' | 'CANCELLED' | 'COMPLETED';
+  @IsEnum(['REQUESTED', 'CANCELLED', 'COMPLETED', 'REJECTED'])
+  status?: 'REQUESTED' | 'CANCELLED' | 'COMPLETED' | 'REJECTED';
 }
 
 export class DeletionRequestView {
   @ApiProperty() id!: string;
   @ApiProperty() userId!: string;
-  @ApiProperty({ enum: ['REQUESTED', 'CANCELLED', 'COMPLETED'] }) status!: string;
+  @ApiProperty({ enum: ['REQUESTED', 'CANCELLED', 'COMPLETED', 'REJECTED'] }) status!: string;
   @ApiProperty() requestedAt!: Date;
   @ApiProperty({ nullable: true, type: Date }) cancelledAt!: Date | null;
   @ApiProperty({ nullable: true, type: Date }) completedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) rejectedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) rejectedReason!: string | null;
+}
+
+export class RejectDeletionDto {
+  @ApiProperty({
+    maxLength: 500,
+    description: 'Why the request is refused; kept with the request and in the audit log.',
+  })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @Length(5, 500)
+  reason!: string;
 }

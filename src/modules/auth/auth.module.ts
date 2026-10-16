@@ -24,6 +24,7 @@ import { OtpService } from './otp.service';
 import { SessionRepository } from './session.repository';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
+import { AuthEraser } from './auth-eraser';
 
 function smsProviderFor(config: AppConfigService): SmsProvider {
   switch (config.smsProvider) {
@@ -56,6 +57,7 @@ function smsProviderFor(config: AppConfigService): SmsProvider {
   ],
   controllers: [AuthController, AdminAccountController],
   providers: [
+    AuthEraser,
     AuthRepository,
     AuthorizationService,
     TokenService,
