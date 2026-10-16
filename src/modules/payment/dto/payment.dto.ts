@@ -31,6 +31,8 @@ export type PaymentStatusValue = (typeof PAYMENT_STATUSES)[number];
 
 /** The only documented fee: the booking/platform fee (FR-BK-004). Other fee types are open (Q-01). */
 export const BOOKING_FEE_CODE = 'BOOKING_FEE';
+/** DEC-04: no cancellation fee in V1; the row exists with amount 0 and an administrator may set it later. */
+export const CANCELLATION_FEE_CODE = 'CANCELLATION_FEE';
 
 export class CreatePaymentDto {
   @ApiProperty({ description: 'My booking that is waiting for payment.' })
@@ -63,10 +65,14 @@ export class RefundDto {
 }
 
 export class SetFeeDto {
-  @ApiProperty({ minimum: 1, description: 'Amount in the smallest currency unit (paise).' })
+  @ApiProperty({
+    minimum: 0,
+    description:
+      'Amount in the smallest currency unit (paise). 0 is allowed only for CANCELLATION_FEE (no fee).',
+  })
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Max(100_000_000)
   amountMinor!: number;
 

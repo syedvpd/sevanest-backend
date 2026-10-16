@@ -66,6 +66,7 @@ export class SessionRepository {
       UPDATE sessions
          SET refresh_token_hash = ${newHash},
              previous_refresh_token_hash = ${oldHash},
+             rotated_at = ${now},
              last_used_at = ${now}
        WHERE refresh_token_hash = ${oldHash}
          AND revoked_at IS NULL
@@ -75,10 +76,15 @@ export class SessionRepository {
   }
 
   /** An unrevoked session whose PREVIOUS token is this one: the token was already rotated, so this is a replay. */
-  findActiveByPreviousHash(hash: string): Promise<{ id: string; userId: string } | null> {
+  findActiveByPreviousHash(hash: string): Promise<{
+    id: string;
+    userId: string;
+    rotatedAt: Date | null;
+    deviceId: string | null;
+  } | null> {
     return this.prisma.session.findFirst({
       where: { previousRefreshTokenHash: hash, revokedAt: null },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, rotatedAt: true, deviceId: true },
     });
   }
 

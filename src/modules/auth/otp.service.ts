@@ -54,7 +54,7 @@ export class OtpService {
   /**
    * Applies lock, per-IP, resend-cooldown and per-mobile limits, creates the OTP and sends it.
    */
-  async issue(mobile: string, clientIp: string): Promise<OtpIssueResult> {
+  async issue(mobile: string, clientIp: string, deliver = true): Promise<OtpIssueResult> {
     // Staging/demo only (DEMO_OTP_ACCEPT_ANY): the app shows its own code, nothing is stored or sent.
     if (this.config.demoOtpAccepts(mobile)) {
       return {
@@ -104,6 +104,14 @@ export class OtpService {
         'OTP limit reached for this number. Please try again later.',
         sendLeft,
       );
+    }
+
+    // Suspended account (DEC-15): every limit above has been counted exactly as for anyone else, but no code is stored or sent.
+    if (!deliver) {
+      return {
+        expiresInSeconds: this.settings.ttlSeconds,
+        resendAfterSeconds: this.settings.resendCooldownSeconds,
+      };
     }
 
     // Staging/demo only: an allow-listed number gets the configured fixed code and nothing is sent (ALLOW_TEST_OTP).

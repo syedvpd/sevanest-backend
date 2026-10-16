@@ -1,12 +1,14 @@
 import 'reflect-metadata';
 import { parseFcmServiceAccount } from '../integrations/notifications/fcm.provider';
 import { plainToInstance, Transform, Type } from 'class-transformer';
+import { parseJwtKeys } from './jwt-keys';
 import {
   MaxLength,
   IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   Length,
@@ -138,9 +140,28 @@ export class EnvironmentVariables {
   @Matches(/^rediss?:\/\//, { message: 'REDIS_URL must be a redis:// or rediss:// URL' })
   REDIS_URL!: string;
 
+  /** HS256 shared secret. Required unless JWT_KEYS is set; with JWT_KEYS it only verifies old tokens while JWT_LEGACY_HS256_UNTIL is in the future. */
+  @ValidateIf((o: EnvironmentVariables) => !o.JWT_KEYS || o.JWT_ACCESS_SECRET !== undefined)
   @IsString()
   @MinLength(32)
-  JWT_ACCESS_SECRET!: string;
+  JWT_ACCESS_SECRET?: string;
+
+  /** DEC-19: ES256 key set, JSON array of {kid, privateKey?, publicKey?}. The first entry signs; later ones only verify (rotation). Unset = legacy HS256. Secret: environment only. */
+  @IsOptional()
+  @IsString()
+  JWT_KEYS?: string;
+
+  /** ISO date until which HS256 tokens are still accepted when JWT_KEYS is set (migration window). Unset = never (the default). */
+  @IsOptional()
+  @IsISO8601()
+  JWT_LEGACY_HS256_UNTIL?: string;
+
+  /** Seconds in which replaying a just-rotated refresh token from the same device answers 409 REFRESH_IN_PROGRESS instead of revoking the session (DEC-14). 0 = off. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  REFRESH_REUSE_GRACE_SECONDS: number = 10;
 
   @Type(() => Number)
   @IsInt()
@@ -790,8 +811,28 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       'ConfigWarning',
     );
   }
+  if (config.JWT_KEYS) {
+    try {
+      parseJwtKeys(config.JWT_KEYS);
+    } catch (error) {
+      throw new Error(`Invalid environment configuration: ${(error as Error).message}`, {
+        cause: error,
+      });
+    }
+  }
+  if (config.JWT_LEGACY_HS256_UNTIL && !config.JWT_ACCESS_SECRET) {
+    throw new Error(
+      'Invalid environment configuration: JWT_LEGACY_HS256_UNTIL needs JWT_ACCESS_SECRET (the secret old tokens were signed with)',
+    );
+  }
   if (isStrictTier) {
-    if (/change-me|example|secret/i.test(config.JWT_ACCESS_SECRET)) {
+    if (!config.JWT_KEYS) {
+      process.emitWarning(
+        'JWT_KEYS is not set: access tokens use the HS256 shared secret (no key rotation). Set an ES256 key set (see docs/JWT_ROTATION.md)',
+        'ConfigWarning',
+      );
+    }
+    if (config.JWT_ACCESS_SECRET && /change-me|example|secret/i.test(config.JWT_ACCESS_SECRET)) {
       throw new Error(
         'Invalid environment configuration: JWT_ACCESS_SECRET looks like a placeholder',
       );

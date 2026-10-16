@@ -94,6 +94,14 @@ export class RefreshTokenDto {
   @IsString()
   @Length(20, 200)
   refreshToken!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The same install id used at login. Lets the server tell a retried refresh from this device (409 REFRESH_IN_PROGRESS) from token theft.',
+  })
+  @IsOptional()
+  @Matches(DEVICE_ID, { message: 'deviceId has an invalid format' })
+  deviceId?: string;
 }
 
 export class RegisterDeviceTokenDto {

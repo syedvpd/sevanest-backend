@@ -28,6 +28,7 @@ import {
   AdminPaymentListQuery,
   AdminPaymentView,
   BOOKING_FEE_CODE,
+  CANCELLATION_FEE_CODE,
   CheckoutView,
   CreatePaymentResponse,
   BookingFeeQuote,
@@ -125,6 +126,19 @@ export class PaymentService {
   }
 
   async setFee(code: string, dto: SetFeeDto, admin: PaymentActor): Promise<FeeView> {
+    if (dto.amountMinor === 0 && code !== CANCELLATION_FEE_CODE) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        [
+          {
+            field: 'amountMinor',
+            messages: ['amountMinor must be at least 1 (0 is allowed only for CANCELLATION_FEE)'],
+          },
+        ],
+      );
+    }
     const fee: FeeRecord = {
       code,
       amountMinor: dto.amountMinor,

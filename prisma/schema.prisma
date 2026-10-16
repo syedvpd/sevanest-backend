@@ -146,6 +146,8 @@ model Session {
   /// Hash of the refresh token that was current before the last rotation. Presenting it again means the token was
   /// replayed or leaked, so the session is revoked. Replaced on every rotation.
   previousRefreshTokenHash String?   @map("previous_refresh_token_hash")
+  /// When the refresh token was last rotated (grace window for a retried refresh from the same device).
+  rotatedAt                DateTime? @map("rotated_at") @db.Timestamptz(6)
   /// Client-generated install identifier. At most one ACTIVE session exists per (user, device) (partial unique index).
   deviceId                 String?   @map("device_id")
   deviceName               String?   @map("device_name")

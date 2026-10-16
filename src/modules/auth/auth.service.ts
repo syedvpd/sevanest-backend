@@ -38,8 +38,14 @@ export class AuthService {
    * Always answers the same way for every number: account type and status are only checked at verifyOtp, so this
    * unauthenticated endpoint cannot be used to probe which mobiles are registered, as what, or suspended.
    */
-  requestOtp(mobile: string, clientIp: string): Promise<OtpIssueResult> {
-    return this.otp.issue(mobile, clientIp);
+  async requestOtp(mobile: string, clientIp: string, appType: AppType): Promise<OtpIssueResult> {
+    // DEC-15: a suspended or wrong-app account gets the very same answer and the very same rate limits as anyone else, but no SMS is sent.
+    const user = await this.users.findByMobile(mobile);
+    return this.otp.issue(
+      mobile,
+      clientIp,
+      !user || (user.status === 'ACTIVE' && user.type === appType),
+    );
   }
 
   async verifyOtp(

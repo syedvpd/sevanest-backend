@@ -1,4 +1,5 @@
 import '../support/env-api-integration';
+import { randomUUID } from 'node:crypto';
 import { ProviderError } from '../../src/integrations/provider-error';
 import { TokenService } from '../../src/modules/auth/token.service';
 import type { SmsProvider } from '../../src/integrations/notifications/notification-providers.interface';
@@ -136,39 +137,41 @@ describe('Auth API (integration)', () => {
       expect(res.body.code).toBe('OTP_RATE_LIMITED');
     });
 
-    it('answers a suspended account like any other number, and refuses it at verify', async () => {
+    it('answers a suspended account exactly like an unknown number, sends nothing, and applies the same limits (DEC-15)', async () => {
       const session = await loginWithOtp(api);
       await api.prisma.user.update({
         where: { id: session.userId },
         data: { status: 'SUSPENDED' },
       });
       await clearCooldown(session.mobile!);
+      const sentBefore = api.sms.sent.length;
       const res = await requestOtp(api, session.mobile!);
+      const unknown = await requestOtp(api, randomMobile());
       expect(res.status).toBe(200);
-      expect(res.body.code).toBeUndefined();
+      expect(res.body).toEqual(unknown.body);
+      expect(api.sms.sent.length).toBe(sentBefore + 1); // only the unknown number received an SMS
+      // The resend cooldown still applies to the suspended number, as for everyone else.
+      const again = await requestOtp(api, session.mobile!);
+      expect(again.status).toBe(429);
+      expect(again.body.code).toBe('OTP_RESEND_COOLDOWN');
+      // No login is possible: there is no code to verify.
       const verify = await api
         .http()
         .post('/api/v1/auth/otp/verify')
-        .send(verifyBody(session.mobile!, otpFromSms(api, session.mobile!)));
-      expect(verify.status).toBe(403);
-      expect(verify.body.code).toBe('ACCOUNT_SUSPENDED');
+        .send(verifyBody(session.mobile!, '123456'));
+      expect(verify.status).toBe(400);
+      expect(verify.body).not.toHaveProperty('accessToken');
     });
 
-    it('answers a number of the other account type like any other number, and refuses it at verify (one mobile = one account)', async () => {
+    it('answers a number of the other account type like any other number and sends nothing (one mobile = one account)', async () => {
       const session = await loginWithOtp(api, { appType: 'CUSTOMER' });
       await clearCooldown(session.mobile!);
+      const sentBefore = api.sms.sent.length;
       const res = await requestOtp(api, session.mobile!, 'WORKER');
+      const unknown = await requestOtp(api, randomMobile(), 'WORKER');
       expect(res.status).toBe(200);
-      expect(res.body.code).toBeUndefined();
-      const verify = await api
-        .http()
-        .post('/api/v1/auth/otp/verify')
-        .send({
-          ...verifyBody(session.mobile!, otpFromSms(api, session.mobile!)),
-          appType: 'WORKER',
-        });
-      expect(verify.status).toBe(409);
-      expect(verify.body.code).toBe('ACCOUNT_TYPE_MISMATCH');
+      expect(res.body).toEqual(unknown.body);
+      expect(api.sms.sent.length).toBe(sentBefore + 1);
     });
   });
 
@@ -602,6 +605,62 @@ describe('Auth API (integration)', () => {
       expect(audit).toHaveLength(1);
       expect(audit[0].actorId).toBe(session.userId);
       expect(JSON.stringify(audit[0].metadata)).not.toContain(session.refreshToken);
+    });
+
+    describe('replay grace (DEC-14)', () => {
+      const refresh = (refreshToken: string, deviceId?: string) =>
+        api.http().post('/api/v1/auth/token/refresh').send({ refreshToken, deviceId });
+      const revoked = async (id: string) =>
+        (await api.prisma.session.findUniqueOrThrow({ where: { id } })).revokedAt !== null;
+
+      it('a replay from the same device right after a rotation answers 409 REFRESH_IN_PROGRESS and keeps the session', async () => {
+        const deviceId = `dev-${randomUUID()}`;
+        const session = await loginWithOtp(api, { deviceId });
+        const first = await refresh(session.refreshToken, deviceId);
+        expect(first.status).toBe(200);
+        const retry = await refresh(session.refreshToken, deviceId);
+        expect(retry.status).toBe(409);
+        expect(retry.body.code).toBe('REFRESH_IN_PROGRESS');
+        expect(await revoked(session.sessionId)).toBe(false);
+        expect(
+          await api.prisma.auditLog.count({
+            where: { action: 'auth.refresh_token_reuse', entityId: session.sessionId },
+          }),
+        ).toBe(0);
+        // The client retries with the newest token and carries on.
+        expect((await refresh(first.body.refreshToken as string, deviceId)).status).toBe(200);
+      });
+
+      it('a replay outside the window is theft: 401, revoked, audited', async () => {
+        const deviceId = `dev-${randomUUID()}`;
+        const session = await loginWithOtp(api, { deviceId });
+        expect((await refresh(session.refreshToken, deviceId)).status).toBe(200);
+        await api.prisma.session.update({
+          where: { id: session.sessionId },
+          data: { rotatedAt: new Date(Date.now() - 60_000) },
+        });
+        const replay = await refresh(session.refreshToken, deviceId);
+        expect(replay.status).toBe(401);
+        expect(await revoked(session.sessionId)).toBe(true);
+        expect(
+          await api.prisma.auditLog.count({
+            where: { action: 'auth.refresh_token_reuse', entityId: session.sessionId },
+          }),
+        ).toBe(1);
+      });
+
+      it('a replay inside the window from another device (or with no device) is theft', async () => {
+        const deviceId = `dev-${randomUUID()}`;
+        const session = await loginWithOtp(api, { deviceId });
+        expect((await refresh(session.refreshToken, deviceId)).status).toBe(200);
+        const other = await refresh(session.refreshToken, `dev-${randomUUID()}`);
+        expect(other.status).toBe(401);
+        expect(await revoked(session.sessionId)).toBe(true);
+        const bare = await loginWithOtp(api, { deviceId: `dev-${randomUUID()}` });
+        expect((await refresh(bare.refreshToken)).status).toBe(200);
+        expect((await refresh(bare.refreshToken)).status).toBe(401);
+        expect(await revoked(bare.sessionId)).toBe(true);
+      });
     });
 
     it('lets only one of several parallel refreshes with the same token win', async () => {

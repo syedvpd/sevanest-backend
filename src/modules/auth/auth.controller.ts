@@ -59,10 +59,10 @@ export class AuthController {
   @ApiOperation({
     summary: 'Send a login OTP to a customer or worker mobile number',
     description:
-      'Rate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). Suspended accounts are refused before anything is sent.',
+      'Rate limited per mobile and per IP; 429 responses carry details[0] (retryAfterSeconds). The answer is identical for every number (known, unknown, suspended); nothing is sent to a suspended account or to a number registered for the other app.',
   })
   requestOtp(@Body() dto: RequestOtpDto, @Req() request: Request): Promise<OtpRequestedResponse> {
-    return this.auth.requestOtp(dto.mobile, clientIp(request));
+    return this.auth.requestOtp(dto.mobile, clientIp(request), dto.appType);
   }
 
   @Public()
@@ -106,10 +106,10 @@ export class AuthController {
   @ApiOperation({
     summary: 'Rotate the refresh token and get a new access token',
     description:
-      'The refresh token is single-use. Presenting an already-used token revokes the session (possible token theft).',
+      'The refresh token is single-use. Presenting an already-used token revokes the session (possible token theft), except when the same deviceId replays it within REFRESH_REUSE_GRACE_SECONDS: that answers 409 REFRESH_IN_PROGRESS and the client retries with the newest token.',
   })
   async refresh(@Body() dto: RefreshTokenDto): Promise<TokenResponse> {
-    const issued = await this.sessions.refresh(dto.refreshToken);
+    const issued = await this.sessions.refresh(dto.refreshToken, dto.deviceId);
     return {
       accessToken: issued.accessToken,
       refreshToken: issued.refreshToken,

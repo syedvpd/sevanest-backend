@@ -4,9 +4,11 @@ import { TokenService } from './token.service';
 const SECRET = 'unit-test-secret-unit-test-secret-0123';
 
 function service(secret = SECRET, expiresIn: number | string = 900) {
-  return new TokenService(
-    new JwtService({ secret, signOptions: { expiresIn: expiresIn as number } }),
-  );
+  return new TokenService(new JwtService({ signOptions: { expiresIn: expiresIn as number } }), {
+    jwtAccessSecret: secret,
+    jwtKeySet: null,
+    jwtLegacyHs256Accepted: true,
+  });
 }
 
 describe('TokenService', () => {

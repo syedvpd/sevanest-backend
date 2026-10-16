@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { parseJwtKeys, type JwtKeySet } from './jwt-keys';
 import {
   EnvironmentVariables,
   MessagingProviderKind,
@@ -78,8 +79,26 @@ export class AppConfigService {
   get redisUrl(): string {
     return this.get('REDIS_URL');
   }
-  get jwtAccessSecret(): string {
+  get jwtAccessSecret(): string | undefined {
     return this.get('JWT_ACCESS_SECRET');
+  }
+  private jwtKeySetCache: JwtKeySet | null | undefined;
+  /** The ES256 key set, or null while the service still runs on the legacy HS256 secret. */
+  get jwtKeySet(): JwtKeySet | null {
+    if (this.jwtKeySetCache === undefined) {
+      const raw = this.get('JWT_KEYS');
+      this.jwtKeySetCache = raw ? parseJwtKeys(raw) : null;
+    }
+    return this.jwtKeySetCache;
+  }
+  /** HS256 tokens are accepted: always without JWT_KEYS, otherwise only until JWT_LEGACY_HS256_UNTIL. */
+  get jwtLegacyHs256Accepted(): boolean {
+    if (!this.get('JWT_KEYS')) return true;
+    const until = this.get('JWT_LEGACY_HS256_UNTIL');
+    return !!until && !!this.get('JWT_ACCESS_SECRET') && Date.now() < Date.parse(until);
+  }
+  get refreshReuseGraceSeconds(): number {
+    return this.get('REFRESH_REUSE_GRACE_SECONDS');
   }
   get jwtAccessTtlSeconds(): number {
     return this.get('JWT_ACCESS_TTL_SECONDS');

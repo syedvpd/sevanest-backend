@@ -15,6 +15,7 @@ services:
       - { key: DATABASE_URL, sync: false }
       - { key: REDIS_URL, sync: false }
       - { key: JWT_ACCESS_SECRET, sync: false }
+      - { key: JWT_KEYS, sync: false } # ES256 key set (docs/JWT_ROTATION.md); leave empty to stay on HS256
       - { key: OTP_HMAC_SECRET, sync: false }
       - { key: JWT_ACCESS_TTL_SECONDS, value: '900' }
       - { key: REFRESH_TOKEN_TTL_SECONDS, value: '2592000' }

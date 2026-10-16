@@ -90,12 +90,28 @@ export class SessionService implements OnModuleInit {
     return this.issue(userId, sessionId, refreshToken);
   }
 
+  private withinReuseGrace(
+    replayed: { rotatedAt: Date | null; deviceId: string | null },
+    deviceId: string | undefined,
+  ): boolean {
+    const graceMs = this.config.refreshReuseGraceSeconds * 1000;
+    return (
+      graceMs > 0 &&
+      !!deviceId &&
+      replayed.deviceId === deviceId &&
+      !!replayed.rotatedAt &&
+      Date.now() - replayed.rotatedAt.getTime() <= graceMs
+    );
+  }
+
   /**
    * Exchanges a refresh token for a new pair. The old token stops working. Presenting an already-rotated token is
-   * treated as possible theft: the session is revoked and an audit event is written (deterministic, no grace period).
+   * treated as possible theft: the session is revoked and an audit event is written. The one exception is a replay within
+   * REFRESH_REUSE_GRACE_SECONDS from the same device (a lost response): that answers 409 REFRESH_IN_PROGRESS and revokes nothing.
    */
   async refresh(
     refreshToken: string,
+    deviceId?: string,
   ): Promise<IssuedTokens & { userType: UserType; access?: RoleAndPermissions }> {
     const oldHash = this.tokens.hashRefreshToken(refreshToken);
     const newToken = this.tokens.generateRefreshToken();
@@ -107,6 +123,15 @@ export class SessionService implements OnModuleInit {
 
     if (!rotated) {
       const replayed = await this.repository.findActiveByPreviousHash(oldHash);
+      if (replayed && this.withinReuseGrace(replayed, deviceId)) {
+        // A retry or double tap from the same device right after a rotation: the client still holds the old token because the new one
+        // never reached it. Do not log the user out; tell the client to use the newest token it received (DEC-14).
+        throw new DomainException(
+          AuthErrorCode.REFRESH_IN_PROGRESS,
+          'This refresh token was just used. Retry with the newest refresh token you received.',
+          HttpStatus.CONFLICT,
+        );
+      }
       if (replayed) {
         await this.repository.transaction(async (tx) => {
           await this.repository.revoke({ id: replayed.id }, tx);

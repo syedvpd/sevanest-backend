@@ -49,7 +49,7 @@ function smsProviderFor(config: AppConfigService): SmsProvider {
     JwtModule.registerAsync({
       inject: [AppConfigService],
       useFactory: (config: AppConfigService) => ({
-        secret: config.jwtAccessSecret,
+        // Keys are passed per call by TokenService (HS256 secret or ES256 key set); only the lifetime is shared.
         signOptions: { expiresIn: config.jwtAccessTtlSeconds },
       }),
     }),

@@ -71,7 +71,6 @@ describe('Payment API (integration)', () => {
         (await api.http().put(`${A}/fees/booking-fee`).send({ amountMinor: 100 })).status,
       ).toBe(401);
       for (const bad of [
-        { amountMinor: 0 },
         { amountMinor: -5 },
         { amountMinor: 1.5 },
         { amountMinor: 100, currency: 'USD' },
@@ -79,6 +78,11 @@ describe('Payment API (integration)', () => {
       ]) {
         expect((await as(api, manager).put(`${A}/fees/booking-fee`, bad)).status).toBe(400);
       }
+      // 0 is only for the cancellation fee (DEC-04): a charged fee must stay positive.
+      const zero = await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 0 });
+      expect(zero.status).toBe(422);
+      await as(api, manager).put(`${A}/fees/PLACEMENT_FEE`, { amountMinor: 0 }).expect(422);
+      await as(api, manager).put(`${A}/fees/CANCELLATION_FEE`, { amountMinor: 0 }).expect(200);
       await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 70000 }).expect(200);
       await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 50000 }).expect(200);
       const fees = await as(api, viewer).get(`${A}/fees`).expect(200);

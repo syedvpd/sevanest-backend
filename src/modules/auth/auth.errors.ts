@@ -16,5 +16,7 @@ export const AuthErrorCode = {
   PASSWORD_UNCHANGED: 'PASSWORD_UNCHANGED',
   ADMIN_LOGIN_LOCKED: 'ADMIN_LOGIN_LOCKED',
   REFRESH_TOKEN_INVALID: 'REFRESH_TOKEN_INVALID',
+  /** The token was just rotated (a retry or double tap from the same device): retry with the newest refresh token. */
+  REFRESH_IN_PROGRESS: 'REFRESH_IN_PROGRESS',
   SESSION_NOT_FOUND: 'SESSION_NOT_FOUND',
 } as const;
