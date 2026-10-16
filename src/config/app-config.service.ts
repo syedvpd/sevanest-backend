@@ -339,12 +339,15 @@ export class AppConfigService {
       signedUrlTtlSeconds: this.get('SIGNED_URL_TTL_SECONDS'),
     };
   }
-  /** Profile photo limits; `maxBytes` is undefined until the business sets PROFILE_PHOTO_MAX_BYTES (feature stays off). */
+  /** Profile photo limits; `maxBytes` is undefined until the business sets PROFILE_PHOTO_MAX_BYTES (feature stays off). Default 5 MB (DEC-10). */
   get profilePhoto(): { maxBytes: number | undefined; signedUrlTtlSeconds: number } {
     return {
       maxBytes: this.get('PROFILE_PHOTO_MAX_BYTES'),
       signedUrlTtlSeconds: this.get('SIGNED_URL_TTL_SECONDS'),
     };
+  }
+  get profilePhotoRequired(): boolean {
+    return this.get('PROFILE_PHOTO_REQUIRED');
   }
   get otp(): OtpSettings {
     return {

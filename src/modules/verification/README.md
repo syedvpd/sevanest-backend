@@ -24,20 +24,20 @@ architecture" (private storage, short-lived signed links, permission check first
 
 ## APIs (`/api/v1`)
 
-| Method  | Path                                               | Requires                          | Purpose                                                    |
-| ------- | -------------------------------------------------- | --------------------------------- | ---------------------------------------------------------- |
-| GET     | `/workers/me/verification`                         | WORKER                            | Level, required checks, each check with status and remarks |
-| POST    | `/workers/me/verification/checks/{type}/documents` | WORKER (profile submitted)        | `{contentType, sizeBytes}` -> signed upload link           |
-| POST    | `/workers/me/verification/documents/{id}/confirm`  | WORKER (owner)                    | Server checks the object arrived and fits; idempotent      |
-| POST    | `/workers/me/verification/checks/{type}/submit`    | WORKER                            | Submit one check for review; idempotent                    |
+| Method  | Path                                               | Requires                          | Purpose                                                                        |
+| ------- | -------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------ |
+| GET     | `/workers/me/verification`                         | WORKER                            | Level, required checks, each check with status and remarks                     |
+| POST    | `/workers/me/verification/checks/{type}/documents` | WORKER (profile submitted)        | `{contentType, sizeBytes}` -> signed upload link                               |
+| POST    | `/workers/me/verification/documents/{id}/confirm`  | WORKER (owner)                    | Server checks the object arrived and fits; idempotent                          |
+| POST    | `/workers/me/verification/checks/{type}/submit`    | WORKER                            | Submit one check for review; idempotent                                        |
 | GET     | `/admin/verification/queue`                        | `verification.review`             | Oldest first; status, checkType, categoryId, search, assignedTo=me, reviewerId |
-| GET/PUT | `/admin/verification/requirements`                 | review / `verification.configure` | Which checks are required (audited)                        |
-| POST    | `/admin/verification/checks/{id}/start-review`     | `verification.review`             | Claim: persists reviewer + claimedAt; 409 if held by another |
-| POST    | `/admin/verification/checks/{id}/approve`          | `verification.decide`             | IN_REVIEW -> APPROVED (optional `recheckAt`)               |
-| POST    | `/admin/verification/checks/{id}/reject`           | `verification.decide`             | IN_REVIEW -> REJECTED (remarks required)                   |
-| POST    | `/admin/verification/checks/{id}/recheck`          | `verification.decide`             | APPROVED -> IN_REVIEW (remarks required)                   |
-| GET     | `/admin/verification/documents/{id}/link`          | `verification.document.view`      | Signed link `{url, signedUrl, expiresAt, expiresInSeconds}`; audited |
-| GET     | `/admin/workers/{workerId}/verification`           | `verification.review`             | Checks, document metadata, full history                    |
+| GET/PUT | `/admin/verification/requirements`                 | review / `verification.configure` | Which checks are required (audited)                                            |
+| POST    | `/admin/verification/checks/{id}/start-review`     | `verification.review`             | Claim: persists reviewer + claimedAt; 409 if held by another                   |
+| POST    | `/admin/verification/checks/{id}/approve`          | `verification.decide`             | IN_REVIEW -> APPROVED (optional `recheckAt`)                                   |
+| POST    | `/admin/verification/checks/{id}/reject`           | `verification.decide`             | IN_REVIEW -> REJECTED (remarks required)                                       |
+| POST    | `/admin/verification/checks/{id}/recheck`          | `verification.decide`             | APPROVED -> IN_REVIEW (remarks required)                                       |
+| GET     | `/admin/verification/documents/{id}/link`          | `verification.document.view`      | Signed link `{url, signedUrl, expiresAt, expiresInSeconds}`; audited           |
+| GET     | `/admin/workers/{workerId}/verification`           | `verification.review`             | Checks, document metadata, full history                                        |
 
 ## Rules
 

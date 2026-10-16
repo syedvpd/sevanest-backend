@@ -44,6 +44,11 @@ export class SearchController {
             total: { type: 'number' },
           },
         },
+        canRequestAdminMatching: {
+          type: 'boolean',
+          description:
+            'True when no worker matches: offer the customer to ask staff to find one with POST /bookings WITHOUT workerId (it creates a NEW_REQUEST and alerts staff).',
+        },
       },
     },
   })
@@ -55,7 +60,7 @@ export class SearchController {
   find(
     @Query() query: SearchWorkersQuery,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Page<WorkerCard>> {
+  ): Promise<Page<WorkerCard> & { canRequestAdminMatching: boolean }> {
     return this.search.searchForCustomer(query, user.userId);
   }
 

@@ -157,6 +157,52 @@ describe('Gap closing (integration)', () => {
       expect(JSON.stringify(seen.body)).not.toContain('Lake View');
     });
 
+    it('accepts MONTHLY as an alias of the monthly budget period (DEC-07)', async () => {
+      const res = await create(
+        requirement({ budgetMinMinor: 100000, budgetPeriod: 'MONTHLY', engagement: 'FULL_TIME' }),
+      );
+      expect(res.status).toBe(201);
+      expect(res.body.budgetPeriod).toBe('MONTH');
+      expect(res.body.engagement).toBe('FULL_TIME');
+      expect(
+        (await create(requirement({ budgetMinMinor: 100000, budgetPeriod: 'FORTNIGHTLY' }))).status,
+      ).toBe(400);
+    });
+
+    it('with no matching worker the search offers admin matching, and a request without workerId alerts staff (FM-03)', async () => {
+      const emptyArea = await createArea(api, admin);
+      const search = await as(api, customer)
+        .get(`/api/v1/search/workers?category=HOUSE_MAID&areaId=${emptyArea.id}`)
+        .expect(200);
+      expect(search.body.meta.total).toBe(0);
+      expect(search.body.canRequestAdminMatching).toBe(true);
+      const worker = await verifiedWorker();
+      const found = await as(api, customer)
+        .get(`/api/v1/search/workers?category=HOUSE_MAID&areaId=${area.id}`)
+        .expect(200);
+      expect(found.body.data.map((w: { workerId: string }) => w.workerId)).toContain(
+        worker.workerId,
+      );
+      expect(found.body.canRequestAdminMatching).toBe(false);
+
+      const asked = await create({
+        category: 'HOUSE_MAID',
+        areaId: emptyArea.id,
+        engagement: 'PART_TIME',
+        availableFrom: '09:00',
+        availableTo: '12:00',
+      });
+      expect(asked.status).toBe(201);
+      expect(asked.body.status).toBe('NEW_REQUEST');
+      expect(asked.body.workerId ?? null).toBeNull();
+      const [alert] = await alertsOf(asked.body.id as string);
+      expect(alert).toMatchObject({
+        type: 'BOOKING_NEEDS_MATCH',
+        status: 'OPEN',
+        requiredPermission: 'booking.manage',
+      });
+    });
+
     it('refuses bad input before anything is stored', async () => {
       const stranger = await newCustomer();
       const before = await api.prisma.booking.count({ where: { customerUserId: customer.userId } });

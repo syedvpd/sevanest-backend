@@ -24,6 +24,8 @@ export function applyTestEnvironment(overrides: Record<string, string> = {}): vo
     RATING_SCALE_MAX: '5',
     VERIFICATION_DOCUMENT_MAX_BYTES: '1048576',
     PROFILE_PHOTO_MAX_BYTES: '200000',
+    // Most suites onboard workers without a photo; the photo gate has its own test that switches it on.
+    PROFILE_PHOTO_REQUIRED: 'false',
     VERIFICATION_DOCUMENT_CONTENT_TYPES: 'application/pdf,image/jpeg,image/png',
     SIGNED_URL_TTL_SECONDS: '120',
     OTP_LENGTH: '6',

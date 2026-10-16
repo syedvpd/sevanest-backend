@@ -323,14 +323,18 @@ export class EnvironmentVariables {
   VERIFICATION_DOCUMENT_MAX_BYTES!: number;
 
   /**
-   * Profile photo size limit (FRD FM-04: "size limit applies", value open, Q-12). Optional on purpose: while unset, photo upload
-   * answers 503 PHOTO_NOT_CONFIGURED instead of guessing a limit. Types are fixed to JPEG and PNG (signature-checked).
+   * Profile photo size limit in bytes (FRD FM-04: "size limit applies"). On by default at 5 MB (DEC-10, owner sign-off pending); types are
+   * fixed to JPEG and PNG (signature-checked).
    */
-  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  PROFILE_PHOTO_MAX_BYTES?: number;
+  PROFILE_PHOTO_MAX_BYTES: number = 5_242_880;
+
+  /** A worker cannot submit the profile for verification without a confirmed photo (FM-04, DEC-10). Set false only to run without the rule. */
+  @Transform(toBoolean)
+  @IsBoolean()
+  PROFILE_PHOTO_REQUIRED: boolean = true;
 
   @IsString()
   @Matches(

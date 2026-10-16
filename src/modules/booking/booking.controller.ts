@@ -107,7 +107,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Create a booking request (NEW_REQUEST, or MATCHED when an eligible worker is chosen)',
     description:
-      '422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / WORKER_NOT_ELIGIBLE, 409 DUPLICATE_BOOKING for a second open booking with the same worker and service.',
+      'Without workerId this is the customer asking staff to find a worker (admin matching, offered when GET /search/workers answers canRequestAdminMatching): the booking is a NEW_REQUEST and staff get a BOOKING_NEEDS_MATCH alert. 422 CATEGORY_NOT_AVAILABLE / AREA_NOT_AVAILABLE / WORKER_NOT_ELIGIBLE, 409 DUPLICATE_BOOKING for a second open booking with the same worker and service.',
   })
   async create(
     @Body() dto: CreateBookingDto,

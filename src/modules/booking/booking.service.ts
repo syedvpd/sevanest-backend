@@ -299,6 +299,20 @@ export class BookingService {
         );
         if (dto.workerId) {
           await this.assign(created, dto.workerId, { kind: 'SYSTEM', userId: null }, tx);
+        } else if (!onBehalfOf) {
+          // FM-03: a request without a worker is the customer asking staff to find one (admin matching): staff are alerted at once.
+          await this.alerts.raise(
+            {
+              dedupeKey: `BOOKING_NEEDS_MATCH:${created.id}`,
+              type: 'BOOKING_NEEDS_MATCH',
+              severity: 'WARNING',
+              title: 'A customer asked staff to find a worker',
+              requiredPermission: PermissionCode.BOOKING_MANAGE,
+              entityType: 'booking',
+              entityId: created.id,
+            },
+            tx,
+          );
         }
         return created.id;
       });

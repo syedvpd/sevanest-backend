@@ -40,6 +40,7 @@ export const WorkersErrorCode = {
   PROFILE_INCOMPLETE: 'PROFILE_INCOMPLETE',
   MOBILE_IN_USE: 'MOBILE_IN_USE',
   EMERGENCY_CONTACT_NOT_FOUND: 'EMERGENCY_CONTACT_NOT_FOUND',
+  PHOTO_REQUIRED: 'PHOTO_REQUIRED',
   REASON_REQUIRED: 'REASON_REQUIRED',
 } as const;
 
@@ -274,6 +275,15 @@ export class WorkersService {
       const worker = (await this.repository.findById(ref.workerId, tx))!;
       if (worker.onboardingStatus === 'SUBMITTED') {
         return worker;
+      }
+      // FM-04 / DEC-10: no verification without a confirmed profile photo.
+      if (this.config.profilePhotoRequired && !worker.hasProfilePhoto) {
+        throw new DomainException(
+          WorkersErrorCode.PHOTO_REQUIRED,
+          'Upload and confirm a profile photo before submitting your profile',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          [{ field: 'profile', messages: ['profilePhoto'] }],
+        );
       }
       const missing = await this.missingForSubmission(worker);
       if (missing.length > 0) {
@@ -723,6 +733,7 @@ export class WorkersService {
     if (worker.categoryIds.length === 0) own.push('categories');
     if (worker.languages.length === 0) own.push('languages');
     if (worker.experienceMonths === null) own.push('experience');
+    if (this.config.profilePhotoRequired && !worker.hasProfilePhoto) own.push('profilePhoto');
     return [...own, ...(await this.registry.missingFor(worker.id))];
   }
 

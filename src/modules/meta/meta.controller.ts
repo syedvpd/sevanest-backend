@@ -110,7 +110,12 @@ export class RatingTagView {
 
 export class ReferenceDataView {
   @ApiProperty({ type: [String] }) engagements!: string[];
-  @ApiProperty({ type: [String] }) budgetPeriods!: string[];
+  @ApiProperty({
+    type: [String],
+    description:
+      'MONTH is the monthly budget (DEC-07): a monthly driver or cook is FULL_TIME or PART_TIME with budgetPeriod MONTH. MONTHLY is accepted on input as an alias.',
+  })
+  budgetPeriods!: string[];
   @ApiProperty({ type: [String] }) reportReasons!: string[];
   @ApiProperty({ type: [String] }) ticketPriorities!: string[];
   @ApiProperty({

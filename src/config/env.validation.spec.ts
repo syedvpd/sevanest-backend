@@ -48,6 +48,15 @@ describe('validateEnvironment', () => {
     expect(env.TRUST_PROXY_HOPS).toBe(0);
   });
 
+  it('turns the profile photo on by default (DEC-10)', () => {
+    const env = validateEnvironment(valid);
+    expect(env.PROFILE_PHOTO_MAX_BYTES).toBe(5_242_880);
+    expect(env.PROFILE_PHOTO_REQUIRED).toBe(true);
+    expect(
+      validateEnvironment({ ...valid, PROFILE_PHOTO_REQUIRED: 'false' }).PROFILE_PHOTO_REQUIRED,
+    ).toBe(false);
+  });
+
   describe('operational timers (DEC-01/02/03)', () => {
     it('are ON by default', () => {
       const env = validateEnvironment(valid);

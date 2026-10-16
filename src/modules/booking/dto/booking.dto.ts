@@ -141,9 +141,11 @@ export class CreateBookingDto {
 
   @ApiPropertyOptional({
     enum: BUDGET_PERIODS,
-    description: 'What the budget is per. A label only: matching does not compare budgets (Q-39).',
+    description:
+      'What the budget is per. A label only: matching does not compare budgets (Q-39). A "monthly driver/cook" (DEC-07) is FULL_TIME or PART_TIME with budgetPeriod MONTH; MONTHLY is accepted as an alias and stored as MONTH.',
   })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (value === 'MONTHLY' ? 'MONTH' : value))
   @IsIn(BUDGET_PERIODS)
   budgetPeriod?: (typeof BUDGET_PERIODS)[number];
 

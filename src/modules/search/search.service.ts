@@ -68,7 +68,7 @@ export class SearchService {
   async searchForCustomer(
     query: SearchWorkersQuery,
     customerUserId?: string,
-  ): Promise<Page<WorkerCard>> {
+  ): Promise<Page<WorkerCard> & { canRequestAdminMatching: boolean }> {
     const resolved = await this.resolve(query);
     const { items, total } = await this.eligiblePage(
       resolved,
@@ -80,6 +80,8 @@ export class SearchService {
     return {
       data: await this.decorate(items),
       meta: { page: query.page, limit: query.limit, total },
+      // FM-03: no worker matches, so the customer may ask staff to find one (POST /bookings without a workerId).
+      canRequestAdminMatching: total === 0,
     };
   }
 
