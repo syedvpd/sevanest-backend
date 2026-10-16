@@ -59,6 +59,13 @@ export enum MessagingProviderKind {
   Fcm = 'fcm',
 }
 
+/** Maps (DEC-18): geocoding of saved addresses. Off by default; `memory` is for tests and refused in production and staging. */
+export enum MapsProviderKind {
+  Memory = 'memory',
+  Disabled = 'disabled',
+  Google = 'google',
+}
+
 /** E-mail channel (DEC-17). Off unless brevo is configured; `memory` is for tests and refused in production and staging. */
 export enum EmailProviderKind {
   Memory = 'memory',
@@ -392,6 +399,16 @@ export class EnvironmentVariables {
 
   @IsEnum(WhatsAppProviderKind)
   WHATSAPP_PROVIDER!: WhatsAppProviderKind;
+
+  /** DEC-18: geocoding of customer and worker addresses on save. Default disabled: addresses are saved without coordinates. */
+  @IsOptional()
+  @IsEnum(MapsProviderKind)
+  MAPS_PROVIDER: MapsProviderKind = MapsProviderKind.Disabled;
+
+  @ValidateIf((o: EnvironmentVariables) => o.MAPS_PROVIDER === MapsProviderKind.Google)
+  @IsString()
+  @MinLength(10)
+  GOOGLE_MAPS_API_KEY?: string;
 
   /** DEC-17: e-mail channel. Default disabled: nothing is sent until brevo + credentials are set. */
   @IsOptional()
@@ -938,6 +955,11 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     if (config.PAYMENT_PROVIDER === PaymentProviderKind.Fake) {
       throw new Error(
         'Invalid environment configuration: PAYMENT_PROVIDER=fake is not allowed in production',
+      );
+    }
+    if (config.MAPS_PROVIDER === MapsProviderKind.Memory) {
+      throw new Error(
+        'Invalid environment configuration: MAPS_PROVIDER=memory is not allowed in production or staging',
       );
     }
     if (config.EMAIL_PROVIDER === EmailProviderKind.Memory) {

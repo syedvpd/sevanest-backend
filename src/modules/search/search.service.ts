@@ -38,6 +38,9 @@ export interface RequirementInput {
   language?: string;
   minExperienceMonths?: number;
   minRating?: number;
+  /** DISTANCE_ASC: where the job is (both or neither). */
+  latitude?: number;
+  longitude?: number;
   /** Internal: the customer the search is for (block exclusion). Never taken from a client. */
   forCustomerUserId?: string;
   excludeWorkerId?: string;
@@ -69,6 +72,12 @@ export class SearchService {
     query: SearchWorkersQuery,
     customerUserId?: string,
   ): Promise<Page<WorkerCard> & { canRequestAdminMatching: boolean }> {
+    if (
+      query.sort === 'DISTANCE_ASC' &&
+      (query.latitude === undefined || query.longitude === undefined)
+    ) {
+      throw this.invalid('latitude', 'sort=DISTANCE_ASC needs latitude and longitude');
+    }
     const resolved = await this.resolve(query);
     const { items, total } = await this.eligiblePage(
       resolved,
@@ -290,6 +299,9 @@ export class SearchService {
       minRating: input.minRating,
       forCustomerUserId: input.forCustomerUserId,
       excludeWorkerId: input.excludeWorkerId,
+      ...(input.latitude !== undefined && input.longitude !== undefined
+        ? { origin: { latitude: input.latitude, longitude: input.longitude } }
+        : {}),
     };
   }
 

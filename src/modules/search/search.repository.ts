@@ -20,7 +20,21 @@ const ORDER_BY: Record<EligibleOrder, Prisma.Sql> = {
   EXPERIENCE_ASC: Prisma.sql`wp.experience_months ASC NULLS LAST, wp.id ASC`,
   RATING_DESC: Prisma.sql`(SELECT rs.rating_sum::float8 / NULLIF(rs.rating_count, 0) FROM worker_rating_summaries rs WHERE rs.worker_id = wp.id) DESC NULLS LAST, wp.experience_months DESC NULLS LAST, wp.id ASC`,
   SUBMITTED_ASC: Prisma.sql`wp.submitted_at ASC, wp.id ASC`,
+  // Replaced by distanceOrder() when an origin is known; without one it falls back to a stable order.
+  DISTANCE_ASC: Prisma.sql`wp.id ASC`,
 };
+
+/** Great-circle distance (haversine, metres) from an origin to the worker's approximate address point; unknown locations sort last. */
+function distanceOrder(origin: { latitude: number; longitude: number }): Prisma.Sql {
+  const lat = origin.latitude;
+  const lng = origin.longitude;
+  return Prisma.sql`(wp.address_latitude IS NULL) ASC,
+    2 * 6371000 * asin(sqrt(least(1,
+      power(sin(radians(wp.address_latitude - ${lat}::float8) / 2), 2)
+      + cos(radians(${lat}::float8)) * cos(radians(wp.address_latitude))
+        * power(sin(radians(wp.address_longitude - ${lng}::float8) / 2), 2)))) ASC,
+    wp.id ASC`;
+}
 
 /**
  * Read side of the workforce. Search is a deliberate READ-ONLY query module: it answers "who is eligible" with one
@@ -55,7 +69,7 @@ export class SearchRepository {
       JOIN users u ON u.id = wp.user_id
       LEFT JOIN worker_work_preferences wpref ON wpref.worker_id = wp.id
       WHERE ${where}
-      ORDER BY ${ORDER_BY[order]}
+      ORDER BY ${order === 'DISTANCE_ASC' && criteria.origin ? distanceOrder(criteria.origin) : ORDER_BY[order]}
       LIMIT ${take} OFFSET ${skip}`);
     let total = rows[0]?.total ?? 0;
     if (rows.length === 0 && skip > 0) {

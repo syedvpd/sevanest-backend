@@ -28,12 +28,20 @@ export interface EligibleWorkerCriteria {
   excludeBookingId?: string;
   /** The customer asking: workers blocked by (or blocking) this user are never eligible for them. */
   forCustomerUserId?: string;
+  /** Where distance is measured from; only used with the DISTANCE_ASC order. */
+  origin?: { latitude: number; longitude: number };
 }
 
 /**
  * Orderings are stable (the id breaks every tie). None of them is a relevance score: no ranking is defined by the specs (Q-46).
  */
-export type EligibleOrder = 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' | 'RATING_DESC' | 'SUBMITTED_ASC';
+export type EligibleOrder =
+  | 'EXPERIENCE_DESC'
+  | 'EXPERIENCE_ASC'
+  | 'RATING_DESC'
+  | 'SUBMITTED_ASC'
+  /** Nearest first from `origin`; workers without a known location come last (DEC-18). */
+  | 'DISTANCE_ASC';
 
 export interface EligibleWorker {
   id: string;

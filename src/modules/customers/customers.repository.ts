@@ -289,6 +289,20 @@ export class CustomersRepository {
     );
   }
 
+  /** Fills the map location of an active address of this customer. Returns null when the address is gone. */
+  async setAddressCoordinates(
+    customerId: string,
+    addressId: string,
+    point: { latitude: number; longitude: number },
+  ): Promise<AddressRecord | null> {
+    const result = await this.prisma.customerAddress.updateMany({
+      where: { id: addressId, customerId, isActive: true },
+      data: { latitude: point.latitude, longitude: point.longitude },
+    });
+    if (result.count === 0) return null;
+    return this.findActiveAddress(customerId, addressId);
+  }
+
   async clearDefault(customerId: string, tx: Prisma.TransactionClient): Promise<void> {
     await tx.customerAddress.updateMany({
       where: { customerId, isDefault: true },

@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './common/audit/audit.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
+import { MapsModule } from './integrations/maps/maps.module';
 import { RetentionRegistryModule } from './common/retention/retention.registry';
 import { RetentionModule } from './modules/retention/retention.module';
 import { RetentionWorkerModule } from './modules/retention/retention.worker';
@@ -93,6 +94,7 @@ const embeddedWorkers =
     AuditModule,
     OutboxModule,
     RetentionRegistryModule,
+    MapsModule,
     IdempotencyModule,
     UsersModule,
     AlertsModule,

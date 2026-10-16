@@ -1,4 +1,5 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { MAPS_PROVIDER, type MapsProvider } from '../../integrations/maps/maps-provider.interface';
 import type { Prisma } from '../../generated/prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
@@ -72,6 +73,8 @@ export interface WorkerRef {
  */
 @Injectable()
 export class WorkersService {
+  private readonly logger = new Logger(WorkersService.name);
+
   constructor(
     private readonly repository: WorkersRepository,
     private readonly categories: ServiceCategoriesService,
@@ -80,6 +83,7 @@ export class WorkersService {
     private readonly config: AppConfigService,
     private readonly registry: WorkerSubmissionRegistry,
     private readonly blacklistHooks: WorkerBlacklistHooks,
+    @Inject(MAPS_PROVIDER) private readonly maps: MapsProvider,
   ) {}
 
   // --- contract for other modules ---------------------------------------------------------------------------
@@ -662,7 +666,7 @@ export class WorkersService {
         assertLanguageSupported(language, this.config.supportedLanguages, 'languages');
       }
     }
-    const updated = await this.repository.transaction(async (tx) => {
+    const committed = await this.repository.transaction(async (tx) => {
       if (!(await this.repository.lock(workerId, tx))) {
         throw this.workerNotFound();
       }
@@ -686,7 +690,36 @@ export class WorkersService {
       );
       return (await this.repository.findById(workerId, tx))!;
     });
-    return this.toProfileView(updated, await this.users.findById(updated.userId));
+    if (dto.address) await this.geocodeAddress(workerId, dto.address);
+    return this.toProfileView(committed, await this.users.findById(committed.userId));
+  }
+
+  /**
+   * DEC-18: the worker's address is geocoded after the commit and stored as an APPROXIMATE point (rounded to 2 decimals, about 1 km), only
+   * used to order search results by distance and never returned by any API. A provider problem never blocks the save.
+   */
+  private async geocodeAddress(
+    workerId: string,
+    address: { line: string; area: string; city: string; pincode: string },
+  ): Promise<void> {
+    try {
+      const point = await this.maps.geocode(
+        `${address.line}, ${address.area}, ${address.city}, ${address.pincode}, India`,
+      );
+      if (!point) return;
+      await this.repository.transaction(async (tx) => {
+        await this.repository.updateScalars(
+          workerId,
+          {
+            addressLatitude: Math.round(point.latitude * 100) / 100,
+            addressLongitude: Math.round(point.longitude * 100) / 100,
+          },
+          tx,
+        );
+      });
+    } catch (error) {
+      this.logger.warn(`Worker address saved without a map location: ${(error as Error).message}`);
+    }
   }
 
   private async setCategories(
@@ -811,6 +844,9 @@ function scalarUpdate(dto: UpdateWorkerProfileDto): ProfileScalarUpdate {
     data.addressArea = dto.address.area;
     data.addressCity = dto.address.city;
     data.addressPincode = dto.address.pincode;
+    // A new address invalidates the old location; it is geocoded again after the commit (DEC-18).
+    data.addressLatitude = null;
+    data.addressLongitude = null;
   }
   if (dto.emergencyContact) {
     data.emergencyContactName = dto.emergencyContact.name;

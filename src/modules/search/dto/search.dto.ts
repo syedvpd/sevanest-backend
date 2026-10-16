@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
 import { LANGUAGE_CODE } from '../../../common/validation/language';
 import { TIME_OF_DAY } from '../../availability/domain/time-windows';
@@ -74,14 +84,34 @@ export class SearchWorkersQuery extends PageQueryDto {
   minRating?: number;
 
   @ApiPropertyOptional({
-    enum: ['EXPERIENCE_DESC', 'EXPERIENCE_ASC', 'RATING_DESC'],
+    enum: ['EXPERIENCE_DESC', 'EXPERIENCE_ASC', 'RATING_DESC', 'DISTANCE_ASC'],
     default: 'EXPERIENCE_DESC',
     description:
-      'A stable ordering by the stated attribute, not a relevance ranking (none is defined). Unknown values are rejected (400).',
+      'A stable ordering by the stated attribute, not a relevance ranking (none is defined). DISTANCE_ASC needs latitude and longitude (the job location) and lists the nearest workers first, using an approximate home location (about 1 km); workers without a known location come last. Unknown values are rejected (400).',
   })
   @IsOptional()
-  @IsIn(['EXPERIENCE_DESC', 'EXPERIENCE_ASC', 'RATING_DESC'])
-  sort: 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' | 'RATING_DESC' = 'EXPERIENCE_DESC';
+  @IsIn(['EXPERIENCE_DESC', 'EXPERIENCE_ASC', 'RATING_DESC', 'DISTANCE_ASC'])
+  sort: 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' | 'RATING_DESC' | 'DISTANCE_ASC' = 'EXPERIENCE_DESC';
+
+  @ApiPropertyOptional({
+    minimum: -90,
+    maximum: 90,
+    description: 'With sort=DISTANCE_ASC: where the job is.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @ApiPropertyOptional({ minimum: -180, maximum: 180 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
 }
 
 export class CategoryRefView {

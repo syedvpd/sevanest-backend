@@ -7,6 +7,7 @@ import {
   WhatsAppProviderKind,
   AppEnv,
   EmailProviderKind,
+  MapsProviderKind,
   NodeEnv,
   PaymentProviderKind,
   SmsProviderKind,
@@ -371,6 +372,13 @@ export class AppConfigService {
       maxBytes: this.get('PROFILE_PHOTO_MAX_BYTES'),
       signedUrlTtlSeconds: this.get('SIGNED_URL_TTL_SECONDS'),
     };
+  }
+  get mapsProvider(): MapsProviderKind {
+    return this.get('MAPS_PROVIDER');
+  }
+  /** Google Geocoding settings; only meaningful with MAPS_PROVIDER=google (validation guarantees the key then). */
+  get googleMaps(): { apiKey: string; timeoutMs: number } {
+    return { apiKey: this.get('GOOGLE_MAPS_API_KEY') ?? '', timeoutMs: this.providerHttpTimeoutMs };
   }
   get emailProvider(): EmailProviderKind {
     return this.get('EMAIL_PROVIDER');

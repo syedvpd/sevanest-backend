@@ -138,6 +138,8 @@ export type ProfileScalarUpdate = Partial<
     | 'addressArea'
     | 'addressCity'
     | 'addressPincode'
+    | 'addressLatitude'
+    | 'addressLongitude'
     | 'emergencyContactName'
     | 'emergencyContactMobile'
     | 'previousEmployerName'

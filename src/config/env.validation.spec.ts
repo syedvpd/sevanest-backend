@@ -88,6 +88,25 @@ describe('validateEnvironment', () => {
     });
   });
 
+  describe('maps (DEC-18)', () => {
+    it('is disabled by default and google needs a key', () => {
+      expect(validateEnvironment(valid).MAPS_PROVIDER).toBe('disabled');
+      expect(() => validateEnvironment({ ...valid, MAPS_PROVIDER: 'google' })).toThrow(
+        'GOOGLE_MAPS_API_KEY',
+      );
+      expect(
+        validateEnvironment({
+          ...valid,
+          MAPS_PROVIDER: 'google',
+          GOOGLE_MAPS_API_KEY: 'k'.repeat(20),
+        }).MAPS_PROVIDER,
+      ).toBe('google');
+      expect(() => validateEnvironment({ ...valid, MAPS_PROVIDER: 'mapbox' })).toThrow(
+        'MAPS_PROVIDER',
+      );
+    });
+  });
+
   describe('operational timers (DEC-01/02/03)', () => {
     it('are ON by default', () => {
       const env = validateEnvironment(valid);
@@ -464,6 +483,7 @@ describe('validateEnvironment', () => {
         ['PUSH_PROVIDER', 'memory'],
         ['WHATSAPP_PROVIDER', 'memory'],
         ['EMAIL_PROVIDER', 'memory'],
+        ['MAPS_PROVIDER', 'memory'],
       ])('refuses %s=%s', (key, value) => {
         expect(() => validateEnvironment({ ...staging, [key]: value })).toThrow();
       });

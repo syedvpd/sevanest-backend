@@ -1,4 +1,5 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { MAPS_PROVIDER, type MapsProvider } from '../../integrations/maps/maps-provider.interface';
 import { assertIfMatch } from '../../common/concurrency/if-match';
 import { AppConfigService } from '../../config/app-config.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -55,7 +56,10 @@ export class CustomerAddressesService {
     private readonly repository: CustomersRepository,
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
+    @Inject(MAPS_PROVIDER) private readonly maps: MapsProvider,
   ) {}
+
+  private readonly logger = new Logger(CustomerAddressesService.name);
 
   async list(userId: string): Promise<AddressResponse[]> {
     const profile = await this.requireProfile(userId);
@@ -71,8 +75,38 @@ export class CustomerAddressesService {
     return toAddressView(address);
   }
 
+  /**
+   * DEC-18: when the saved address has no map location (the customer sent none), it is geocoded AFTER the commit. A location that exists
+   * (a pin the customer set, or an earlier lookup) is never replaced behind their back; send new coordinates, or null to clear it. A provider that is off, slow,
+   * failing or finds nothing never blocks or delays the save beyond its timeout: the address simply stays without coordinates.
+   */
+  private async withGeocode(userId: string, saved: AddressResponse): Promise<AddressResponse> {
+    if (saved.latitude !== null) return saved;
+    try {
+      const text = [saved.line, saved.line2, saved.area, saved.city, saved.pincode, 'India']
+        .filter(Boolean)
+        .join(', ');
+      const point = await this.maps.geocode(text);
+      if (!point) return saved;
+      const profile = await this.requireProfile(userId);
+      const updated = await this.repository.setAddressCoordinates(profile.id, saved.id, {
+        latitude: Math.round(point.latitude * 1e6) / 1e6,
+        longitude: Math.round(point.longitude * 1e6) / 1e6,
+      });
+      return updated ? toAddressView(updated) : saved;
+    } catch (error) {
+      this.logger.warn(`Address saved without a map location: ${(error as Error).message}`);
+      return saved;
+    }
+  }
+
   async create(userId: string, dto: CreateAddressDto): Promise<AddressResponse> {
     assertCoordinatePair(dto.latitude, dto.longitude);
+    const saved = await this.createSaved(userId, dto);
+    return dto.latitude == null ? this.withGeocode(userId, saved) : saved;
+  }
+
+  private async createSaved(userId: string, dto: CreateAddressDto): Promise<AddressResponse> {
     return this.mutate(userId, async (tx, customerId) => {
       const wantsDefault = dto.isDefault === true;
       if (wantsDefault) {
@@ -110,6 +144,21 @@ export class CustomerAddressesService {
   }
 
   async update(
+    userId: string,
+    addressId: string,
+    dto: UpdateAddressDto,
+    ifMatch?: string,
+  ): Promise<AddressResponse> {
+    const saved = await this.updateSaved(userId, addressId, dto, ifMatch);
+    const textChanged = ['line', 'line2', 'area', 'city', 'pincode'].some(
+      (key) => (dto as Record<string, unknown>)[key] !== undefined,
+    );
+    return textChanged && dto.latitude === undefined && dto.longitude === undefined
+      ? this.withGeocode(userId, saved)
+      : saved;
+  }
+
+  private async updateSaved(
     userId: string,
     addressId: string,
     dto: UpdateAddressDto,

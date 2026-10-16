@@ -401,6 +401,10 @@ model WorkerProfile {
   blacklistedAt          DateTime?              @map("blacklisted_at") @db.Timestamptz(6)
   blacklistReason        String?                @map("blacklist_reason")
   blacklistedByUserId    String?                @map("blacklisted_by_user_id") @db.Uuid
+  /// DEC-18: approximate location of the worker's home address (rounded to 2 decimals, about 1 km) used only to order search results by
+  /// distance. Never returned by any API. Null when the address is unknown or could not be geocoded.
+  addressLatitude        Float?                 @map("address_latitude")
+  addressLongitude       Float?                 @map("address_longitude")
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
