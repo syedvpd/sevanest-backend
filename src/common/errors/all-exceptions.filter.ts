@@ -62,7 +62,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, body } = this.map(exception);
     body.requestId = requestId;
 
-    if (status >= 500) {
+    if (status === 503 && exception instanceof HttpException) {
+      // A provider outage or a dependency we deliberately answer 503 for (SMS, payment gateway, storage) is an expected, handled state:
+      // one warning line with the stable code, not an error with a stack trace for every affected request.
+      this.logger.warn({ msg: 'Service unavailable (handled)', requestId, code: body.code });
+    } else if (status >= 500) {
       reportError(exception, requestId ? { requestId } : undefined);
       this.logger.error(
         {

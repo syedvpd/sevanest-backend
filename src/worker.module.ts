@@ -10,6 +10,8 @@ import { QueueModule } from './infrastructure/queue/queue.module';
 import { NotificationsWorkerModule } from './modules/notifications/notifications.worker';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
+import { SecurityEventsWorkerModule } from './common/audit/security-events.worker';
+import { MapsModule } from './integrations/maps/maps.module';
 import { RetentionRegistryModule } from './common/retention/retention.registry';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
@@ -49,6 +51,8 @@ import { VerificationWorkerModule } from './modules/verification/verification.wo
     WorkerPhotoModule,
     CustomerPhotoModule,
     RetentionWorkerModule,
+    SecurityEventsWorkerModule,
+    MapsModule,
     NotificationsWorkerModule,
     VerificationWorkerModule,
     PaymentWorkerModule,

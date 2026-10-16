@@ -40,6 +40,23 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('logs a handled 503 (provider outage) as one warning, not as an error with a stack', () => {
+    const { status, body, logger } = run(
+      new DomainException(
+        'SMS_DELIVERY_FAILED',
+        'We could not send the OTP',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      ),
+    );
+    expect(status).toHaveBeenCalledWith(503);
+    expect(body).toMatchObject({ code: 'SMS_DELIVERY_FAILED' });
+    expect(logger.error).not.toHaveBeenCalled();
+    expect((logger as unknown as { warn: jest.Mock }).warn).toHaveBeenCalledTimes(1);
+    expect((logger as unknown as { warn: jest.Mock }).warn.mock.calls[0][0]).toMatchObject({
+      code: 'SMS_DELIVERY_FAILED',
+    });
+  });
+
   it('does not leak framework/parser messages from plain HttpExceptions', () => {
     const { body } = run(new BadRequestException('Unexpected token } in JSON at position 1'));
     expect(body).toMatchObject({ code: ErrorCode.BAD_REQUEST, message: 'Invalid request' });

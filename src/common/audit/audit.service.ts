@@ -73,6 +73,20 @@ export class AuditService {
     };
   }
 
+  /** Keyset page for the audit viewer (see AuditRepository.searchAfter); metadata is redacted again on the way out. */
+  async searchAfter(
+    filter: AuditSearchFilter,
+    cursor: { createdAt: Date; id: string } | null,
+    take: number,
+  ): Promise<{ items: AuditLogRecord[]; hasMore: boolean }> {
+    const rows = await this.repository.searchAfter(filter, cursor, take);
+    const items = rows.slice(0, take).map((row) => ({
+      ...row,
+      metadata: row.metadata === null ? null : (redactSensitive(row.metadata) as Prisma.JsonValue),
+    }));
+    return { items, hasMore: rows.length > take };
+  }
+
   /**
    * Appends an audit record (actor, role, action, entity, record, timestamp, metadata; PRD §12, FR-SEC-008).
    * Call inside the business transaction and pass `tx` so the record cannot exist without the change, or vice versa.

@@ -8,6 +8,13 @@ What rebuilds what:
 | **Real data** (users, workers, bookings, payments, ratings, audit) | a **backup** (`scripts/db/backup.sh`) restored with `scripts/db/restore.sh` | everything exactly as it was |
 Migrations and seeds can NOT recreate real customers, workers or bookings: that data exists only in a database backup. Take backups regularly.
 
+## 0. Migration naming and immutability (DEC-13, enforced in CI)
+- Prisma applies migrations in **name order** (the leading timestamp). Some existing directories carry timestamps later than their real date. They are **not renamed**: a database that already ran them would fail `migrate deploy` if their names changed.
+- A **new** migration must be named with a timestamp **later than the newest existing directory** (not today's date if that sorts earlier), e.g. `ls prisma/migrations | tail -2`, then pick the next one.
+- A migration that is already on `main` is **never edited, renamed or deleted**. Fix a mistake with a new migration.
+- Migrations are additive and backward compatible (new nullable column, new table, new enum value, new index); reverse them with a later migration.
+- CI runs `npm run check:migrations` (`MIGRATION_BASE_REF`, default `origin/main`): it fails when a new directory sorts before the newest one on the base branch, or when a base migration is touched. Locally: `git fetch origin main && npm run build && npm run check:migrations`.
+
 ## 1. Back up (do this on a schedule, and before every deploy with a migration)
 ```bash
 SOURCE_DATABASE_URL='postgresql://...supabase direct URL, port 5432...' ./scripts/db/backup.sh

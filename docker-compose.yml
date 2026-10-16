@@ -102,7 +102,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-sevanest}:${POSTGRES_PASSWORD:-sevanest-local}@postgres:5432/${POSTGRES_DB:-sevanest}?schema=public
       REDIS_URL: redis://redis:6379
     healthcheck:
-      disable: true # no HTTP server in the worker; the image HEALTHCHECK targets the API
+      # No HTTP server in the worker: the probe checks the heartbeat the notification loop keeps in Redis (WP-13).
+      test: ['CMD', 'node', 'dist/worker-healthcheck.js']
+      interval: 30s
+      timeout: 6s
+      start_period: 40s
+      retries: 3
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

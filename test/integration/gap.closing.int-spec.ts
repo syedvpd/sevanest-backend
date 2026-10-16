@@ -1255,6 +1255,7 @@ describe('Gap closing (integration)', () => {
         'booking-checks',
         'support-sla',
         'retention',
+        'security-events',
       ]) {
         await heartbeat.beat(loop);
       }

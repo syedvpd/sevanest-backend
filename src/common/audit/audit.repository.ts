@@ -33,12 +33,55 @@ export class AuditRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Newest-first, deterministic (created_at, id). Every filter is a column that has an index. */
+  /**
+   * Keyset page: the entries strictly older than the cursor (createdAt, id), newest first. No count and no OFFSET, so it costs the same on
+   * page 1 and page 10 000 and cannot skip or repeat rows while new entries arrive. Returns one extra row to tell whether more exist.
+   */
+  async searchAfter(
+    filter: AuditSearchFilter,
+    cursor: { createdAt: Date; id: string } | null,
+    take: number,
+  ): Promise<AuditLogRecord[]> {
+    const where = this.where(filter);
+    return this.prisma.auditLog.findMany({
+      where: cursor
+        ? {
+            AND: [
+              where,
+              {
+                OR: [
+                  { createdAt: { lt: cursor.createdAt } },
+                  { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+                ],
+              },
+            ],
+          }
+        : where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+    });
+  }
+
   async search(
     filter: AuditSearchFilter,
     skip: number,
     take: number,
   ): Promise<{ items: AuditLogRecord[]; total: number }> {
-    const where: Prisma.AuditLogWhereInput = {
+    const where = this.where(filter);
+    const [items, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+    return { items, total };
+  }
+
+  private where(filter: AuditSearchFilter): Prisma.AuditLogWhereInput {
+    return {
       ...(filter.action ? { action: filter.action } : {}),
       ...(filter.actionPrefix ? { action: { startsWith: filter.actionPrefix } } : {}),
       ...(filter.entityType ? { entityType: filter.entityType } : {}),
@@ -54,16 +97,6 @@ export class AuditRepository {
           }
         : {}),
     };
-    const [items, total] = await Promise.all([
-      this.prisma.auditLog.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip,
-        take,
-      }),
-      this.prisma.auditLog.count({ where }),
-    ]);
-    return { items, total };
   }
 
   async insert(data: Prisma.AuditLogUncheckedCreateInput, tx?: AuditTransaction): Promise<void> {

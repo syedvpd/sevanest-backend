@@ -35,6 +35,8 @@ const ANY_SIGNED_IN_ROUTES = [
   'GET /api/v1/auth/sessions',
   'DELETE /api/v1/auth/sessions/:sessionId',
   'GET /api/v1/users/me',
+  'GET /api/v1/users/me/notification-preferences',
+  'PUT /api/v1/users/me/notification-preferences',
   'GET /api/v1/service-areas',
   'GET /api/v1/service-areas/:areaId',
   'GET /api/v1/service-categories',

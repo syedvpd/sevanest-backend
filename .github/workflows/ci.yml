@@ -71,6 +71,8 @@ jobs:
       LOG_LEVEL: silent
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the migration-order guard compares with origin/main
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -83,6 +85,10 @@ jobs:
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm run build
+      - name: Migration order guard (a new migration must sort after the newest one on main; applied ones are never edited)
+        run: npm run check:migrations
+        env:
+          MIGRATION_BASE_REF: origin/main
       - run: npm test
       - run: npm run test:e2e
       - run: npm run test:integration
