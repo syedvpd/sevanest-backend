@@ -305,9 +305,10 @@ export class BookingRepository {
   /** MATCHED opportunities whose response deadline has passed without an answer. */
   async findNoResponse(
     limit: number,
+    respondByBefore: Date = new Date(),
   ): Promise<Array<{ id: string; workerId: string | null; respondBy: Date }>> {
     const rows = await this.prisma.booking.findMany({
-      where: { status: 'MATCHED', workerRespondedAt: null, respondBy: { lt: new Date() } },
+      where: { status: 'MATCHED', workerRespondedAt: null, respondBy: { lt: respondByBefore } },
       select: { id: true, workerId: true, respondBy: true },
       orderBy: { respondBy: 'asc' },
       take: limit,

@@ -339,6 +339,57 @@ describe('Gap closing (integration)', () => {
       );
     });
 
+    it('returns the booking to matching when the worker stays silent past WORKER_REASSIGN_HOURS (decline-equivalent, audited, once)', async () => {
+      const worker = await verifiedWorker();
+      const id = (await create(requirement({ workerId: worker.workerId }))).body.id as string;
+      const sweep = api.app.get(BookingSweepService);
+      // Overdue for the alert but not yet for the reassignment (respond-by + 22h = 24h after the match).
+      await api.prisma.booking.update({
+        where: { id },
+        data: { respondBy: new Date(Date.now() - 3 * 3_600_000) },
+      });
+      expect((await sweep.runOnce()).reassigned).toBe(0);
+      expect((await api.prisma.booking.findUniqueOrThrow({ where: { id } })).workerId).toBe(
+        worker.workerId,
+      );
+      await api.prisma.booking.update({
+        where: { id },
+        data: { respondBy: new Date(Date.now() - 23 * 3_600_000) },
+      });
+      expect((await sweep.runOnce()).reassigned).toBe(1);
+      expect((await sweep.runOnce()).reassigned).toBe(0); // repeating changes nothing
+      const after = await api.prisma.booking.findUniqueOrThrow({ where: { id } });
+      expect(after).toMatchObject({
+        status: 'NEW_REQUEST',
+        workerId: null,
+        respondBy: null,
+        workerRespondedAt: null,
+      });
+      expect(
+        await api.prisma.auditLog.count({
+          where: { entityId: id, action: 'booking.auto_reassign' },
+        }),
+      ).toBe(1);
+      expect(await events('bookingId', id)).toContain('WORKER_DECLINED');
+      const alerts = await alertsOf(id);
+      expect(alerts.find((a) => a.type === 'BOOKING_NEEDS_MATCH')).toMatchObject({
+        status: 'OPEN',
+      });
+      expect(alerts.find((a) => a.type === 'BOOKING_NO_RESPONSE')?.status).toBe('RESOLVED');
+      // A worker who answered in time is never reassigned.
+      const answered = await verifiedWorker();
+      const keep = (await create(requirement({ workerId: answered.workerId }))).body.id as string;
+      await as(api, answered).post(`${W}/${keep}/accept`).expect(200);
+      await api.prisma.booking.update({
+        where: { id: keep },
+        data: { respondBy: new Date(Date.now() - 48 * 3_600_000) },
+      });
+      await sweep.runOnce();
+      expect((await api.prisma.booking.findUniqueOrThrow({ where: { id: keep } })).workerId).toBe(
+        answered.workerId,
+      );
+    });
+
     it('alerts on a booking stuck in PENDING_PAYMENT, then cancels it through the normal path after the configured time', async () => {
       const stuck = await makeBooking(api, admin, customer, area.id, 'PENDING_PAYMENT');
       const started = await as(api, customer)
@@ -766,7 +817,18 @@ describe('Gap closing (integration)', () => {
       });
       const row = await api.prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
       expect(row.slaBreachedAt).not.toBeNull();
-      expect(row.status).toBe('OPEN'); // flagged, not escalated or reassigned
+      expect(row.status).toBe('ESCALATED'); // DEC-03: escalated automatically, exactly once
+      expect(row.escalatedAt).not.toBeNull();
+      const events = await api.prisma.supportTicketEvent.findMany({
+        where: { ticketId: ticket.id, type: 'ESCALATED' },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0].actorUserId).toBeNull();
+      expect(
+        await api.prisma.auditLog.count({
+          where: { entityId: ticket.id, action: 'ticket.auto_escalate' },
+        }),
+      ).toBe(1);
       const detail = await as(api, support).get(`${A}/support/tickets/${ticket.id}`).expect(200);
       expect(detail.body.slaBreachedAt).not.toBeNull();
       await as(api, support)
@@ -896,8 +958,19 @@ describe('Gap closing (integration)', () => {
       expect(alert).toMatchObject({
         type: 'SAFETY_REPORT',
         severity: 'CRITICAL',
-        requiredPermission: 'support.view',
+        requiredPermission: 'worker.manage',
       });
+      // Operations (worker.manage) sees it; a support-only inbox does not.
+      const supportOnly = await loginAdminWithPermissions(api, ['alert.view', 'support.view']);
+      const seen = (token: typeof supportOnly) =>
+        as(api, token).get(`${A}/alerts?type=SAFETY_REPORT&limit=100`).expect(200);
+      expect(
+        (await seen(supportOnly)).body.data.map((a: { entityId: string }) => a.entityId),
+      ).not.toContain(res.body.id);
+      const ops = await loginAdminWithPermissions(api, ['alert.view', 'worker.manage']);
+      expect((await seen(ops)).body.data.map((a: { entityId: string }) => a.entityId)).toContain(
+        res.body.id,
+      );
       expect(await api.prisma.userBlock.count({ where: { blockerUserId: c.userId } })).toBe(1);
       const audit = await api.prisma.auditLog.findFirstOrThrow({
         where: { entityId: res.body.id, action: 'safety.report' },

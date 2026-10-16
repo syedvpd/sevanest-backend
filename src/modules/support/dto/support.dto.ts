@@ -214,7 +214,12 @@ export class TicketEventView {
 }
 
 export class AdminTicketEventView extends TicketEventView {
-  @ApiProperty() actorUserId!: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Null when the system acted (automatic SLA escalation).',
+  })
+  actorUserId!: string | null;
   @ApiProperty({ nullable: true, type: String }) internalNote!: string | null;
 }
 

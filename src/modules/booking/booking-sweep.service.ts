@@ -9,6 +9,7 @@ export interface BookingSweepRun {
   noResponseAlerts: number;
   stuckPaymentAlerts: number;
   autoCancelled: number;
+  reassigned: number;
   failed: number;
 }
 
@@ -19,6 +20,7 @@ const BATCH = 100;
  * business has not decided the periods (Q-55 worker response, Q-78 unpaid bookings):
  *  - WORKER_RESPONSE_HOURS: a matched worker who has not answered by the deadline raises a BOOKING_NO_RESPONSE alert (nothing is
  *    reassigned automatically);
+ *  - WORKER_REASSIGN_HOURS: a worker who is still silent then loses the booking back to matching (decline-equivalent, audited, DEC-02);
  *  - PENDING_PAYMENT_ALERT_HOURS: a booking waiting for payment that long raises a BOOKING_STUCK_PAYMENT alert;
  *  - PENDING_PAYMENT_AUTO_CANCEL_HOURS: such a booking is cancelled through the normal cancellation path (its payment is closed by
  *    the cancellation hook; a payment that already succeeded is never refunded here).
@@ -40,6 +42,7 @@ export class BookingSweepService {
       noResponseAlerts: 0,
       stuckPaymentAlerts: 0,
       autoCancelled: 0,
+      reassigned: 0,
       failed: 0,
     };
     const ops = this.config.ops;
@@ -61,6 +64,22 @@ export class BookingSweepService {
         } catch (error) {
           run.failed++;
           this.logger.error(`No-response alert failed: ${(error as Error).message}`);
+        }
+      }
+    }
+
+    // Reassign (DEC-02): after WORKER_REASSIGN_HOURS the booking returns to matching. The deadline (respondBy) was set WORKER_RESPONSE_HOURS
+    // after the match, so the booking is overdue by WORKER_REASSIGN_HOURS once respondBy is (reassign - response) hours old.
+    if (ops.workerResponseHours && ops.workerReassignHours > ops.workerResponseHours) {
+      const cutoff = new Date(
+        Date.now() - (ops.workerReassignHours - ops.workerResponseHours) * 3_600_000,
+      );
+      for (const item of await this.repository.findNoResponse(BATCH, cutoff)) {
+        try {
+          if (await this.bookings.autoReassignNoResponse(item.id, cutoff)) run.reassigned++;
+        } catch (error) {
+          run.failed++;
+          this.logger.error(`Auto-reassign failed: ${(error as Error).message}`);
         }
       }
     }

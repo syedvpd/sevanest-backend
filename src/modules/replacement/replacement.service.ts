@@ -1,4 +1,6 @@
 import { HttpStatus, Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { AlertsService } from '../alerts/alerts.service';
+import { PermissionCode } from '../users/rbac.constants';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -59,6 +61,7 @@ export class ReplacementService implements OnModuleInit {
     private readonly workers: WorkersService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly alerts: AlertsService,
     @Inject(REPLACEMENT_POLICY) private readonly policy: ReplacementPolicy,
   ) {}
 
@@ -204,6 +207,7 @@ export class ReplacementService implements OnModuleInit {
       'SUBMITTED_ASC',
       { skip: skipFor({ page, limit }), limit },
     );
+    await this.noteAlternatives(request.id, total);
     const cards = await this.search.getVisibleCards(
       items.map((w) => w.id),
       customerUserId,
@@ -352,6 +356,27 @@ export class ReplacementService implements OnModuleInit {
     return this.adminView((await this.repository.findById(id))!);
   }
 
+  /**
+   * FM-11: when no alternative worker exists the request stays open (nothing changes) and staff are alerted, once per request (dedupe key).
+   * The alert closes itself when an alternative appears.
+   */
+  private async noteAlternatives(requestId: string, found: number): Promise<void> {
+    const dedupeKey = `REPLACEMENT_NO_ALTERNATIVE:${requestId}`;
+    if (found > 0) {
+      await this.alerts.autoResolve(dedupeKey, 'an alternative worker is available');
+      return;
+    }
+    await this.alerts.raise({
+      dedupeKey,
+      type: 'REPLACEMENT_NO_ALTERNATIVE',
+      severity: 'WARNING',
+      title: 'A replacement request has no alternative worker available',
+      requiredPermission: PermissionCode.REPLACEMENT_MANAGE,
+      entityType: 'replacement_request',
+      entityId: requestId,
+    });
+  }
+
   /** Alternative workers for the booking's requirement, never the worker being replaced (FR-REP-005). */
   async candidates(
     id: string,
@@ -362,7 +387,7 @@ export class ReplacementService implements OnModuleInit {
     const request = await this.repository.findById(id);
     if (!request) throw this.notFound();
     const requirement = await this.bookings.getRequirement(request.bookingId);
-    return this.matching.candidatesFor(
+    const result = await this.matching.candidatesFor(
       {
         category: requirement.category,
         areaId: requirement.areaId,
@@ -378,6 +403,8 @@ export class ReplacementService implements OnModuleInit {
         forCustomerUserId: requirement.customerUserId,
       },
     );
+    await this.noteAlternatives(request.id, result.meta.total);
+    return result;
   }
 
   // --- internals --------------------------------------------------------------------------------------------

@@ -41,7 +41,7 @@ export interface StaffActor {
 /**
  * Report and block (PRD 9.1). A BLOCK is symmetric in effect: neither side can be matched with, find, or book the other
  * (enforced in the one eligibility query that Search, Matching, Booking and Replacement share). A REPORT is the reporter's account of
- * an incident: it is stored with a stable reason code, raises a staff alert (support.view holders) and can block at the same time.
+ * an incident: it is stored with a stable reason code, raises a staff alert (worker.manage holders: Operations Admin and Super Admin) and can block at the same time.
  * Both only ever refer to people the reporter has a real relationship with: a worker they can see/book or a booking they are a
  * party to. Staff can apply and lift blocks too (audited); a block applied by staff cannot be lifted by the user.
  */
@@ -140,7 +140,8 @@ export class SafetyService {
           type: 'SAFETY_REPORT',
           severity: dto.reasonCode === 'SAFETY_CONCERN' ? 'CRITICAL' : 'WARNING',
           title: 'A safety report was filed',
-          requiredPermission: PermissionCode.SUPPORT_VIEW,
+          // DEC-03/FM-12: an incident goes to Operations and the Super Admin (worker.manage holders), not to the general support inbox.
+          requiredPermission: PermissionCode.WORKER_MANAGE,
           entityType: 'safety_report',
           entityId: report.id,
           detail: { reasonCode: dto.reasonCode },

@@ -43,7 +43,7 @@ export interface TicketEventRecord {
   type: string;
   fromStatus: TicketStatusValue | null;
   toStatus: TicketStatusValue | null;
-  actorUserId: string;
+  actorUserId: string | null;
   internalNote: string | null;
   createdAt: Date;
 }
@@ -159,7 +159,7 @@ export class SupportRepository {
       type: string;
       fromStatus: TicketStatusValue | null;
       toStatus: TicketStatusValue | null;
-      actorUserId: string;
+      actorUserId: string | null;
       internalNote?: string | null;
     },
     tx: Prisma.TransactionClient,

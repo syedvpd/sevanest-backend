@@ -1198,12 +1198,13 @@ model SupportTicketEvent {
   type         String
   fromStatus   TicketStatus? @map("from_status")
   toStatus     TicketStatus? @map("to_status")
-  actorUserId  String        @map("actor_user_id") @db.Uuid
+  /// Null when the system acted (automatic SLA escalation).
+  actorUserId  String?       @map("actor_user_id") @db.Uuid
   internalNote String?       @map("internal_note")
   createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
-  actor  User          @relation("TicketEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  actor  User?         @relation("TicketEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@index([ticketId, createdAt])
   @@map("support_ticket_events")

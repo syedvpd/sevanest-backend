@@ -130,7 +130,7 @@ export class PaymentService {
       throw new DomainException(
         ErrorCode.VALIDATION_FAILED,
         'Request validation failed',
-        HttpStatus.UNPROCESSABLE_ENTITY,
+        HttpStatus.BAD_REQUEST,
         [
           {
             field: 'amountMinor',

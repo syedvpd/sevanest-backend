@@ -77,6 +77,11 @@ export const DEFAULT_IN_APP_TEMPLATES: ReadonlyArray<{
     body: 'Our team replied to your support request.',
   },
   {
+    event: 'SUPPORT_SLA_BREACH',
+    title: 'A ticket you own missed its resolution target',
+    body: 'A {{priority}} priority support ticket assigned to you passed its target time and was escalated.',
+  },
+  {
     event: 'RECHECK_DUE',
     title: 'Verification re-check due',
     body: 'Your {{checkType}} verification is due for a re-check.',

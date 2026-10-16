@@ -46,6 +46,8 @@ export const NotificationEvent = {
   RATING_RECEIVED: 'RATING_RECEIVED',
   ATTENDANCE_EXCEPTION: 'ATTENDANCE_EXCEPTION',
   TICKET_MESSAGE: 'TICKET_MESSAGE',
+  /** Staff owner of a ticket: its resolution target was missed and it was escalated automatically (DEC-03). */
+  SUPPORT_SLA_BREACH: 'SUPPORT_SLA_BREACH',
   /** Staff (payment.manage): a money problem needs a person. */
   PAYMENT_EXCEPTION_ALERT: 'PAYMENT_EXCEPTION_ALERT',
 } as const;
@@ -83,6 +85,7 @@ export const EVENT_PARAMS: Record<NotificationEventCode, readonly string[]> = {
   RATING_RECEIVED: ['bookingId'],
   ATTENDANCE_EXCEPTION: ['bookingId'],
   TICKET_MESSAGE: ['ticketId'],
+  SUPPORT_SLA_BREACH: ['ticketId', 'priority'],
   PAYMENT_EXCEPTION_ALERT: ['exceptionId', 'kind', 'paymentId'],
 };
 

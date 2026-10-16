@@ -80,8 +80,8 @@ describe('Payment API (integration)', () => {
       }
       // 0 is only for the cancellation fee (DEC-04): a charged fee must stay positive.
       const zero = await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 0 });
-      expect(zero.status).toBe(422);
-      await as(api, manager).put(`${A}/fees/PLACEMENT_FEE`, { amountMinor: 0 }).expect(422);
+      expect(zero.status).toBe(400);
+      await as(api, manager).put(`${A}/fees/PLACEMENT_FEE`, { amountMinor: 0 }).expect(400);
       await as(api, manager).put(`${A}/fees/CANCELLATION_FEE`, { amountMinor: 0 }).expect(200);
       await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 70000 }).expect(200);
       await as(api, manager).put(`${A}/fees/booking-fee`, { amountMinor: 50000 }).expect(200);

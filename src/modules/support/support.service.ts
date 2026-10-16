@@ -342,8 +342,9 @@ export class SupportService {
   // --- scheduled job: SLA -------------------------------------------------------------------------------------
 
   /**
-   * Flags open tickets whose configured resolution target has passed and alerts support staff, once per ticket. It does not
-   * escalate or reassign on its own (no such rule is specified, Q-59). Returns how many tickets were flagged.
+   * Open tickets whose resolution target has passed are flagged once, escalated automatically (OPEN/IN_PROGRESS to ESCALATED, a system
+   * event in the history, audited), and reported: a staff alert to every support.view holder (Support and Operations) and a notice to the
+   * assigned owner. A ticket that is already ESCALATED is flagged and alerted but not escalated twice. Returns how many were flagged.
    */
   async flagSlaBreaches(limit = 100): Promise<number> {
     let flagged = 0;
@@ -351,14 +352,55 @@ export class SupportService {
       await this.repository.transaction(async (tx) => {
         const ticket = await this.repository.lock(item.id, tx);
         if (!ticket || ticket.status === 'CLOSED' || ticket.slaBreachedAt) return;
-        await this.repository.update(ticket.id, { slaBreachedAt: new Date() }, tx);
+        const escalate = ticket.status !== 'ESCALATED';
+        await this.repository.update(
+          ticket.id,
+          escalate
+            ? { slaBreachedAt: new Date(), status: 'ESCALATED', escalatedAt: new Date() }
+            : { slaBreachedAt: new Date() },
+          tx,
+        );
+        if (escalate) {
+          await this.repository.addEvent(
+            {
+              ticketId: ticket.id,
+              type: 'ESCALATED',
+              fromStatus: ticket.status,
+              toStatus: 'ESCALATED',
+              actorUserId: null,
+              internalNote: 'Escalated automatically: the resolution target was missed',
+            },
+            tx,
+          );
+          await this.audit.record(
+            {
+              action: 'ticket.auto_escalate',
+              entityType: 'support_ticket',
+              entityId: ticket.id,
+              actorId: null,
+              metadata: { from: ticket.status, to: 'ESCALATED', reason: 'sla_breach' },
+            },
+            tx,
+          );
+          await this.notifyCreator(ticket, 'ESCALATED', tx);
+        }
+        if (ticket.assignedToUserId) {
+          await this.outbox.notify(
+            {
+              event: NotificationEvent.SUPPORT_SLA_BREACH,
+              recipients: [ticket.assignedToUserId],
+              params: { ticketId: ticket.id, priority: ticket.priority ?? 'unset' },
+            },
+            tx,
+          );
+        }
         await this.alerts.raise(
           {
             dedupeKey: `SUPPORT_SLA_BREACH:${ticket.id}`,
             type: 'SUPPORT_SLA_BREACH',
             severity: ticket.priority === 'HIGH' ? 'CRITICAL' : 'WARNING',
             title: 'A support ticket passed its resolution target',
-            requiredPermission: PermissionCode.SUPPORT_MANAGE,
+            requiredPermission: PermissionCode.SUPPORT_VIEW,
             entityType: 'support_ticket',
             entityId: ticket.id,
             detail: { dueAt: item.dueAt.toISOString(), priority: ticket.priority },

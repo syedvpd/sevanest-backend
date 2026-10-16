@@ -1635,6 +1635,57 @@ export class BookingService {
    * Scheduled job helper: cancels a booking that has waited for payment longer than the configured time. The normal cancellation
    * path runs (payment closed by the cancellation hook, both parties told); nothing is refunded here. false = not eligible any more.
    */
+  /**
+   * DEC-02: a matched worker who still has not answered after WORKER_REASSIGN_HOURS loses the booking back to matching, exactly as if they
+   * had declined it (audited as booking.auto_reassign, customer told, staff alerted to find another worker). Safe to repeat: a booking that is no
+   * longer waiting on that worker is left alone.
+   */
+  async autoReassignNoResponse(bookingId: string, respondByBefore: Date): Promise<boolean> {
+    return this.repository.transaction(async (tx) => {
+      const booking = await this.repository.lock(bookingId, tx);
+      if (
+        !booking ||
+        booking.status !== 'MATCHED' ||
+        booking.workerRespondedAt ||
+        !booking.respondBy ||
+        booking.respondBy >= respondByBefore
+      ) {
+        return false;
+      }
+      const actor: BookingActor = { kind: 'SYSTEM', userId: null };
+      await this.interviews.cancelOpen(booking.id, 'the worker did not respond in time', tx);
+      await this.move(
+        booking,
+        { status: 'NEW_REQUEST', workerId: null, workerRespondedAt: null, respondBy: null },
+        actor,
+        tx,
+        { action: 'booking.auto_reassign', note: 'The matched worker did not respond in time' },
+      );
+      await this.outbox.notify(
+        {
+          event: NotificationEvent.WORKER_DECLINED,
+          recipients: [booking.customerUserId],
+          params: { bookingId: booking.id },
+        },
+        tx,
+      );
+      await this.alerts.raise(
+        {
+          dedupeKey: `BOOKING_NEEDS_MATCH:${booking.id}`,
+          type: 'BOOKING_NEEDS_MATCH',
+          severity: 'WARNING',
+          title: 'A booking has no worker: the matched worker did not respond in time',
+          requiredPermission: PermissionCode.BOOKING_MANAGE,
+          entityType: 'booking',
+          entityId: booking.id,
+        },
+        tx,
+      );
+      this.logger.log(`Booking ${booking.id} returned to matching: no worker response`);
+      return true;
+    });
+  }
+
   async autoCancelUnpaid(bookingId: string, olderThanHours: number): Promise<boolean> {
     return this.repository.transaction(async (tx) => {
       const booking = await this.repository.lock(bookingId, tx);
