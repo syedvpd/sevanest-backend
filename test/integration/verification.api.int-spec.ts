@@ -794,9 +794,11 @@ describe('Verification API (integration)', () => {
       expect(new Date(res.body.expiresAt as string).getTime()).toBeLessThanOrEqual(
         Date.now() + api.config.verificationDocuments.signedUrlTtlSeconds * 1000 + 2000,
       );
-      expect(
-        (await as(api, admin).get(`${A}/documents/${pending.body.documentId}/link`)).status,
-      ).toBe(404);
+      const notUploaded = await as(api, admin).get(
+        `${A}/documents/${pending.body.documentId}/link`,
+      );
+      expect(notUploaded.status).toBe(409);
+      expect(notUploaded.body.code).toBe('DOCUMENT_NOT_AVAILABLE');
       expect((await as(api, admin).get(`${A}/documents/${UNKNOWN_ID}/link`)).status).toBe(404);
       expect((await as(api, admin).get(`${A}/documents/bad/link`)).status).toBe(400);
 

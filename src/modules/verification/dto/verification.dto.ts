@@ -234,7 +234,35 @@ export class EventView {
   @ApiProperty() createdAt!: Date;
 }
 
+export const DOCUMENT_AVAILABILITY = ['AVAILABLE', 'NOT_UPLOADED', 'DISCARDED'] as const;
+export type DocumentAvailability = (typeof DOCUMENT_AVAILABILITY)[number];
+
+/** Admin view of a document: metadata only, never the storage key or a link (use the link endpoint). */
+export class AdminDocumentView extends DocumentView {
+  @ApiProperty({
+    description:
+      'Same value as id: the id for GET /admin/verification/documents/{documentId}/link.',
+  })
+  documentId!: string;
+  @ApiProperty({
+    enum: CHECK_TYPES,
+    description:
+      'The check this document is evidence for (the document type is the check type: no finer type is stored).',
+  })
+  documentType!: CheckType;
+  @ApiProperty({ description: 'Same value as contentType.' }) mimeType!: string;
+  @ApiProperty({
+    enum: DOCUMENT_AVAILABILITY,
+    description:
+      'AVAILABLE = uploaded and confirmed, a link can be issued. NOT_UPLOADED = the worker never confirmed the upload. DISCARDED = the server deleted the object (failed validation or abandoned).',
+  })
+  availability!: DocumentAvailability;
+  @ApiProperty({ description: 'availability === AVAILABLE. Only then show an attachment.' })
+  available!: boolean;
+}
+
 export class AdminCheckView extends CheckView {
+  @ApiProperty({ type: [AdminDocumentView] }) declare documents: AdminDocumentView[];
   @ApiProperty() checkId!: string;
   @ApiProperty({ nullable: true, type: String }) reviewerUserId!: string | null;
   @ApiProperty({ nullable: true, type: Date }) claimedAt!: Date | null;

@@ -19,6 +19,7 @@ import type { Actor } from '../users/users.types';
 import { WorkersService } from '../workers/workers.service';
 import {
   AdminCheckView,
+  AdminDocumentView,
   AdminWorkerVerificationResponse,
   ApproveCheckDto,
   CHECK_TYPES,
@@ -48,6 +49,8 @@ export const VerificationErrorCode = {
   PROFILE_NOT_SUBMITTED: 'PROFILE_NOT_SUBMITTED',
   CHECK_NOT_FOUND: 'CHECK_NOT_FOUND',
   DOCUMENT_NOT_FOUND: 'DOCUMENT_NOT_FOUND',
+  DOCUMENT_NOT_AVAILABLE: 'DOCUMENT_NOT_AVAILABLE',
+  DOCUMENT_OBJECT_MISSING: 'DOCUMENT_OBJECT_MISSING',
   DOCUMENT_TYPE_NOT_ALLOWED: 'DOCUMENT_TYPE_NOT_ALLOWED',
   DOCUMENT_NOT_UPLOADED: 'DOCUMENT_NOT_UPLOADED',
   DOCUMENT_CONTENT_MISMATCH: 'DOCUMENT_CONTENT_MISMATCH',
@@ -545,8 +548,18 @@ export class VerificationService {
   async documentLink(documentId: string, admin: VerificationActor): Promise<DocumentLinkResponse> {
     const document = await this.repository.findDocument(documentId);
     const check = document ? await this.repository.findCheckById(document.checkId) : null;
-    if (!document || !check || document.status !== 'UPLOADED') {
+    if (!document || !check) {
       throw this.documentNotFound();
+    }
+    // The document exists but has no stored file to show: say why instead of a bare 404.
+    if (document.status !== 'UPLOADED' || document.purgedAt) {
+      throw new DomainException(
+        VerificationErrorCode.DOCUMENT_NOT_AVAILABLE,
+        document.purgedAt
+          ? 'The stored file was discarded by the server'
+          : 'The worker has not confirmed the upload of this document',
+        HttpStatus.CONFLICT,
+      );
     }
     // Integrity at review time: the bytes the reviewer is about to see must be the bytes that were validated at confirmation.
     // Documents confirmed before hashes were recorded have none to compare (recorded in the audit entry below).
@@ -555,6 +568,9 @@ export class VerificationService {
       const object = await this.storageCall(() =>
         this.storage.readObject(document.objectKey, document.sizeBytes),
       );
+      if (object === null) {
+        throw this.objectMissing();
+      }
       const intact =
         object !== null &&
         !object.truncated &&
@@ -575,6 +591,8 @@ export class VerificationService {
         );
       }
       integrityChecked = true;
+    } else if (!(await this.storageCall(() => this.storage.getObjectInfo(document.objectKey)))) {
+      throw this.objectMissing();
     }
     const link = await this.storageCall(() =>
       this.storage.createDownloadUrl({
@@ -830,6 +848,23 @@ export class VerificationService {
     };
   }
 
+  private adminDocumentView(document: DocumentRecord, documentType: CheckType): AdminDocumentView {
+    const availability =
+      document.status === 'UPLOADED' && !document.purgedAt
+        ? 'AVAILABLE'
+        : document.purgedAt
+          ? 'DISCARDED'
+          : 'NOT_UPLOADED';
+    return {
+      ...this.documentView(document),
+      documentId: document.id,
+      documentType,
+      mimeType: document.contentType,
+      availability,
+      available: availability === 'AVAILABLE',
+    };
+  }
+
   private checkViews(
     required: CheckType[],
     checks: CheckRecord[],
@@ -888,6 +923,11 @@ export class VerificationService {
       const check = byType.get(view.checkType);
       return {
         ...view,
+        documents: check
+          ? documents
+              .filter((d) => d.checkId === check.id)
+              .map((d) => this.adminDocumentView(d, view.checkType))
+          : [],
         checkId: check?.id ?? '',
         reviewerUserId: check?.reviewerUserId ?? null,
         claimedAt: check?.claimedAt ?? null,
@@ -927,6 +967,14 @@ export class VerificationService {
     return new DomainException(
       VerificationErrorCode.CHECK_NOT_EDITABLE,
       'This check is waiting for review or already approved, so it cannot be changed now',
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  private objectMissing(): DomainException {
+    return new DomainException(
+      VerificationErrorCode.DOCUMENT_OBJECT_MISSING,
+      'The file for this document is not in storage',
       HttpStatus.CONFLICT,
     );
   }

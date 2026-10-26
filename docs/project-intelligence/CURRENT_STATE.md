@@ -75,3 +75,6 @@ Built: check types `SKILL_CERTIFICATE`/`LICENSE`, criminal self-declaration (`PU
 
 ## 2026-10-15 worker verification API gap work
 Audit in `docs/qa/worker-verification-api-gap-audit.md`. Built: reviewer assignment on start-review (+ `claimed_at`, migration `20261101090000`, 32 in total), queue filters (`assignedTo=me`, `reviewerId`, category, name) and worker/assignment fields, document link `signedUrl`/`expiresInSeconds`, `GET /admin/workers?verified=`. Not built (no policy, D-89, Q-123..Q-129): dossier-level decision, application number, completed event, activation, SLA. Evidence: see the audit. Nothing committed.
+
+## 2026-10-26 Admin Portal document-link 404 and dossier references
+Link endpoint now separates 404 (unknown id), 409 DOCUMENT_NOT_AVAILABLE (unconfirmed or discarded upload) and 409 DOCUMENT_OBJECT_MISSING; admin dossier documents carry documentId, documentType, mimeType, available/availability. No migration. Report: docs/qa/admin-worker-verification-api-gap-report.md. Open: release-review, activation, reason codes (Q-123..Q-129). Local evidence only; one unrelated qa.inventory failure from commit c8833ff (PUT users/me/notification-preferences). Nothing committed.

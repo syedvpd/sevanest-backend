@@ -4322,14 +4322,6 @@
             }
           },
           {
-            "name": "action",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "Idempotency-Key",
             "in": "header",
             "description": "Optional, 8-100 characters. Repeating the same request with the same key returns the first response instead of acting again; the same key with a different request is 422 IDEMPOTENCY_KEY_REUSED; a repeat while the first is still running is 409 IDEMPOTENCY_IN_PROGRESS. Keys last 24 hours.",
@@ -4612,14 +4604,6 @@
         "parameters": [
           {
             "name": "bookingId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "action",
             "required": true,
             "in": "path",
             "schema": {
@@ -5070,14 +5054,6 @@
         "parameters": [
           {
             "name": "bookingId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "action",
             "required": true,
             "in": "path",
             "schema": {
@@ -9481,16 +9457,7 @@
       "post": {
         "description": "Upload the file to the returned URL with HTTP PUT, then confirm it. Needs a submitted profile. 422 DOCUMENT_TYPE_NOT_ALLOWED, 413 when too large, 409 CHECK_NOT_EDITABLE while the check is in review or approved, 503 when storage is not configured.",
         "operationId": "WorkerVerificationController_requestUpload_v1",
-        "parameters": [
-          {
-            "name": "checkType",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
@@ -9565,16 +9532,7 @@
       "post": {
         "description": "Identity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved.",
         "operationId": "WorkerVerificationController_submit_v1",
-        "parameters": [
-          {
-            "name": "checkType",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": "",
@@ -13290,14 +13248,6 @@
         "description": "report is one of the report names listed by GET /admin/reports. Period reports need from and to (India dates, at most 366 days). At most 5000 rows. Aggregates only - no personal data beyond what the on-screen report shows. Audited.",
         "operationId": "ReportsController_export_v1",
         "parameters": [
-          {
-            "name": "report",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
           {
             "name": "from",
             "required": false,
@@ -21088,6 +21038,82 @@
           "checks"
         ]
       },
+      "AdminDocumentView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_UPLOAD",
+              "UPLOADED"
+            ]
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "number"
+          },
+          "submitted": {
+            "type": "boolean",
+            "description": "False while the document is still part of the open draft."
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string",
+            "description": "Same value as id: the id for GET /admin/verification/documents/{documentId}/link."
+          },
+          "documentType": {
+            "type": "string",
+            "enum": [
+              "IDENTITY",
+              "ADDRESS",
+              "EMERGENCY_CONTACT",
+              "PREVIOUS_EMPLOYMENT",
+              "POLICE_VERIFICATION",
+              "SKILL_CERTIFICATE",
+              "LICENSE"
+            ],
+            "description": "The check this document is evidence for (the document type is the check type: no finer type is stored)."
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "Same value as contentType."
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "AVAILABLE",
+              "NOT_UPLOADED",
+              "DISCARDED"
+            ],
+            "description": "AVAILABLE = uploaded and confirmed, a link can be issued. NOT_UPLOADED = the worker never confirmed the upload. DISCARDED = the server deleted the object (failed validation or abandoned)."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "availability === AVAILABLE. Only then show an attachment."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "contentType",
+          "sizeBytes",
+          "submitted",
+          "createdAt",
+          "documentId",
+          "documentType",
+          "mimeType",
+          "availability",
+          "available"
+        ]
+      },
       "EventView": {
         "type": "object",
         "properties": {
@@ -21096,7 +21122,7 @@
             "nullable": true
           },
           "toStatus": {
-            "type": "string"
+            "type": "object"
           },
           "actorUserId": {
             "type": "string"
@@ -21171,7 +21197,7 @@
           "documents": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/DocumentView"
+              "$ref": "#/components/schemas/AdminDocumentView"
             }
           },
           "checkId": {

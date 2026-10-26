@@ -22,11 +22,11 @@ describe('Verification assignment and queue contract (integration)', () => {
   let reviewerA: Awaited<ReturnType<typeof loginAdminWithPermissions>>;
   let reviewerB: Awaited<ReturnType<typeof loginAdminWithPermissions>>;
 
-  const submittedCheck = async (checkType = 'EMERGENCY_CONTACT') => {
+  const submittedCheck = async (checkType = 'EMERGENCY_CONTACT', namePrefix = 'Asha') => {
     const worker = await onboardWorker(api, {
       areaIds: [areaId],
       previousEmployer: true,
-      name: `Asha ${letters()}`,
+      name: `${namePrefix} ${letters()}`,
     });
     await as(api, worker).post(`${V}/checks/${checkType}/submit`).expect(200);
     const checkId = await checkIdOf(api, admin, worker.workerId, checkType);
@@ -165,8 +165,9 @@ describe('Verification assignment and queue contract (integration)', () => {
     });
 
     it('returns worker identity, submission time and assignment, orders oldest first with a stable tie-break, and filters by name', async () => {
-      const first = await submittedCheck();
-      const second = await submittedCheck();
+      const tag = `Ordr${letters()}`;
+      const first = await submittedCheck('EMERGENCY_CONTACT', tag);
+      const second = await submittedCheck('EMERGENCY_CONTACT', tag);
       const profile = await api.prisma.workerProfile.findUniqueOrThrow({
         where: { id: first.worker.workerId },
       });
@@ -190,7 +191,7 @@ describe('Verification assignment and queue contract (integration)', () => {
         uploadedDocuments: 0,
       });
 
-      const all = await as(api, reviewerA).get(`${A}/queue?limit=100`).expect(200);
+      const all = await as(api, reviewerA).get(`${A}/queue?search=${tag}&limit=100`).expect(200);
       const order = all.body.data.map((i: { checkId: string }) => i.checkId) as string[];
       expect(order.indexOf(first.checkId)).toBeLessThan(order.indexOf(second.checkId));
       const sorted = [...all.body.data].sort(
@@ -213,8 +214,13 @@ describe('Verification assignment and queue contract (integration)', () => {
       const other = await api.prisma.serviceCategory.findFirstOrThrow({
         where: { id: { not: skill.categoryId } },
       });
+      const name = (
+        await api.prisma.workerProfile.findUniqueOrThrow({ where: { id: worker.workerId } })
+      ).name;
       const inCat = await as(api, reviewerA)
-        .get(`${A}/queue?categoryId=${skill.categoryId}&limit=100`)
+        .get(
+          `${A}/queue?categoryId=${skill.categoryId}&search=${encodeURIComponent(name)}&limit=100`,
+        )
         .expect(200);
       expect(inCat.body.data.some((i: { checkId: string }) => i.checkId === checkId)).toBe(true);
       const outCat = await as(api, reviewerA)
@@ -222,7 +228,7 @@ describe('Verification assignment and queue contract (integration)', () => {
         .expect(200);
       expect(outCat.body.data).toHaveLength(0);
       const notOffered = await as(api, reviewerA)
-        .get(`${A}/queue?categoryId=${other.id}&limit=100`)
+        .get(`${A}/queue?categoryId=${other.id}&search=${encodeURIComponent(name)}&limit=100`)
         .expect(200);
       expect(notOffered.body.data.some((i: { checkId: string }) => i.checkId === checkId)).toBe(
         false,
@@ -259,7 +265,56 @@ describe('Verification assignment and queue contract (integration)', () => {
         ),
       ).toBeLessThan(3000);
       // The mock storage adapter signs this URL: this proves the contract, not a real provider.
+      const row = await api.prisma.verificationDocument.findUniqueOrThrow({
+        where: { id: documentId },
+      });
+      expect(api.storage.issuedDownloads.at(-1)).toBe(row.objectKey);
+      expect(api.storage.has(row.objectKey)).toBe(true);
       expect(JSON.stringify(res.body)).not.toContain('kyc/');
+    });
+  });
+
+  describe('document references in the dossier and link errors', () => {
+    it('shows documentId, mimeType and availability; only a confirmed upload is AVAILABLE; failures are distinct', async () => {
+      const worker = await onboardWorker(api, { areaIds: [areaId], previousEmployer: true });
+      const confirmedId = await uploadDocument(api, worker, 'IDENTITY');
+      const pending = await as(api, worker)
+        .post(`${V}/checks/ADDRESS/documents`, { contentType: 'image/png', sizeBytes: 500 })
+        .expect(201);
+      const dossier = await as(api, reviewerA)
+        .get(`/api/v1/admin/workers/${worker.workerId}/verification`)
+        .expect(200);
+      const docs = (
+        dossier.body.checks as Array<{ documents: Array<Record<string, unknown>> }>
+      ).flatMap((c) => c.documents);
+      const ok = docs.find((d) => d.id === confirmedId)!;
+      expect(ok).toMatchObject({
+        documentId: confirmedId,
+        documentType: 'IDENTITY',
+        mimeType: 'application/pdf',
+        availability: 'AVAILABLE',
+        available: true,
+      });
+      const waiting = docs.find((d) => d.id === pending.body.documentId)!;
+      expect(waiting).toMatchObject({ availability: 'NOT_UPLOADED', available: false });
+      expect(JSON.stringify(dossier.body)).not.toContain('kyc/');
+
+      const link = (id: string) => as(api, reviewerA).get(`${A}/documents/${id}/link`);
+      const notUploaded = await link(pending.body.documentId as string);
+      expect(notUploaded.status).toBe(409);
+      expect(notUploaded.body.code).toBe('DOCUMENT_NOT_AVAILABLE');
+      expect((await link('00000000-0000-7000-8000-000000000000')).status).toBe(404);
+      // A check id is not a document id.
+      const checkId = await checkIdOf(api, admin, worker.workerId, 'IDENTITY');
+      expect((await link(checkId)).status).toBe(404);
+
+      const row = await api.prisma.verificationDocument.findUniqueOrThrow({
+        where: { id: confirmedId },
+      });
+      await api.storage.deleteObject(row.objectKey);
+      const gone = await link(confirmedId);
+      expect(gone.status).toBe(409);
+      expect(gone.body.code).toBe('DOCUMENT_OBJECT_MISSING');
     });
   });
 
