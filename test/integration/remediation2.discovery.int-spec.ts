@@ -62,7 +62,7 @@ describe('Worker profile, shortlist and photo (integration)', () => {
   });
 
   describe('GET /search/workers/:workerId (customer-safe profile)', () => {
-    it('returns the allow-listed fields only: no name, contact, salary or account id', async () => {
+    it('returns the allow-listed fields only: display name, no surname, contact, salary or account id', async () => {
       const res = await as(api, customer).get(`${PROFILE}/${visible.workerId}`);
       expect(res.status).toBe(200);
       expect(Object.keys(res.body as object).sort()).toEqual(
@@ -71,11 +71,14 @@ describe('Worker profile, shortlist and photo (integration)', () => {
           'categories',
           'engagementPreference',
           'experienceMonths',
+          'initials',
           'languages',
+          'name',
           'photo',
           'rating',
           'serviceAreas',
           'verification',
+          'verified',
           'workerId',
         ].sort(),
       );

@@ -163,6 +163,21 @@ export class PhotoLinkView {
 export class WorkerCard {
   @ApiProperty({ description: 'Opaque worker reference for the next step (not the account id).' })
   workerId!: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'Lakshmi D.',
+    description:
+      'Display name: first name and last initial only (the surname, mobile and other personal data are never returned). null only when the worker profile has no name yet.',
+  })
+  name!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'LD',
+    description: 'Initials for the avatar when there is no photo; null when there is no name.',
+  })
+  initials!: string | null;
   @ApiProperty({ nullable: true, description: 'Total months.', type: Number }) experienceMonths!:
     number | null;
   @ApiProperty({ type: [CategoryRefView] }) categories!: CategoryRefView[];
@@ -175,6 +190,12 @@ export class WorkerCard {
     description: 'Customers only ever see fully verified workers.',
   })
   verification!: 'VERIFIED';
+  @ApiProperty({
+    example: true,
+    description:
+      'Always true on a card: customers only ever see fully verified workers (same rule as `verification`). A worker who stops being verified is no longer returned as a card at all.',
+  })
+  verified!: boolean;
   @ApiProperty({ type: RatingSummaryView, nullable: true }) rating!: RatingSummaryView | null;
   @ApiProperty({ type: PhotoLinkView, nullable: true }) photo!: PhotoLinkView | null;
 }

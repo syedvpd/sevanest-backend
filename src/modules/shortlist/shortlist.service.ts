@@ -20,6 +20,9 @@ export const MAX_SHORTLIST_ENTRIES = 100;
  */
 @Injectable()
 export class ShortlistService {
+  /** Instance copy of the cap so a test can lower it; production always uses MAX_SHORTLIST_ENTRIES. */
+  maxEntries = MAX_SHORTLIST_ENTRIES;
+
   constructor(
     private readonly repository: ShortlistRepository,
     private readonly search: SearchService,
@@ -37,7 +40,7 @@ export class ShortlistService {
     await this.repository.transaction(async (tx) => {
       await this.repository.lockCustomer(customerUserId, tx);
       if (await this.repository.has(customerUserId, workerId, tx)) return;
-      if ((await this.repository.count(customerUserId, tx)) >= MAX_SHORTLIST_ENTRIES) {
+      if ((await this.repository.count(customerUserId, tx)) >= this.maxEntries) {
         throw new DomainException(
           ShortlistErrorCode.SHORTLIST_FULL,
           'The shortlist is full; remove a worker first',

@@ -452,7 +452,9 @@ describe('Replacement API (integration)', () => {
       expect(ids).not.toContain(b.worker.workerId);
       expect(ids).not.toContain(unverified.workerId);
       expect(res.body.data[0]).not.toHaveProperty('userId');
-      expect(res.body.data[0]).not.toHaveProperty('name');
+      // customer-safe card: first name and last initial only (D-91), never the surname
+      expect(res.body.data[0].name).toMatch(/^\S+( \S\.)?$/);
+      expect(JSON.stringify(res.body.data)).not.toContain('Kumar');
       expect(res.body.meta.total).toBeGreaterThanOrEqual(1);
 
       const stranger = await loginWithOtp(api, { appType: 'CUSTOMER' });

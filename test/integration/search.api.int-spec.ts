@@ -300,11 +300,14 @@ describe('Search API (integration)', () => {
           'categories',
           'engagementPreference',
           'experienceMonths',
+          'initials',
           'languages',
+          'name',
           'photo',
           'rating',
           'serviceAreas',
           'verification',
+          'verified',
           'workerId',
         ].sort(),
       );
@@ -320,7 +323,8 @@ describe('Search API (integration)', () => {
       const text = JSON.stringify(res.body);
       for (const forbidden of [
         'Secret Name One',
-        'Ramesh',
+        'Kumar',
+        'Name One',
         'Madhapur',
         '500081',
         'Lakshmi',

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { workerDisplay } from '../../common/worker-display';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -440,10 +441,21 @@ export class BookingService {
     return this.create(customerUserId, request, idempotencyKey);
   }
 
-  /** The newest booking that is not finished (for the Home screen), or null. */
-  async activeForCustomer(customerUserId: string): Promise<CustomerBookingView | null> {
-    const { items } = await this.repository.list({ customerUserId, openOnly: true }, 0, 1);
-    return (await this.customerViews(items))[0] ?? null;
+  /**
+   * The newest booking that is not finished (for the Home screen), or null, plus how many unfinished bookings the customer has.
+   * A customer may hold several at once; the representative one is the most recently created (list order: newest first).
+   */
+  async activeForCustomer(
+    customerUserId: string,
+  ): Promise<{ booking: CustomerBookingView | null; total: number }> {
+    const { items, total } = await this.repository.list({ customerUserId, openOnly: true }, 0, 1);
+    return { booking: (await this.customerViews(items))[0] ?? null, total };
+  }
+
+  /** The worker of one booking as its customer may see them (D-81 rules), or null; for the Home upcoming interview. */
+  async workerDisplayForBooking(bookingId: string): Promise<WorkerDisplayView | null> {
+    const booking = await this.repository.findById(bookingId);
+    return booking ? this.displayWorkerOf(booking) : null;
   }
 
   async getMine(customerUserId: string, bookingId: string): Promise<CustomerBookingDetailView> {
@@ -1561,21 +1573,21 @@ export class BookingService {
   /** Display name (first name and last initial) and photo links for several workers, in two statements in total. */
   async workerDisplays(workerIds: string[]): Promise<Map<string, WorkerDisplayView>> {
     if (workerIds.length === 0) return new Map();
-    const [names, photos] = await Promise.all([
+    const [names, photos, verified] = await Promise.all([
       this.workers.namesByIds(workerIds),
       this.search.photoLinks(workerIds),
+      this.search.verifiedIds(workerIds),
     ]);
     const out = new Map<string, WorkerDisplayView>();
     for (const id of workerIds) {
       const name = names.get(id);
       if (name === undefined) continue;
-      const parts = name.trim().split(/\s+/).filter(Boolean);
-      const first = parts[0] ?? '';
-      const last = parts.length > 1 ? parts[parts.length - 1] : '';
-      const lastInitial = last ? Array.from(last)[0].toUpperCase() : '';
+      const { displayName, initials } = workerDisplay(name);
       out.set(id, {
-        displayName: lastInitial ? `${first} ${lastInitial}.` : first,
-        initials: (Array.from(first)[0] ?? '').toUpperCase() + lastInitial,
+        displayName,
+        name: displayName,
+        verified: verified.has(id),
+        initials,
         photo: photos.get(id) ?? null,
       });
     }

@@ -123,7 +123,13 @@ describe('Customer active service and attendance (integration)', () => {
         await as(api, customer).get(`${A}/${active.id}/summary?month=${month}`).expect(200)
       ).body;
       expect(summary.scheduledWindow).toEqual({ from: '09:00', to: '12:00' });
-      expect(summary.worker).toEqual({ displayName: 'Anjali V.', initials: 'AV', photo: null });
+      expect(summary.worker).toEqual({
+        displayName: 'Anjali V.',
+        name: 'Anjali V.',
+        initials: 'AV',
+        verified: true,
+        photo: null,
+      });
       expect(JSON.stringify(summary)).not.toMatch(
         /mobile|phone|address|objectKey|passport|aadhaar/i,
       );

@@ -385,6 +385,7 @@ describe('Customer app gaps, round two (integration)', () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
         activeBooking: null,
+        activeBookingsTotal: 0,
         upcomingInterview: null,
         unreadNotifications: 0,
         shortlistPreview: [],

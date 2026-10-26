@@ -23,14 +23,42 @@ describe('toCard', () => {
         'categories',
         'engagementPreference',
         'experienceMonths',
+        'initials',
         'languages',
+        'name',
         'serviceAreas',
         'verification',
+        'verified',
         'workerId',
       ].sort(),
     );
     expect(card.workerId).toBe('w-1');
     expect(card.availability).toEqual([{ start: '09:00', end: '24:00' }]);
     expect(JSON.stringify(card)).not.toMatch(/Private Name|u-1|919999|expectedSalary/);
+  });
+
+  it('shows only first name and last initial, and null when the profile has no name', () => {
+    const base = {
+      id: 'w-2',
+      userId: 'u-2',
+      experienceMonths: null,
+      engagementPreference: null,
+      categories: [],
+      languages: [],
+      serviceAreas: [],
+      availability: [],
+    };
+    expect(toCard({ ...base, name: 'Lakshmi Devi Rao' })).toMatchObject({
+      name: 'Lakshmi R.',
+      initials: 'LR',
+    });
+    expect(toCard({ ...base, name: 'Madonna' })).toMatchObject({
+      name: 'Madonna',
+      initials: 'M',
+    });
+    expect(toCard({ ...base, name: '   ' })).toMatchObject({
+      name: null,
+      initials: null,
+    });
   });
 });

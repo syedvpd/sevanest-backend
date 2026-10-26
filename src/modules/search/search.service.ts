@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { workerDisplay } from '../../common/worker-display';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { AppConfigService } from '../../config/app-config.service';
@@ -135,6 +136,11 @@ export class SearchService {
     const workers = await this.repository.findVisibleByIds(ids, customerUserId);
     const cards = await this.decorate(workers);
     return new Map(cards.map((c) => [c.workerId, c]));
+  }
+
+  /** Contract for Booking: which of these workers are fully verified (and active, submitted) right now. */
+  verifiedIds(ids: string[]): Promise<Set<string>> {
+    return this.repository.verifiedIds(ids);
   }
 
   /** Contract for Booking: short-lived photo links of these workers (the caller already decided they may be shown). */
@@ -316,9 +322,19 @@ export class SearchService {
 }
 
 /** The customer-safe projection: explicit allow-list, so a new field on the worker can never leak by accident. */
+/** The only name a customer may see on a card: first name and last initial (D-91). Empty when the profile has no name. */
+function nameFields(fullName: string | null | undefined): {
+  name: string | null;
+  initials: string | null;
+} {
+  const { displayName, initials } = workerDisplay(fullName ?? '');
+  return { name: displayName || null, initials: initials || null };
+}
+
 export function toCard(worker: EligibleWorker): Omit<WorkerCard, 'rating' | 'photo'> {
   return {
     workerId: worker.id,
+    ...nameFields(worker.name),
     experienceMonths: worker.experienceMonths,
     categories: worker.categories,
     languages: worker.languages,
@@ -329,5 +345,6 @@ export function toCard(worker: EligibleWorker): Omit<WorkerCard, 'rating' | 'pho
       end: toText(w.endMinute),
     })),
     verification: 'VERIFIED',
+    verified: true,
   };
 }

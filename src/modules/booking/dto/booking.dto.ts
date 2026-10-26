@@ -435,6 +435,17 @@ export type CustomerAllowedAction = (typeof CUSTOMER_ALLOWED_ACTIONS)[number];
 export class WorkerDisplayView {
   @ApiProperty({ example: 'Ramesh K.', description: 'First name and last initial.' })
   displayName!: string;
+  @ApiProperty({
+    example: 'Ramesh K.',
+    description: 'Same value as displayName (alias for clients that read `name`).',
+  })
+  name!: string;
+  @ApiProperty({
+    example: true,
+    description:
+      'true while the worker is fully verified, active and submitted (the rule that decides who customers can see); false when that no longer holds. Never assumed.',
+  })
+  verified!: boolean;
   @ApiProperty({ example: 'RK', description: 'Fallback for the avatar when there is no photo.' })
   initials!: string;
   @ApiProperty({

@@ -108,7 +108,13 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
       expect(byId[b6.id]).toMatchObject({ amountPaidMinor: 0 }); // refunded money is not spend
       expect(byId[b3.id]).toMatchObject({ status: 'REPLACED' });
       expect(byId[b4.id]).toMatchObject({ status: 'CANCELLED', worker: null });
-      expect(byId[b1.id].worker).toEqual({ displayName: 'Anjali V.', initials: 'AV', photo: null });
+      expect(byId[b1.id].worker).toEqual({
+        displayName: 'Anjali V.',
+        name: 'Anjali V.',
+        initials: 'AV',
+        verified: true,
+        photo: null,
+      });
     });
 
     it('totals count delivered services, distinct workers and money still held; the year and category filters narrow all three', async () => {
@@ -568,7 +574,13 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
         .expect(201);
 
       const detail = (await as(api, me).get(`${B}/${done.id}`).expect(200)).body;
-      expect(detail.worker).toEqual({ displayName: 'Ramesh K.', initials: 'RK', photo: null });
+      expect(detail.worker).toEqual({
+        displayName: 'Ramesh K.',
+        name: 'Ramesh K.',
+        initials: 'RK',
+        verified: true,
+        photo: null,
+      });
       expect(detail.workerId).toBe(done.worker.workerId); // the opaque reference stays
       expect((await as(api, me).get(`${B}/${matched.id}`).expect(200)).body.worker).toBeNull();
       expect((await as(api, me).get(`${B}/${open.body.id}`).expect(200)).body.worker).toBeNull();

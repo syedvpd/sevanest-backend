@@ -151,6 +151,25 @@ export class SearchRepository {
   }
 
   /**
+   * Which of these workers are fully verified and eligible to be shown (same conditions as findVisibleByIds, ids only, one cheap
+   * statement). Used to state `verified` for a worker the customer already deals with. Blocks are not considered: they hide a
+   * worker from one customer but do not change whether the worker is verified.
+   */
+  async verifiedIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT wp.id
+      FROM worker_profiles wp
+      JOIN users u ON u.id = wp.user_id
+      WHERE wp.id = ANY(${ids}::uuid[])
+        AND wp.onboarding_status = 'SUBMITTED'
+        AND u.type = 'WORKER' AND u.status = 'ACTIVE'
+        AND wp.blacklisted_at IS NULL
+        AND ${activeWorkerCondition('wp.id')}`);
+    return new Set(rows.map((r) => r.id));
+  }
+
+  /**
    * Visible (not moderated away) reviews of one worker, newest first, with the reviewer's FIRST NAME only. Callers have already
    * checked the worker is visible to customers.
    */
