@@ -4,6 +4,27 @@ Date: 2026-10-26. Backend only. Extends `docs/qa/worker-verification-api-gap-aud
 
 Status key: EXISTS, NEEDS UPDATE, MISSING, BLOCKED (product decision or external dependency).
 
+## UPDATE 2026-10-26: client decisions implemented (D-90)
+
+The client answered Q-123 to Q-129. Everything below in sections 4, 5, 6, 7 and 8 that says BLOCKED, MISSING or "not built" is **superseded by this block**.
+Migration `20261102090000_verification_decisions_d90` (additive; 33 migrations in total). Details: `src/modules/verification/README.md`.
+
+| Area | Status now | What exists |
+| --- | --- | --- |
+| Final worker decision (Q-123) | EXISTS | `POST /api/v1/admin/workers/{workerId}/verification/sign-off` (`verification.signoff`). Needs every required check approved. Corrections = a non-disqualifying rejection; the overall `applicationStatus` becomes `ACTION_REQUIRED` and the worker resubmits only that check. A disqualifying rejection makes it `REJECTED`. |
+| Application number (Q-124) | EXISTS | `applicationReference` = `SEVA` + 8 digits, stamped at profile submission (database sequence), returned by the queue, dossier, worker verification, admin worker list and detail, and searchable in the queue (`search=SEVA0000...`). Existing submitted workers were backfilled. |
+| Release and reassignment (Q-125) | EXISTS | `POST .../checks/{checkId}/release-review` (claimant or supervisor; IN_REVIEW to SUBMITTED), `POST .../checks/{checkId}/reassign-review` (`verification.reassign`), 30-minute inactivity auto-release (worker-process loop `claim-release`; claim, note and document link count as activity), decisions only by the claimant (409 `CHECK_NOT_ASSIGNED_TO_YOU`) unless the caller holds `verification.reassign`. |
+| Rejection reasons and approval notes (Q-126) | EXISTS | `reject` takes `reasonCode` (9 approved codes; `remarks` mandatory for OTHER); the worker sees `rejectionCode`, `rejectionMessage`, `terminal`. `POST .../checks/{checkId}/notes` (CALL or REVIEW, staff only). Approval needs a CALL note (previous employment), the reference number and validity end (police clearance), a validity end (licence): 422 `APPROVAL_REQUIREMENTS_MISSING`. |
+| Completed handoff (Q-127) | EXISTS | Sign-off sends `WORKER_VERIFIED` to the worker and raises an admin alert for `worker.activate` holders (ids and reference only). Activation sends `WORKER_ACTIVATED`. Both only once. Channels and wording are the admin-configured templates (starter in-app wording seeded); SMS and push depend on the configured providers, which were never exercised live. |
+| Activation (Q-128) | EXISTS | `POST /api/v1/admin/workers/{workerId}/activate` (`worker.activate`). Matching and search now need verified AND signed off AND activated. Prerequisites: sign-off, still verified, one category, one area, the criminal self-declaration, an active account, not blacklisted. Existing fully verified workers were backfilled as signed off and activated at migration time. |
+| SLA (Q-129) | EXISTS | Queue and dossier: `dueAt` (24 business hours, 09:00-19:00 IST Monday to Saturday), `claimDueAt` (claim + 2 hours), `slaFlags` (`OVERDUE`, `STALLED_CLAIM`), `isOverdue`, `decidedAt`. |
+| Document details (Q8) | EXISTS | `PUT .../checks/{checkId}/document-details` and optional `documentNumber`, `expiresOn` on the worker's submit: only the last four characters of a number are kept (`XXXX-XXXX-1234`); expiry shown as `documentExpiresOn`; it becomes the re-check date. |
+| Roles and permissions | EXISTS | New role `VERIFICATION_SUPERVISOR`; new permissions `verification.signoff`, `verification.reassign`, `worker.activate` (Super Admin and Operations Admin receive them by migration; the supervisor role gets its starting set from the seed). |
+
+Changed existing contract: `POST /admin/verification/checks/{checkId}/reject` now needs `reasonCode` (400 without it). `GET /admin/dashboard` `workers.verifiedAndActive` now counts workers live in matching. Search and matching candidates exclude workers that are not activated.
+
+Not built or still open (see Q-130 to Q-134): FRAUDULENT_DOCUMENT is not in the approved code list (SUSPECTED_TAMPERING is treated as disqualifying); the alert and the notification text carry no name, city or category (personal data stays out of alerts); the 2-hour claim SLA is counted in clock hours; the "city/area manager" recipient has no role in the system; SMS and FCM delivery of the two worker messages is not verified live; no staging evidence.
+
 ## 1. Root cause of the document-link 404
 
 `GET /api/v1/admin/verification/documents/{documentId}/link` (`AdminVerificationController.documentLink` to `VerificationService.documentLink`) answered `404 DOCUMENT_NOT_FOUND` for three different situations:

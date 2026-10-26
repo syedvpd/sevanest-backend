@@ -130,6 +130,14 @@ describe('QA - end-to-end journeys (integration)', () => {
       .post(`/api/v1/admin/verification/checks/${checkId}/approve`, { remarks: 'ID matches' })
       .expect(200);
     expect((await w.get('/api/v1/workers/me/verification')).body.level).toBe('VERIFIED');
+    // D-90: verified is not live yet; the final sign-off and the activation put the worker into search.
+    await as(api, admin)
+      .post(`/api/v1/admin/workers/${workerId}/verification/sign-off`, {})
+      .expect(200);
+    await w
+      .put('/api/v1/workers/me/criminal-declaration', { hasCriminalRecord: false, accepted: true })
+      .expect(200);
+    await as(api, admin).post(`/api/v1/admin/workers/${workerId}/activate`, {}).expect(200);
 
     // ---- customer app: profile -> address -> search -> matching -> booking ---------------------------------
     await c

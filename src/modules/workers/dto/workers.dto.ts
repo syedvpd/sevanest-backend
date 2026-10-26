@@ -368,6 +368,14 @@ export class WorkerProfileResponse {
   @ApiProperty() name!: string;
   @ApiProperty({ description: 'From the verified account; read-only.' }) mobile!: string;
   @ApiProperty({ enum: ['DRAFT', 'SUBMITTED'] }) onboardingStatus!: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'SEVA00000042',
+    description:
+      'Human-readable application reference (SEVA + 8 digits), stamped when the profile is submitted. Null while DRAFT.',
+  })
+  applicationReference!: string | null;
   @ApiProperty({ nullable: true, type: Date }) submittedAt!: Date | null;
   @ApiProperty({ nullable: true, type: Number }) experienceMonths!: number | null;
   @ApiProperty({ nullable: true, type: Number }) expectedSalary!: number | null;
@@ -404,6 +412,8 @@ export class AdminWorkerSummary {
   @ApiProperty({ nullable: true, description: 'Masked in lists.', type: String }) mobile!:
     string | null;
   @ApiProperty({ enum: ['DRAFT', 'SUBMITTED'] }) onboardingStatus!: string;
+  @ApiProperty({ nullable: true, type: String, example: 'SEVA00000042' })
+  applicationReference!: string | null;
   @ApiProperty({ enum: ['ACTIVE', 'SUSPENDED'] }) accountStatus!: string;
   @ApiProperty({ type: [WorkerCategoryRef] }) categories!: WorkerCategoryRef[];
   @ApiProperty() createdAt!: Date;

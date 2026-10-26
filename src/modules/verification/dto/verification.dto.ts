@@ -16,6 +16,8 @@ import {
   Min,
 } from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
+import { REJECTION_CODES } from '../verification-policy';
+import type { RejectionCode, SlaFlag } from '../verification-policy';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -43,6 +45,21 @@ export type StoredCheckStatus = (typeof CHECK_STATUSES)[number];
 /** RECHECK_DUE is derived (an approval whose recheck date has been reached), never stored. */
 export type EffectiveCheckStatus = StoredCheckStatus | 'RECHECK_DUE';
 export type VerificationLevel = 'VERIFIED' | 'IN_PROGRESS' | 'NOT_STARTED';
+
+/**
+ * Overall worker status shown to staff and in the worker app (D-90). Derived from the stored checks plus two stored stamps (final
+ * sign-off, activation); never written directly.
+ */
+export const APPLICATION_STATUSES = [
+  'DRAFT',
+  'SUBMITTED',
+  'UNDER_REVIEW',
+  'ACTION_REQUIRED',
+  'VERIFIED',
+  'ACTIVE',
+  'REJECTED',
+] as const;
+export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
 export class RequestDocumentUploadDto {
   @ApiProperty({ example: 'application/pdf' })
@@ -73,6 +90,90 @@ export class ApproveCheckDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'recheckAt must be a date in YYYY-MM-DD form' })
   recheckAt?: string;
+}
+
+export class RejectCheckDto {
+  @ApiProperty({ enum: REJECTION_CODES })
+  @IsIn(REJECTION_CODES)
+  reasonCode!: RejectionCode;
+
+  @ApiPropertyOptional({
+    maxLength: 1000,
+    description:
+      'Optional for every code except OTHER, where it is the mandatory explanation. When omitted the standard wording of the code is stored as the remarks the worker sees.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 1000)
+  remarks?: string;
+}
+
+export class ReleaseReviewDto {
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 500)
+  reason?: string;
+}
+
+export class ReassignReviewDto {
+  @ApiProperty({ description: 'Admin user id of the new reviewer (needs verification.review).' })
+  @IsUUID()
+  reviewerUserId!: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 500)
+  reason?: string;
+}
+
+export class AddNoteDto {
+  @ApiProperty({
+    enum: ['CALL', 'REVIEW'],
+    description:
+      'CALL = employer or phone call log; REVIEW = reviewer note. Staff only, never shown to the worker.',
+  })
+  @IsIn(['CALL', 'REVIEW'])
+  kind!: 'CALL' | 'REVIEW';
+
+  @ApiProperty({ maxLength: 2000 })
+  @Transform(trim)
+  @IsString()
+  @Length(1, 2000)
+  body!: string;
+}
+
+export class DocumentDetailsDto {
+  @ApiPropertyOptional({
+    description:
+      'The document number as printed. Only the last four characters are kept (masked as XXXX-XXXX-1234); the full number is never stored or logged.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(4, 40)
+  documentNumber?: string;
+
+  @ApiPropertyOptional({
+    example: '2027-10-09',
+    description: 'Validity end of the document. Must be a future date.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'expiresOn must be a date in YYYY-MM-DD form' })
+  expiresOn?: string;
+}
+
+export class SignOffDto {
+  @ApiPropertyOptional({ maxLength: 1000 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 1000)
+  remarks?: string;
 }
 
 export class RemarksDto {
@@ -146,6 +247,30 @@ export class DocumentView {
 export class CheckView {
   @ApiProperty({ enum: CHECK_TYPES }) checkType!: CheckType;
   @ApiProperty({
+    enum: REJECTION_CODES,
+    nullable: true,
+    type: String,
+    description: 'Why the check was rejected (status REJECTED only).',
+  })
+  rejectionCode!: RejectionCode | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Standard worker-facing wording of the rejection code.',
+  })
+  rejectionMessage!: string | null;
+  @ApiProperty({ description: 'true = disqualifying rejection: the check cannot be resubmitted.' })
+  terminal!: boolean;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'XXXX-XXXX-1234',
+    description: 'Last four characters only.',
+  })
+  maskedDocumentNumber!: string | null;
+  @ApiProperty({ nullable: true, type: String, example: '2027-10-09' })
+  documentExpiresOn!: string | null;
+  @ApiProperty({
     enum: [...CHECK_STATUSES, 'RECHECK_DUE'],
     description: 'RECHECK_DUE = approved, but the re-check date has been reached.',
   })
@@ -164,6 +289,13 @@ export class CheckView {
 }
 
 export class WorkerVerificationResponse {
+  @ApiProperty({ nullable: true, type: String, example: 'SEVA00000042' }) applicationReference!:
+    string | null;
+  @ApiProperty({
+    enum: APPLICATION_STATUSES,
+    description: 'Overall status; see the verification README for the meaning of each value.',
+  })
+  applicationStatus!: ApplicationStatus;
   @ApiProperty({
     enum: ['VERIFIED', 'IN_PROGRESS', 'NOT_STARTED'],
     description: 'VERIFIED only when every required check is approved and not due for re-check.',
@@ -188,6 +320,8 @@ export class DocumentUploadResponse {
 }
 
 export class QueueItem {
+  @ApiProperty({ nullable: true, type: String, example: 'SEVA00000042' }) applicationReference!:
+    string | null;
   @ApiProperty() checkId!: string;
   @ApiProperty({
     description:
@@ -223,6 +357,29 @@ export class QueueItem {
     description: 'When the reviewer took the check into review.',
   })
   claimedAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description:
+      'Submission SLA: 24 business hours (09:00-19:00 IST, Monday to Saturday) after the check was submitted.',
+  })
+  dueAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date, description: 'Claim SLA: 2 hours after the claim.' })
+  claimDueAt!: Date | null;
+  @ApiProperty({
+    enum: ['OVERDUE', 'STALLED_CLAIM'],
+    isArray: true,
+    description:
+      'OVERDUE = still undecided past dueAt; STALLED_CLAIM = claimed more than 2 hours ago and still undecided.',
+  })
+  slaFlags!: SlaFlag[];
+  @ApiProperty({ description: 'slaFlags contains OVERDUE.' }) isOverdue!: boolean;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description: 'When the check was approved or rejected.',
+  })
+  decidedAt!: Date | null;
   @ApiProperty() uploadedDocuments!: number;
 }
 
@@ -261,7 +418,31 @@ export class AdminDocumentView extends DocumentView {
   available!: boolean;
 }
 
+export class NoteView {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: ['CALL', 'REVIEW'] }) kind!: 'CALL' | 'REVIEW';
+  @ApiProperty() body!: string;
+  @ApiProperty() authorUserId!: string;
+  @ApiProperty() createdAt!: Date;
+}
+
 export class AdminCheckView extends CheckView {
+  @ApiProperty({
+    type: [NoteView],
+    description: 'Reviewer and call notes, oldest first. Staff only.',
+  })
+  notes!: NoteView[];
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description:
+      'Last reviewer action on the claim; a claim idle for 30 minutes is released automatically.',
+  })
+  lastActivityAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) dueAt!: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) claimDueAt!: Date | null;
+  @ApiProperty({ enum: ['OVERDUE', 'STALLED_CLAIM'], isArray: true }) slaFlags!: SlaFlag[];
+  @ApiProperty({ nullable: true, type: Date }) decidedAt!: Date | null;
   @ApiProperty({ type: [AdminDocumentView] }) declare documents: AdminDocumentView[];
   @ApiProperty() checkId!: string;
   @ApiProperty({ nullable: true, type: String }) reviewerUserId!: string | null;
@@ -272,6 +453,21 @@ export class AdminCheckView extends CheckView {
 
 export class AdminWorkerVerificationResponse {
   @ApiProperty() workerId!: string;
+  @ApiProperty({ nullable: true, type: String, example: 'SEVA00000042' }) applicationReference!:
+    string | null;
+  @ApiProperty({ enum: APPLICATION_STATUSES }) applicationStatus!: ApplicationStatus;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description: 'Final sign-off time (verification.signoff).',
+  })
+  signedOffAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description: 'Activation time (worker.activate); live in search and matching.',
+  })
+  activatedAt!: Date | null;
   @ApiProperty({ enum: ['VERIFIED', 'IN_PROGRESS', 'NOT_STARTED'] }) level!: VerificationLevel;
   @ApiProperty({ enum: CHECK_TYPES, isArray: true }) requiredChecks!: CheckType[];
   @ApiProperty({ type: [AdminCheckView] }) checks!: AdminCheckView[];

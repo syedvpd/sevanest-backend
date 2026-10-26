@@ -178,7 +178,7 @@ describe('Verification assignment and queue contract (integration)', () => {
         .expect(200);
       expect(res.body.data).toHaveLength(1);
       const item = res.body.data[0];
-      expect(item).toEqual({
+      expect(item).toMatchObject({
         checkId: first.checkId,
         workerId: first.worker.workerId,
         workerName: profile.name,

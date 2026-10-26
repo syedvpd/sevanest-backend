@@ -20,16 +20,22 @@ import type { Page } from '../../common/pagination/pagination';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import {
+  AddNoteDto,
   AdminWorkerVerificationResponse,
   ApproveCheckDto,
   CHECK_TYPES,
+  DocumentDetailsDto,
   DocumentLinkResponse,
   DocumentUploadResponse,
   QueueItem,
+  ReassignReviewDto,
+  RejectCheckDto,
+  ReleaseReviewDto,
   RemarksDto,
   RequestDocumentUploadDto,
   RequirementsResponse,
   SetRequirementsDto,
+  SignOffDto,
   VerificationQueueQuery,
   WorkerVerificationResponse,
 } from './dto/verification.dto';
@@ -99,13 +105,14 @@ export class WorkerVerificationController {
   @ApiOperation({
     summary: 'Submit one check for review',
     description:
-      'Identity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved.',
+      'Identity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Optional body: documentNumber (only the last four characters are kept) and expiresOn (a future date; required later for licence and police clearance). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved; 409 CHECK_DISQUALIFIED after a disqualifying rejection.',
   })
   submit(
     @Param('checkType', new ParseEnumPipe(CHECK_TYPES)) checkType: CheckType,
     @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: DocumentDetailsDto,
   ): Promise<WorkerVerificationResponse> {
-    return this.verification.submitCheck(user.userId, checkType);
+    return this.verification.submitCheck(user.userId, checkType, dto);
   }
 }
 
@@ -204,13 +211,85 @@ export class AdminVerificationController {
   @ApiModelResponse(AdminWorkerVerificationResponse)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.VERIFICATION_DECIDE)
-  @ApiOperation({ summary: 'Reject a check in review (remarks required)' })
+  @ApiOperation({
+    summary: 'Reject a check in review with an approved reason code',
+    description:
+      'Body: reasonCode (BLURRY_IMAGE, DOCUMENT_EXPIRED, NAME_MISMATCH, INCOMPLETE_DOCUMENT, INVALID_DOCUMENT_TYPE, SUSPECTED_TAMPERING, UNVERIFIABLE_REFERENCE, CRIMINAL_RECORD_DISQUALIFIED, OTHER) and remarks (mandatory for OTHER, optional otherwise). The reviewer who claimed the check (or a supervisor) decides: 409 CHECK_NOT_ASSIGNED_TO_YOU otherwise. CRIMINAL_RECORD_DISQUALIFIED and SUSPECTED_TAMPERING are terminal.',
+  })
   async reject(
     @Param('checkId', ParseUUIDPipe) checkId: string,
-    @Body() dto: RemarksDto,
+    @Body() dto: RejectCheckDto,
     @CurrentUser() admin: AuthenticatedUser,
   ): Promise<AdminWorkerVerificationResponse> {
-    return this.verification.reject(checkId, dto.remarks, await this.actor(admin));
+    return this.verification.reject(checkId, dto, await this.actor(admin));
+  }
+
+  @Post('checks/:checkId/release-review')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.VERIFICATION_REVIEW)
+  @ApiOperation({
+    summary: 'Release a claimed check back to the queue (IN_REVIEW to SUBMITTED)',
+    description:
+      'The claiming reviewer, or a supervisor holding verification.reassign. 409 CHECK_NOT_CLAIMED, 409 CHECK_NOT_ASSIGNED_TO_YOU. A claim idle for 30 minutes is released automatically.',
+  })
+  async releaseReview(
+    @Param('checkId', ParseUUIDPipe) checkId: string,
+    @Body() dto: ReleaseReviewDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerVerificationResponse> {
+    return this.verification.releaseReview(checkId, dto, await this.actor(admin));
+  }
+
+  @Post('checks/:checkId/reassign-review')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.VERIFICATION_REASSIGN)
+  @ApiOperation({
+    summary: 'Give a check in review to another reviewer (supervisors)',
+    description:
+      'Body: reviewerUserId (an active admin holding verification.review), reason. 422 REVIEWER_NOT_ELIGIBLE.',
+  })
+  async reassignReview(
+    @Param('checkId', ParseUUIDPipe) checkId: string,
+    @Body() dto: ReassignReviewDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerVerificationResponse> {
+    return this.verification.reassignReview(checkId, dto, await this.actor(admin));
+  }
+
+  @Post('checks/:checkId/notes')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.VERIFICATION_REVIEW)
+  @ApiOperation({
+    summary: 'Add a reviewer note or a call note to a check in review (staff only)',
+    description:
+      'Body: kind (CALL or REVIEW) and body. Never shown to the worker. Counts as reviewer activity. Previous-employment approval needs at least one CALL note.',
+  })
+  async addNote(
+    @Param('checkId', ParseUUIDPipe) checkId: string,
+    @Body() dto: AddNoteDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerVerificationResponse> {
+    return this.verification.addNote(checkId, dto, await this.actor(admin));
+  }
+
+  @Put('checks/:checkId/document-details')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
+  @Permissions(PermissionCode.VERIFICATION_REVIEW)
+  @ApiOperation({
+    summary:
+      'Record the document number (last four characters kept) and validity end for a check in review',
+    description:
+      'Licence and police clearance need expiresOn (and police clearance the reference number) before they can be approved: 422 APPROVAL_REQUIREMENTS_MISSING.',
+  })
+  async setDocumentDetails(
+    @Param('checkId', ParseUUIDPipe) checkId: string,
+    @Body() dto: DocumentDetailsDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerVerificationResponse> {
+    return this.verification.setDocumentDetails(checkId, dto, await this.actor(admin));
   }
 
   @Post('checks/:checkId/recheck')
@@ -245,7 +324,7 @@ export class AdminVerificationController {
 
   private async actor(admin: AuthenticatedUser): Promise<VerificationActor> {
     const access = await this.users.getAccess(admin.userId);
-    return { userId: admin.userId, roles: access.roles };
+    return { userId: admin.userId, roles: access.roles, permissions: access.permissions };
   }
 }
 
@@ -262,7 +341,10 @@ export class AdminVerificationController {
 @RequireUserType('ADMIN')
 @Controller({ path: 'admin/workers/:workerId/verification', version: '1' })
 export class AdminWorkerVerificationController {
-  constructor(private readonly verification: VerificationService) {}
+  constructor(
+    private readonly verification: VerificationService,
+    private readonly users: UsersService,
+  ) {}
 
   @Get()
   @ApiModelResponse(AdminWorkerVerificationResponse)
@@ -272,5 +354,61 @@ export class AdminWorkerVerificationController {
     @Param('workerId', ParseUUIDPipe) workerId: string,
   ): Promise<AdminWorkerVerificationResponse> {
     return this.verification.adminGetWorker(workerId);
+  }
+
+  @Post('sign-off')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.VERIFICATION_SIGNOFF)
+  @ApiOperation({
+    summary:
+      'Final verification sign-off (every required check approved, then a supervisor accepts the worker)',
+    description:
+      'Repeating changes nothing and notifies nothing twice. 409 NOT_FULLY_VERIFIED, 409 WORKER_DISQUALIFIED, 422 PROFILE_NOT_SUBMITTED. It does not activate the worker.',
+  })
+  async signOff(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @Body() dto: SignOffDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerVerificationResponse> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.verification.signOff(workerId, dto, {
+      userId: admin.userId,
+      roles: access.roles,
+      permissions: access.permissions,
+    });
+  }
+}
+
+@ApiTags('Admin - Verification')
+@ApiBearerAuth()
+@ApiExtraModels(AdminWorkerVerificationResponse)
+@RequireUserType('ADMIN')
+@Controller({ path: 'admin/workers/:workerId', version: '1' })
+export class AdminWorkerActivationController {
+  constructor(
+    private readonly verification: VerificationService,
+    private readonly users: UsersService,
+  ) {}
+
+  @Post('activate')
+  @ApiModelResponse(AdminWorkerVerificationResponse)
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.WORKER_ACTIVATE)
+  @ApiOperation({
+    summary: 'Activate a signed-off worker: live in search and matching',
+    description:
+      'Needs the sign-off (409 NOT_SIGNED_OFF), every required check still approved, one service category, one service area, the criminal self-declaration, an active account and no blacklisting (422 ACTIVATION_REQUIREMENTS_MISSING lists what is missing). Repeating changes nothing.',
+  })
+  async activate(
+    @Param('workerId', ParseUUIDPipe) workerId: string,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminWorkerVerificationResponse> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.verification.activate(workerId, {
+      userId: admin.userId,
+      roles: access.roles,
+      permissions: access.permissions,
+    });
   }
 }

@@ -62,6 +62,16 @@ export const DEFAULT_IN_APP_TEMPLATES: ReadonlyArray<{
     body: 'Your {{checkType}} verification was not approved. Please check the remarks and resubmit.',
   },
   {
+    event: 'WORKER_VERIFIED',
+    title: 'Profile verified',
+    body: 'Congratulations! Your SevaNest profile {{applicationReference}} has been verified. We will activate your account shortly.',
+  },
+  {
+    event: 'WORKER_ACTIVATED',
+    title: 'You are live',
+    body: 'Your SevaNest account is active. You can now discover and accept domestic work opportunities!',
+  },
+  {
     event: 'REPLACEMENT_UPDATE',
     title: 'Replacement update',
     body: 'Your replacement request is now {{status}}.',

@@ -91,5 +91,47 @@ export class AbandonedUploadLoop implements OnApplicationBootstrap, OnModuleDest
   }
 }
 
-@Module({ imports: [VerificationModule], providers: [RecheckDueLoop, AbandonedUploadLoop] })
+/** D-90: a claim with no reviewer activity for 30 minutes goes back to the queue; the loop checks every minute. */
+const CLAIM_SWEEP_INTERVAL_MS = 60 * 1000;
+
+@Injectable()
+export class ClaimReleaseLoop implements OnApplicationBootstrap, OnModuleDestroy {
+  private readonly logger = new Logger(ClaimReleaseLoop.name);
+  private timer?: NodeJS.Timeout;
+  private running = false;
+
+  constructor(
+    private readonly verification: VerificationService,
+    private readonly heartbeat: HeartbeatService,
+  ) {}
+
+  onApplicationBootstrap(): void {
+    this.timer = setInterval(() => void this.tick(), CLAIM_SWEEP_INTERVAL_MS);
+    setTimeout(() => void this.tick(), 20_000).unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  private async tick(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+    try {
+      await this.heartbeat.beat('claim-release', CLAIM_SWEEP_INTERVAL_MS);
+      const released = await this.verification.releaseInactiveClaims();
+      if (released > 0) this.logger.log(`Idle verification claims released: ${released}`);
+    } catch (error) {
+      reportError(error, { job: 'verification' });
+      this.logger.error(`Claim release run failed: ${(error as Error).message}`);
+    } finally {
+      this.running = false;
+    }
+  }
+}
+
+@Module({
+  imports: [VerificationModule],
+  providers: [RecheckDueLoop, AbandonedUploadLoop, ClaimReleaseLoop],
+})
 export class VerificationWorkerModule {}

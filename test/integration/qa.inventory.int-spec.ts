@@ -123,7 +123,7 @@ describe('QA - API inventory and route invariants (integration)', () => {
     // Reviewed: read-only catalogue data and the caller's own identity/session management.
     expect(
       openToAnySignedIn.every((p) =>
-        /^(GET|POST|DELETE) \/api\/v1\/(auth|users\/me|service-categories|service-areas|notifications|legal|me\/deletion-request)/.test(
+        /^(GET|POST|PUT|DELETE) \/api\/v1\/(auth|users\/me|service-categories|service-areas|notifications|legal|me\/deletion-request)/.test(
           p,
         ),
       ),

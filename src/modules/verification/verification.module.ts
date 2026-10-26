@@ -5,6 +5,7 @@ import { UsersModule } from '../users/users.module';
 import { WorkersModule } from '../workers/workers.module';
 import {
   AdminVerificationController,
+  AdminWorkerActivationController,
   AdminWorkerVerificationController,
   WorkerVerificationController,
 } from './verification.controller';
@@ -24,6 +25,7 @@ import { VerificationRetention } from './verification-retention';
     WorkerVerificationController,
     AdminVerificationController,
     AdminWorkerVerificationController,
+    AdminWorkerActivationController,
     WorkerOnboardingController,
   ],
   providers: [VerificationRetention, VerificationRepository, VerificationService],

@@ -7,6 +7,8 @@ export const AdminRoleCode = {
   SUPER_ADMIN: 'SUPER_ADMIN',
   OPERATIONS_ADMIN: 'OPERATIONS_ADMIN',
   VERIFICATION_EXECUTIVE: 'VERIFICATION_EXECUTIVE',
+  /** D-90: final sign-off, release/reassign of claims, activation (with the Operations Admin). */
+  VERIFICATION_SUPERVISOR: 'VERIFICATION_SUPERVISOR',
   SUPPORT_EXECUTIVE: 'SUPPORT_EXECUTIVE',
 } as const;
 
@@ -18,6 +20,7 @@ export const ADMIN_ROLES: ReadonlyArray<{ code: AdminRoleCodeValue; name: string
   { code: AdminRoleCode.SUPER_ADMIN, name: 'Super Admin' },
   { code: AdminRoleCode.OPERATIONS_ADMIN, name: 'Operations Admin' },
   { code: AdminRoleCode.VERIFICATION_EXECUTIVE, name: 'Verification Executive' },
+  { code: AdminRoleCode.VERIFICATION_SUPERVISOR, name: 'Verification Supervisor' },
   { code: AdminRoleCode.SUPPORT_EXECUTIVE, name: 'Support Executive' },
 ];
 
@@ -42,6 +45,12 @@ export const PermissionCode = {
   VERIFICATION_DECIDE: 'verification.decide',
   VERIFICATION_DOCUMENT_VIEW: 'verification.document.view',
   VERIFICATION_CONFIGURE: 'verification.configure',
+  /** D-90: final verification sign-off of a worker. */
+  VERIFICATION_SIGNOFF: 'verification.signoff',
+  /** D-90: release or reassign a check claimed by another reviewer. */
+  VERIFICATION_REASSIGN: 'verification.reassign',
+  /** D-90: activate a signed-off worker (live in search and matching). */
+  WORKER_ACTIVATE: 'worker.activate',
   MATCHING_RUN: 'matching.run',
   BOOKING_VIEW: 'booking.view',
   BOOKING_MANAGE: 'booking.manage',
@@ -103,6 +112,19 @@ export const PERMISSION_CATALOG: ReadonlyArray<{
   {
     code: PermissionCode.WORKER_REVEAL_EMERGENCY_CONTACT,
     description: 'Reveal a worker emergency contact with a stated reason (every reveal is audited)',
+  },
+  {
+    code: PermissionCode.VERIFICATION_SIGNOFF,
+    description:
+      'Give the final verification sign-off for a worker once all required checks are approved',
+  },
+  {
+    code: PermissionCode.VERIFICATION_REASSIGN,
+    description: 'Release or reassign a verification check claimed by another reviewer',
+  },
+  {
+    code: PermissionCode.WORKER_ACTIVATE,
+    description: 'Activate a signed-off worker so they appear in search and matching',
   },
   { code: PermissionCode.CATEGORY_MANAGE, description: 'View and manage service categories' },
   { code: PermissionCode.AREA_MANAGE, description: 'View and manage service areas' },
@@ -210,6 +232,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]
     PermissionCode.WORKER_MANAGE,
     PermissionCode.WORKER_BLACKLIST,
     PermissionCode.WORKER_REVEAL_EMERGENCY_CONTACT,
+    PermissionCode.VERIFICATION_SIGNOFF,
+    PermissionCode.VERIFICATION_REASSIGN,
+    PermissionCode.WORKER_ACTIVATE,
     PermissionCode.MATCHING_RUN,
     PermissionCode.REPLACEMENT_VIEW,
     PermissionCode.REPLACEMENT_MANAGE,
@@ -232,6 +257,15 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]
     PermissionCode.VERIFICATION_REVIEW,
     PermissionCode.VERIFICATION_DOCUMENT_VIEW,
     PermissionCode.VERIFICATION_DECIDE,
+  ],
+  [AdminRoleCode.VERIFICATION_SUPERVISOR]: [
+    PermissionCode.WORKER_VIEW,
+    PermissionCode.VERIFICATION_REVIEW,
+    PermissionCode.VERIFICATION_DOCUMENT_VIEW,
+    PermissionCode.VERIFICATION_DECIDE,
+    PermissionCode.VERIFICATION_SIGNOFF,
+    PermissionCode.VERIFICATION_REASSIGN,
+    PermissionCode.WORKER_ACTIVATE,
   ],
   [AdminRoleCode.SUPPORT_EXECUTIVE]: [
     PermissionCode.BOOKING_VIEW,

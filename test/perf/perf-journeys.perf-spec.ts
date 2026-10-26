@@ -568,7 +568,7 @@ describe('Performance journeys', () => {
       await hit('POST', '/admin/verification/checks/{checkId}/reject', {
         t: A,
         p: { checkId: rejectId },
-        body: { remarks: 'Perf: document unclear' },
+        body: { reasonCode: 'OTHER', remarks: 'Perf: document unclear' },
       });
     }
     // ------------------------------------------------------------------ discovery and shortlist (customer)

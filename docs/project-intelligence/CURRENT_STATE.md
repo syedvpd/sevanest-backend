@@ -81,3 +81,6 @@ Link endpoint now separates 404 (unknown id), 409 DOCUMENT_NOT_AVAILABLE (unconf
 
 ## 2026-10-26 worker access to reference reads
 `GET /pricing/guidance` and `GET /locations/service-area` now allow WORKER as well as CUSTOMER (read-only reference data; admin still 403, anonymous 401). Test in `worker.app.blockers.int-spec.ts`; 43/43 with `appgaps2` and `contract.openapi` on a fresh DB. Live staging accept-to-complete flow not run (needs a staging booking).
+
+## 2026-10-26 client decisions D-90 (Q-123..Q-129)
+Built: final sign-off + activation as separate steps (matching needs verified AND signed off AND activated; existing verified workers backfilled), SEVA application reference, release/reassign/30-minute auto-release, rejection reason codes, reviewer/call notes, document number (last four) and expiry, SLA fields, VERIFICATION_SUPERVISOR role + 3 permissions, WORKER_VERIFIED/WORKER_ACTIVATED notifications. Migration 20261102090000 (33 in total). Reject now needs reasonCode. Open: Q-130..Q-134. Evidence: typecheck, lint, format, prisma validate clean; targeted integration specs green; full integration run not awaited (see the push message). Report: docs/qa/admin-worker-verification-api-gap-report.md.

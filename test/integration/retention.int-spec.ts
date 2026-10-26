@@ -144,7 +144,10 @@ describe('Retention and account erasure (integration)', () => {
       const checkId = await checkIdOf(api, admin, worker.workerId, 'IDENTITY');
       await as(api, admin).post(`${A}/verification/checks/${checkId}/start-review`).expect(200);
       await as(api, admin)
-        .post(`${A}/verification/checks/${checkId}/reject`, { remarks: 'Blurry scan' })
+        .post(`${A}/verification/checks/${checkId}/reject`, {
+          reasonCode: 'OTHER',
+          remarks: 'Blurry scan',
+        })
         .expect(200);
       const keptWorker = await onboardWorker(api, { areaIds: [area.id] });
       await approveCheck(api, admin, keptWorker, 'IDENTITY');

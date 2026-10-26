@@ -113,6 +113,7 @@ describe('Workers API (integration)', () => {
       expect(Object.keys(body).sort()).toEqual(
         [
           'address',
+          'applicationReference',
           'categories',
           'createdAt',
           'criminalDeclaration',
@@ -634,6 +635,7 @@ describe('Workers API (integration)', () => {
       for (const row of page.body.data as Array<Record<string, unknown>>) {
         expect(Object.keys(row).sort()).toEqual([
           'accountStatus',
+          'applicationReference',
           'categories',
           'createdAt',
           'id',

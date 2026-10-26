@@ -34,10 +34,50 @@ architecture" (private storage, short-lived signed links, permission check first
 | GET/PUT | `/admin/verification/requirements`                 | review / `verification.configure` | Which checks are required (audited)                                            |
 | POST    | `/admin/verification/checks/{id}/start-review`     | `verification.review`             | Claim: persists reviewer + claimedAt; 409 if held by another                   |
 | POST    | `/admin/verification/checks/{id}/approve`          | `verification.decide`             | IN_REVIEW -> APPROVED (optional `recheckAt`)                                   |
-| POST    | `/admin/verification/checks/{id}/reject`           | `verification.decide`             | IN_REVIEW -> REJECTED (remarks required)                                       |
+| POST    | `/admin/verification/checks/{id}/reject`           | `verification.decide`             | IN_REVIEW -> REJECTED; body `reasonCode` (+ `remarks`, mandatory for OTHER)      |
+| POST    | `/admin/verification/checks/{id}/release-review`   | `verification.review`             | IN_REVIEW -> SUBMITTED; the claimant, or a supervisor (`verification.reassign`) |
+| POST    | `/admin/verification/checks/{id}/reassign-review`  | `verification.reassign`           | Give a check in review to another eligible reviewer                            |
+| POST    | `/admin/verification/checks/{id}/notes`            | `verification.review`             | Reviewer or call note (staff only); counts as reviewer activity                |
+| PUT     | `/admin/verification/checks/{id}/document-details` | `verification.review`             | Document number (last four kept) and validity end                              |
+| POST    | `/admin/workers/{workerId}/verification/sign-off`  | `verification.signoff`            | Final sign-off once every required check is approved (idempotent)              |
+| POST    | `/admin/workers/{workerId}/activate`               | `worker.activate`                 | Activate a signed-off worker: live in search and matching (idempotent)         |
 | POST    | `/admin/verification/checks/{id}/recheck`          | `verification.decide`             | APPROVED -> IN_REVIEW (remarks required)                                       |
 | GET     | `/admin/verification/documents/{id}/link`          | `verification.document.view`      | Signed link `{url, signedUrl, expiresAt, expiresInSeconds}`; audited           |
 | GET     | `/admin/workers/{workerId}/verification`           | `verification.review`             | Checks, document metadata, full history                                        |
+
+## Worker lifecycle (D-90, client decisions of 2026-10-26)
+
+`DRAFT` -> `SUBMITTED` -> `UNDER_REVIEW` -> `VERIFIED` -> `ACTIVE`, plus `ACTION_REQUIRED` and `REJECTED`. This overall `applicationStatus` is derived (shown on the worker's
+own verification, the admin dossier); only two facts are stored: the sign-off time and the activation time.
+
+| applicationStatus | Meaning |
+| --- | --- |
+| `DRAFT` | profile not submitted yet |
+| `SUBMITTED` | profile submitted, no check submitted yet |
+| `UNDER_REVIEW` | at least one check submitted, or every required check approved and the sign-off is still to come |
+| `ACTION_REQUIRED` | a check was rejected with a non-disqualifying reason: the worker resubmits only that check (approved checks stay approved) |
+| `VERIFIED` | every required check approved AND the final sign-off given. Not yet live in search |
+| `ACTIVE` | verified, signed off AND activated by operations: live in search and matching |
+| `REJECTED` | a check was rejected with a disqualifying code (CRIMINAL_RECORD_DISQUALIFIED, SUSPECTED_TAMPERING): final |
+
+Matching eligibility = fully verified (all required checks approved, none due for re-check) AND signed off AND activated (`activeWorkerCondition`).
+A re-check takes a worker out of matching at once; approving it again brings them back without a new sign-off.
+
+- **Sign-off** (`verification.signoff`, Operations Admin and Verification Supervisor): needs all required checks approved (409 `NOT_FULLY_VERIFIED`), no
+  disqualifying rejection (409 `WORKER_DISQUALIFIED`). Sends `WORKER_VERIFIED` to the worker and raises an alert for `worker.activate` holders. Once only.
+- **Activation** (`worker.activate`): needs the sign-off (409 `NOT_SIGNED_OFF`), still fully verified, one service category, one service area, the criminal
+  self-declaration, an active account and no blacklisting (422 `ACTIVATION_REQUIREMENTS_MISSING` lists what is missing). Sends `WORKER_ACTIVATED`.
+- **Application reference**: `SEVA` + 8 digits (database sequence), stamped when the profile is submitted; null while DRAFT.
+- **Rejection codes**: BLURRY_IMAGE, DOCUMENT_EXPIRED, NAME_MISMATCH, INCOMPLETE_DOCUMENT, INVALID_DOCUMENT_TYPE, SUSPECTED_TAMPERING, UNVERIFIABLE_REFERENCE,
+  CRIMINAL_RECORD_DISQUALIFIED, OTHER (remarks mandatory). The worker sees the standard wording of the code. Without remarks the wording is stored as the remarks.
+- **Ownership**: approve, reject, notes and document details belong to the reviewer who claimed the check (409 `CHECK_NOT_ASSIGNED_TO_YOU`); a holder of `verification.reassign`
+  (Operations Admin, Verification Supervisor, Super Admin) may act on any claim. A claim with no activity (claim, note, document link) for 30 minutes is released
+  automatically to SUBMITTED by the worker-process loop `claim-release`.
+- **Approval requirements**: PREVIOUS_EMPLOYMENT needs a CALL note; POLICE_VERIFICATION needs the reference number and a validity end; LICENSE needs a validity end
+  (422 `APPROVAL_REQUIREMENTS_MISSING`). The validity end becomes the re-check date unless the reviewer chose another. Only the last four characters of a document
+  number are stored (`XXXX-XXXX-1234`); the full number is never stored or logged.
+- **SLA** (queue and dossier): `dueAt` = 24 business hours after submission (09:00-19:00 IST, Monday to Saturday; an after-hours submission starts at 09:00 the next
+  business day); `claimDueAt` = claim + 2 hours; `slaFlags` `OVERDUE` (undecided past `dueAt`) and `STALLED_CLAIM` (claimed over 2 hours ago, undecided); `isOverdue`; `decidedAt`.
 
 ## Rules
 

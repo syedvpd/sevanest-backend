@@ -30,17 +30,17 @@ enum UserStatus {
 }
 
 model User {
-  id           String     @id @default(uuid(7)) @db.Uuid
-  type         UserType
-  mobile       String?    @unique
-  email        String?    @unique
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  type               UserType
+  mobile             String?    @unique
+  email              String?    @unique
   /// Slow hash (argon2/bcrypt) for credential login; null for OTP-only users. Never returned by any API.
-  passwordHash String?    @map("password_hash")
+  passwordHash       String?    @map("password_hash")
   /// DEC-17: the user's choice to receive e-mail notifications (only used when an e-mail address is on file). On by default.
-  emailNotifications Boolean @default(true) @map("email_notifications")
-  status       UserStatus @default(ACTIVE)
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  emailNotifications Boolean    @default(true) @map("email_notifications")
+  status             UserStatus @default(ACTIVE)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   roles     UserRole[]
   sessions  Session[]
@@ -51,6 +51,9 @@ model User {
   workerProfile             WorkerProfile?
   verificationReviews       WorkerVerificationCheck[] @relation("VerificationReviewer")
   verificationEvents        WorkerVerificationEvent[] @relation("VerificationEventActor")
+  verificationNotes         WorkerVerificationNote[]  @relation("VerificationNoteAuthor")
+  workersSignedOff          WorkerProfile[]           @relation("WorkerSignedOffBy")
+  workersActivated          WorkerProfile[]           @relation("WorkerActivatedBy")
   customerPhotos            CustomerProfilePhoto[]    @relation("CustomerPhotos")
   bookings                  Booking[]                 @relation("BookingCustomer")
   bookingsCancelled         Booking[]                 @relation("BookingCancelledBy")
@@ -373,44 +376,54 @@ enum EngagementPreference {
 /// fields (address, emergency contact, previous employer) are all-or-none (migration CHECKs). `profilePhotoRef` is a
 /// storage object key set only by the server (no upload integration exists yet) and is never returned by any API.
 model WorkerProfile {
-  id                     String                 @id @default(uuid(7)) @db.Uuid
-  userId                 String                 @unique @map("user_id") @db.Uuid
-  name                   String
-  onboardingStatus       WorkerOnboardingStatus @default(DRAFT) @map("onboarding_status")
-  submittedAt            DateTime?              @map("submitted_at") @db.Timestamptz(6)
+  id                            String                 @id @default(uuid(7)) @db.Uuid
+  userId                        String                 @unique @map("user_id") @db.Uuid
+  name                          String
+  onboardingStatus              WorkerOnboardingStatus @default(DRAFT) @map("onboarding_status")
+  submittedAt                   DateTime?              @map("submitted_at") @db.Timestamptz(6)
   /// Total months. FRD says "whole years/months", so the lossless unit is stored.
-  experienceMonths       Int?                   @map("experience_months")
+  experienceMonths              Int?                   @map("experience_months")
   /// Rupees. The period (monthly/daily/hourly) is not defined by the specs (open decision).
-  expectedSalary         Decimal?               @map("expected_salary") @db.Decimal(12, 2)
+  expectedSalary                Decimal?               @map("expected_salary") @db.Decimal(12, 2)
   /// Language for the worker's notifications and app (PRD 6.2 / NFR-USA-002). Null = platform default.
-  preferredLanguage      String?                @map("preferred_language")
-  addressLine            String?                @map("address_line")
-  addressArea            String?                @map("address_area")
-  addressCity            String?                @map("address_city")
-  addressPincode         String?                @map("address_pincode")
-  emergencyContactName   String?                @map("emergency_contact_name")
-  emergencyContactMobile String?                @map("emergency_contact_mobile")
-  previousEmployerName   String?                @map("previous_employer_name")
-  previousEmployerMobile String?                @map("previous_employer_mobile")
-  profilePhotoRef        String?                @map("profile_photo_ref")
+  preferredLanguage             String?                @map("preferred_language")
+  addressLine                   String?                @map("address_line")
+  addressArea                   String?                @map("address_area")
+  addressCity                   String?                @map("address_city")
+  addressPincode                String?                @map("address_pincode")
+  emergencyContactName          String?                @map("emergency_contact_name")
+  emergencyContactMobile        String?                @map("emergency_contact_mobile")
+  previousEmployerName          String?                @map("previous_employer_name")
+  previousEmployerMobile        String?                @map("previous_employer_mobile")
+  profilePhotoRef               String?                @map("profile_photo_ref")
   /// Criminal self-declaration (D-87). Null = not answered. true = the worker states they have a criminal record or pending case.
   /// Detail text only when true. The acceptance time is server-stamped each time the worker (re)confirms the declaration.
-  criminalRecordDeclared Boolean?               @map("criminal_record_declared")
-  criminalRecordDetails  String?                @map("criminal_record_details")
-  criminalDeclaredAt     DateTime?              @map("criminal_declared_at") @db.Timestamptz(6)
+  criminalRecordDeclared        Boolean?               @map("criminal_record_declared")
+  criminalRecordDetails         String?                @map("criminal_record_details")
+  criminalDeclaredAt            DateTime?              @map("criminal_declared_at") @db.Timestamptz(6)
   /// DEC-06: set while the worker is blacklisted (excluded from search, matching and eligibility; the account is suspended). Only a Super Admin lifts it.
-  blacklistedAt          DateTime?              @map("blacklisted_at") @db.Timestamptz(6)
-  blacklistReason        String?                @map("blacklist_reason")
-  blacklistedByUserId    String?                @map("blacklisted_by_user_id") @db.Uuid
+  blacklistedAt                 DateTime?              @map("blacklisted_at") @db.Timestamptz(6)
+  blacklistReason               String?                @map("blacklist_reason")
+  blacklistedByUserId           String?                @map("blacklisted_by_user_id") @db.Uuid
   /// DEC-18: approximate location of the worker's home address (rounded to 2 decimals, about 1 km) used only to order search results by
   /// distance. Never returned by any API. Null when the address is unknown or could not be geocoded.
-  addressLatitude        Float?                 @map("address_latitude")
-  addressLongitude       Float?                 @map("address_longitude")
-  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  addressLatitude               Float?                 @map("address_latitude")
+  addressLongitude              Float?                 @map("address_longitude")
+  /// Human-readable reference (SEVA + 8 digits, D-90). Stamped by the server when the profile is submitted; null while DRAFT.
+  applicationReference          String?                @unique @map("application_reference")
+  /// Final verification sign-off (D-90): all required checks approved AND a supervisor accepted the worker. Null = not signed off.
+  verificationSignedOffAt       DateTime?              @map("verification_signed_off_at") @db.Timestamptz(6)
+  verificationSignedOffByUserId String?                @map("verification_signed_off_by_user_id") @db.Uuid
+  /// Commercial activation (D-90): the worker is live in search and matching. Null = not activated.
+  activatedAt                   DateTime?              @map("activated_at") @db.Timestamptz(6)
+  activatedByUserId             String?                @map("activated_by_user_id") @db.Uuid
+  createdAt                     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user               User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
   blacklistedBy      User?                     @relation("WorkerBlacklistedBy", fields: [blacklistedByUserId], references: [id], onDelete: Restrict)
+  signedOffBy        User?                     @relation("WorkerSignedOffBy", fields: [verificationSignedOffByUserId], references: [id], onDelete: Restrict)
+  activatedBy        User?                     @relation("WorkerActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict)
   skills             WorkerSkill[]
   languages          WorkerLanguage[]
   preferredAreas     WorkerPreferredArea[]
@@ -424,9 +437,9 @@ model WorkerProfile {
   profilePhotos      WorkerProfilePhoto[]
   shortlistedBy      CustomerShortlistItem[]
   references         WorkerReference[]
+  paymentReferences  WorkerPaymentReference[]
 
   @@index([onboardingStatus, createdAt])
-  paymentReferences WorkerPaymentReference[]
   @@map("worker_profiles")
 }
 
@@ -537,6 +550,24 @@ enum VerificationCheckStatus {
   REJECTED
 }
 
+/// Approved rejection reasons (D-90). CRIMINAL_RECORD_DISQUALIFIED and SUSPECTED_TAMPERING are terminal (the check cannot be resubmitted).
+enum VerificationRejectionCode {
+  BLURRY_IMAGE
+  DOCUMENT_EXPIRED
+  NAME_MISMATCH
+  INCOMPLETE_DOCUMENT
+  INVALID_DOCUMENT_TYPE
+  SUSPECTED_TAMPERING
+  UNVERIFIABLE_REFERENCE
+  CRIMINAL_RECORD_DISQUALIFIED
+  OTHER
+}
+
+enum VerificationNoteKind {
+  CALL
+  REVIEW
+}
+
 enum VerificationDocumentStatus {
   PENDING_UPLOAD
   UPLOADED
@@ -554,30 +585,39 @@ model VerificationRequirement {
 /// One row per worker and check type (current state). Previous attempts stay in worker_verification_events and in the
 /// documents of earlier submissions (FM-05: "previous attempts stay in history").
 model WorkerVerificationCheck {
-  id                 String                  @id @default(uuid(7)) @db.Uuid
-  workerId           String                  @map("worker_id") @db.Uuid
-  checkType          VerificationCheckType   @map("check_type")
-  status             VerificationCheckStatus @default(NOT_SUBMITTED)
-  submittedAt        DateTime?               @map("submitted_at") @db.Timestamptz(6)
-  reviewedAt         DateTime?               @map("reviewed_at") @db.Timestamptz(6)
-  reviewerUserId     String?                 @map("reviewer_user_id") @db.Uuid
+  id                   String                     @id @default(uuid(7)) @db.Uuid
+  workerId             String                     @map("worker_id") @db.Uuid
+  checkType            VerificationCheckType      @map("check_type")
+  status               VerificationCheckStatus    @default(NOT_SUBMITTED)
+  submittedAt          DateTime?                  @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt           DateTime?                  @map("reviewed_at") @db.Timestamptz(6)
+  reviewerUserId       String?                    @map("reviewer_user_id") @db.Uuid
   /// When the current reviewer took the check into review (start-review). Null while unassigned.
-  claimedAt          DateTime?               @map("claimed_at") @db.Timestamptz(6)
-  remarks            String?
+  claimedAt            DateTime?                  @map("claimed_at") @db.Timestamptz(6)
+  /// Last reviewer action on the claim (claim, note, document link). The claim is released after 30 minutes without one (D-90).
+  lastActivityAt       DateTime?                  @map("last_activity_at") @db.Timestamptz(6)
+  rejectionCode        VerificationRejectionCode? @map("rejection_code")
+  /// Only the last four characters of the document number, set from a number the worker or reviewer entered. The full number is never stored.
+  maskedDocumentNumber String?                    @map("masked_document_number")
+  /// Validity end of the document (licence, police clearance). Null where not applicable or not entered.
+  documentExpiresOn    DateTime?                  @map("document_expires_on") @db.Date
+  remarks              String?
   /// Date (India) on which an approval stops counting and a re-check is due. Optional (FM-05).
-  recheckAt          DateTime?               @map("recheck_at") @db.Date
+  recheckAt            DateTime?                  @map("recheck_at") @db.Date
   /// The recheck_at value for which the worker was already reminded (one reminder per due date, never repeated by the loop).
-  recheckNotifiedFor DateTime?               @map("recheck_notified_for") @db.Date
-  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  recheckNotifiedFor   DateTime?                  @map("recheck_notified_for") @db.Date
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   worker    WorkerProfile             @relation(fields: [workerId], references: [id], onDelete: Restrict)
   reviewer  User?                     @relation("VerificationReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
   documents VerificationDocument[]
   events    WorkerVerificationEvent[]
+  notes     WorkerVerificationNote[]
 
   @@unique([workerId, checkType])
   @@index([status, submittedAt])
+  @@index([reviewerUserId, status])
   @@map("worker_verification_checks")
 }
 
@@ -596,6 +636,22 @@ model WorkerVerificationEvent {
 
   @@index([checkId, createdAt])
   @@map("worker_verification_events")
+}
+
+/// Reviewer notes and employer/phone call notes (D-90). Staff only: never returned to the worker. Append-only.
+model WorkerVerificationNote {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  checkId      String               @map("check_id") @db.Uuid
+  kind         VerificationNoteKind
+  body         String
+  authorUserId String               @map("author_user_id") @db.Uuid
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  check  WorkerVerificationCheck @relation(fields: [checkId], references: [id], onDelete: Restrict)
+  author User                    @relation("VerificationNoteAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@index([checkId, createdAt])
+  @@map("worker_verification_notes")
 }
 
 /// Document METADATA. The bytes live in private object storage; object_key is internal and never leaves the backend.
@@ -695,22 +751,23 @@ model Booking {
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  address             CustomerAddress?     @relation(fields: [addressId], references: [id], onDelete: Restrict)
-  customer            User                 @relation("BookingCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
-  cancelledBy         User?                @relation("BookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
-  worker              WorkerProfile?       @relation(fields: [workerId], references: [id], onDelete: Restrict)
-  category            ServiceCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  area                ServiceArea          @relation(fields: [areaId], references: [id], onDelete: Restrict)
-  replaces            Booking?             @relation("BookingReplacement", fields: [replacesBookingId], references: [id], onDelete: Restrict)
-  replacedBy          Booking?             @relation("BookingReplacement")
+  address             CustomerAddress?         @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  customer            User                     @relation("BookingCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  cancelledBy         User?                    @relation("BookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  worker              WorkerProfile?           @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  category            ServiceCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  area                ServiceArea              @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  replaces            Booking?                 @relation("BookingReplacement", fields: [replacesBookingId], references: [id], onDelete: Restrict)
+  replacedBy          Booking?                 @relation("BookingReplacement")
   events              BookingEvent[]
   payments            Payment[]
   attendance          AttendanceRecord[]
-  replacementRequests ReplacementRequest[] @relation("ReplacementOriginal")
-  replacementFor      ReplacementRequest?  @relation("ReplacementNew")
+  replacementRequests ReplacementRequest[]     @relation("ReplacementOriginal")
+  replacementFor      ReplacementRequest?      @relation("ReplacementNew")
   rating              Rating?
   tickets             SupportTicket[]
   interviews          InterviewTrial[]
+  paymentReferences   WorkerPaymentReference[]
 
   @@unique([customerUserId, idempotencyKey])
   @@index([customerUserId, createdAt])
@@ -720,7 +777,6 @@ model Booking {
   @@index([areaId])
   @@index([categoryId])
   @@index([addressId])
-  paymentReferences WorkerPaymentReference[]
   @@map("bookings")
 }
 
@@ -1429,16 +1485,16 @@ enum DeletionRequestStatus {
 /// A user's request to delete their account and personal data (store policy / privacy law). Nothing is erased automatically: retention
 /// periods are undecided (Q-02), so a request is recorded and staff act on it; payment and audit records are never deleted.
 model DeletionRequest {
-  id          String                @id @default(uuid(7)) @db.Uuid
-  userId      String                @map("user_id") @db.Uuid
-  status      DeletionRequestStatus @default(REQUESTED)
-  reason      String?
-  requestedAt DateTime              @default(now()) @map("requested_at") @db.Timestamptz(6)
-  cancelledAt DateTime?             @map("cancelled_at") @db.Timestamptz(6)
-  completedAt DateTime?             @map("completed_at") @db.Timestamptz(6)
-  rejectedAt       DateTime?        @map("rejected_at") @db.Timestamptz(6)
-  rejectedReason   String?          @map("rejected_reason")
-  rejectedByUserId String?          @map("rejected_by_user_id") @db.Uuid
+  id               String                @id @default(uuid(7)) @db.Uuid
+  userId           String                @map("user_id") @db.Uuid
+  status           DeletionRequestStatus @default(REQUESTED)
+  reason           String?
+  requestedAt      DateTime              @default(now()) @map("requested_at") @db.Timestamptz(6)
+  cancelledAt      DateTime?             @map("cancelled_at") @db.Timestamptz(6)
+  completedAt      DateTime?             @map("completed_at") @db.Timestamptz(6)
+  rejectedAt       DateTime?             @map("rejected_at") @db.Timestamptz(6)
+  rejectedReason   String?               @map("rejected_reason")
+  rejectedByUserId String?               @map("rejected_by_user_id") @db.Uuid
 
   user       User  @relation("DeletionRequestUser", fields: [userId], references: [id], onDelete: Restrict)
   rejectedBy User? @relation("DeletionRequestRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: Restrict)
@@ -1551,10 +1607,10 @@ model WorkerPaymentReference {
   recordedByUserId String            @map("recorded_by_user_id") @db.Uuid
   recordedAt       DateTime          @default(now()) @map("recorded_at") @db.Timestamptz(6)
 
-  booking    Booking                 @relation(fields: [bookingId], references: [id], onDelete: Restrict)
-  worker     WorkerProfile           @relation(fields: [workerId], references: [id], onDelete: Restrict)
-  recordedBy User                    @relation("WorkerPaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
-  corrects   WorkerPaymentReference? @relation("WorkerPaymentCorrection", fields: [correctsId], references: [id], onDelete: Restrict)
+  booking     Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  worker      WorkerProfile            @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  recordedBy  User                     @relation("WorkerPaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  corrects    WorkerPaymentReference?  @relation("WorkerPaymentCorrection", fields: [correctsId], references: [id], onDelete: Restrict)
   correctedBy WorkerPaymentReference[] @relation("WorkerPaymentCorrection")
 
   @@index([workerId, recordedAt])

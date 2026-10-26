@@ -184,11 +184,49 @@ export async function approveCheck(
     throw new Error(`submit ${checkType}: ${submitted.status} ${JSON.stringify(submitted.body)}`);
   }
   const id = await checkIdOf(api, admin, worker.workerId, checkType);
-  await as(api, admin).post(`/api/v1/admin/verification/checks/${id}/start-review`).expect(200);
+  const A = `/api/v1/admin/verification/checks/${id}`;
+  await as(api, admin).post(`${A}/start-review`).expect(200);
+  // Approval prerequisites (D-90): an employer call note, the police reference, a validity end for licence and police clearance.
+  if (checkType === 'PREVIOUS_EMPLOYMENT') {
+    await as(api, admin)
+      .post(`${A}/notes`, { kind: 'CALL', body: 'Employer confirmed.' })
+      .expect(200);
+  }
+  if (checkType === 'POLICE_VERIFICATION' || checkType === 'LICENSE') {
+    await as(api, admin)
+      .put(`${A}/document-details`, {
+        ...(checkType === 'POLICE_VERIFICATION' ? { documentNumber: 'PCC-2026-0001234' } : {}),
+        expiresOn: '2099-01-01',
+      })
+      .expect(200);
+  }
   await as(api, admin)
-    .post(`/api/v1/admin/verification/checks/${id}/approve`, recheckAt ? { recheckAt } : {})
+    .post(`${A}/approve`, recheckAt ? { recheckAt } : {})
     .expect(200);
+  await signOffAndActivateIfVerified(api, admin, worker);
   return id;
+}
+
+/**
+ * D-90: a fully verified worker is live in search only after the final sign-off and the activation. Test workers become matchable
+ * the moment their last required check is approved, as before, by taking those two steps here (activation is best effort: a worker
+ * without a service area cannot be activated and was never searchable anyway).
+ */
+export async function signOffAndActivateIfVerified(
+  api: ApiApp,
+  admin: Caller,
+  worker: OnboardedWorker,
+): Promise<void> {
+  const dossier = await as(api, admin)
+    .get(`/api/v1/admin/workers/${worker.workerId}/verification`)
+    .expect(200);
+  if ((dossier.body as { level: string }).level !== 'VERIFIED') return;
+  await as(api, admin).post(`/api/v1/admin/workers/${worker.workerId}/verification/sign-off`, {});
+  await as(api, worker).put('/api/v1/workers/me/criminal-declaration', {
+    hasCriminalRecord: false,
+    accepted: true,
+  });
+  await as(api, admin).post(`/api/v1/admin/workers/${worker.workerId}/activate`, {});
 }
 
 export type { CheckBody };

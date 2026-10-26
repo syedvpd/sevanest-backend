@@ -351,7 +351,10 @@ describe('Verification API (integration)', () => {
         const licenceId = await checkIdOf(api, admin, worker.workerId, 'LICENSE');
         await as(api, admin).post(`${A}/checks/${licenceId}/start-review`).expect(200);
         await as(api, admin)
-          .post(`${A}/checks/${licenceId}/reject`, { remarks: 'Licence expired' })
+          .post(`${A}/checks/${licenceId}/reject`, {
+            reasonCode: 'OTHER',
+            remarks: 'Licence expired',
+          })
           .expect(200);
         const seen = await as(api, worker).get(V).expect(200);
         const licence = seen.body.checks.find(
@@ -366,6 +369,13 @@ describe('Verification API (integration)', () => {
         await approveCheck(api, admin, worker, 'SKILL_CERTIFICATE');
         const again = await checkIdOf(api, admin, worker.workerId, 'LICENSE');
         await as(api, admin).post(`${A}/checks/${again}/start-review`).expect(200);
+        // A licence needs its validity end before it can be approved (D-90).
+        const noExpiry = await as(api, admin).post(`${A}/checks/${again}/approve`, {});
+        expect(noExpiry.status).toBe(422);
+        expect(noExpiry.body.code).toBe('APPROVAL_REQUIREMENTS_MISSING');
+        await as(api, admin)
+          .put(`${A}/checks/${again}/document-details`, { expiresOn: '2099-01-01' })
+          .expect(200);
         await as(api, admin).post(`${A}/checks/${again}/approve`, {}).expect(200);
         expect((await as(api, worker).get(V).expect(200)).body.level).toBe('VERIFIED');
       } finally {
@@ -452,7 +462,7 @@ describe('Verification API (integration)', () => {
         ['put', `${A}/requirements`, { checkTypes: [] }],
         ['post', `${A}/checks/${UNKNOWN_ID}/start-review`],
         ['post', `${A}/checks/${UNKNOWN_ID}/approve`, {}],
-        ['post', `${A}/checks/${UNKNOWN_ID}/reject`, { remarks: 'x' }],
+        ['post', `${A}/checks/${UNKNOWN_ID}/reject`, { reasonCode: 'OTHER', remarks: 'x' }],
         ['post', `${A}/checks/${UNKNOWN_ID}/recheck`, { remarks: 'x' }],
         ['get', `${A}/documents/${UNKNOWN_ID}/link`],
         ['get', `/api/v1/admin/workers/${worker.workerId}/verification`],
@@ -525,10 +535,13 @@ describe('Verification API (integration)', () => {
       expect((await as(api, reviewOnly).post(`${A}/checks/${checkId}/start-review`)).status).toBe(
         200,
       );
-      expect(
-        (await as(api, decideOnly).post(`${A}/checks/${checkId}/reject`, { remarks: 'blurred' }))
-          .status,
-      ).toBe(200);
+      // Deciding belongs to the reviewer who claimed the check (D-90): a decide-only user who did not claim it is refused.
+      const refused = await as(api, decideOnly).post(`${A}/checks/${checkId}/reject`, {
+        reasonCode: 'OTHER',
+        remarks: 'blurred',
+      });
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe('CHECK_NOT_ASSIGNED_TO_YOU');
     });
   });
 
@@ -548,11 +561,17 @@ describe('Verification API (integration)', () => {
       expect(mine[1].uploadedDocuments).toBe(0);
       expect(Object.keys(mine[0] as object).sort()).toEqual(
         [
+          'applicationReference',
           'applicationSubmittedAt',
           'checkId',
           'checkType',
+          'claimDueAt',
           'claimedAt',
+          'decidedAt',
+          'dueAt',
+          'isOverdue',
           'reviewerUserId',
+          'slaFlags',
           'status',
           'submittedAt',
           'uploadedDocuments',
@@ -580,7 +599,7 @@ describe('Verification API (integration)', () => {
       // Not yet in review.
       for (const [path, body] of [
         ['approve', {}],
-        ['reject', { remarks: 'no' }],
+        ['reject', { reasonCode: 'OTHER', remarks: 'no' }],
         ['recheck', { remarks: 'no' }],
       ] as const) {
         const res = await a.post(`${A}/checks/${id}/${path}`, body);
@@ -595,7 +614,7 @@ describe('Verification API (integration)', () => {
       for (const [path, body] of [
         ['start-review', {}],
         ['approve', {}],
-        ['reject', { remarks: 'late' }],
+        ['reject', { reasonCode: 'OTHER', remarks: 'late' }],
       ] as const) {
         expect((await a.post(`${A}/checks/${id}/${path}`, body)).status).toBe(409);
       }
@@ -641,7 +660,7 @@ describe('Verification API (integration)', () => {
       const id = await checkIdOf(api, admin, worker.workerId, 'IDENTITY');
       await as(api, admin).post(`${A}/checks/${id}/start-review`).expect(200);
       await as(api, admin)
-        .post(`${A}/checks/${id}/reject`, { remarks: 'Photo is blurred' })
+        .post(`${A}/checks/${id}/reject`, { reasonCode: 'OTHER', remarks: 'Photo is blurred' })
         .expect(200);
 
       const seen = await as(api, worker).get(V).expect(200);
@@ -681,7 +700,7 @@ describe('Verification API (integration)', () => {
       const results = await Promise.all([
         ...Array.from({ length: 4 }, () => as(api, admin).post(`${A}/checks/${id}/approve`, {})),
         ...Array.from({ length: 4 }, () =>
-          as(api, admin).post(`${A}/checks/${id}/reject`, { remarks: 'no' }),
+          as(api, admin).post(`${A}/checks/${id}/reject`, { reasonCode: 'OTHER', remarks: 'no' }),
         ),
       ]);
       expect(results.filter((r) => r.status === 200)).toHaveLength(1);
@@ -920,7 +939,7 @@ describe('Verification API (integration)', () => {
       const id = await checkIdOf(api, admin, worker.workerId, 'IDENTITY');
       await as(api, admin).post(`${A}/checks/${id}/start-review`).expect(200);
       await as(api, admin)
-        .post(`${A}/checks/${id}/reject`, { remarks: 'SECRET-REMARK-TEXT' })
+        .post(`${A}/checks/${id}/reject`, { reasonCode: 'OTHER', remarks: 'SECRET-REMARK-TEXT' })
         .expect(200);
       await as(api, admin).get(`${A}/documents/${documentId}/link`).expect(200);
 

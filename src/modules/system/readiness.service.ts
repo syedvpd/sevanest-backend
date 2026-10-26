@@ -34,6 +34,7 @@ export const EXPECTED_LOOPS = [
   'notifications',
   'recheck-reminders',
   'abandoned-uploads',
+  'claim-release',
   'payment-recovery',
   'booking-checks',
   'support-sla',

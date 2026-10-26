@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
-import { verifiedWorkerCondition } from '../verification/verification-eligibility';
+import {
+  activeWorkerCondition,
+  verifiedWorkerCondition,
+} from '../verification/verification-eligibility';
 import type { ReportInterval } from './dto/reports.dto';
 
 type Db = Prisma.TransactionClient;
@@ -328,7 +331,7 @@ export class ReportsRepository {
       const rows = await db.$queryRaw<Array<{ registered: number; verified: number }>>(Prisma.sql`
         SELECT count(*)::int AS registered,
                (count(*) FILTER (WHERE wp.onboarding_status = 'SUBMITTED' AND u.status = 'ACTIVE'
-                  AND ${verifiedWorkerCondition('wp.id')}))::int AS verified
+                  AND ${activeWorkerCondition('wp.id')}))::int AS verified
         FROM worker_profiles wp JOIN users u ON u.id = wp.user_id`);
       return { registered: rows[0]?.registered ?? 0, verified: rows[0]?.verified ?? 0 };
     });

@@ -4,7 +4,7 @@ import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 import { indiaToday } from '../../common/time/india';
 import { workerBusyCondition } from '../../common/scheduling/worker-busy';
-import { verifiedWorkerCondition } from '../verification/verification-eligibility';
+import { activeWorkerCondition } from '../verification/verification-eligibility';
 import type { EligibleOrder, EligibleWorker, EligibleWorkerCriteria } from './search.types';
 
 interface PageRow {
@@ -145,7 +145,7 @@ export class SearchRepository {
         AND wp.onboarding_status = 'SUBMITTED'
         AND u.type = 'WORKER' AND u.status = 'ACTIVE'
         AND wp.blacklisted_at IS NULL
-        AND ${verifiedWorkerCondition('wp.id')}
+        AND ${activeWorkerCondition('wp.id')}
         AND ${this.notBlocked(forCustomerUserId)}`);
     return this.hydrate(rows);
   }
@@ -219,7 +219,7 @@ export class SearchRepository {
       Prisma.sql`u.type = 'WORKER' AND u.status = 'ACTIVE'`,
       // DEC-06: a blacklisted worker is never searchable, matchable or bookable.
       Prisma.sql`wp.blacklisted_at IS NULL`,
-      verifiedWorkerCondition('wp.id'),
+      activeWorkerCondition('wp.id'),
       Prisma.sql`EXISTS (SELECT 1 FROM worker_skills ws WHERE ws.worker_id = wp.id AND ws.category_id = ${c.categoryId}::uuid)`,
       Prisma.sql`EXISTS (SELECT 1 FROM worker_preferred_areas wpa WHERE wpa.worker_id = wp.id AND wpa.area_id = ${c.areaId}::uuid)`,
     ];

@@ -447,7 +447,10 @@ describe('Onboarding, step by step (integration)', () => {
       const checkId = await checkIdOf(api, admin, workerId, 'IDENTITY');
       await as(api, admin).post(`${A}/verification/checks/${checkId}/start-review`).expect(200);
       await as(api, admin)
-        .post(`${A}/verification/checks/${checkId}/reject`, { remarks: 'Photo is blurred' })
+        .post(`${A}/verification/checks/${checkId}/reject`, {
+          reasonCode: 'OTHER',
+          remarks: 'Photo is blurred',
+        })
         .expect(200);
       const p = await state(who);
       expect(p.actionRequired).toEqual(['IDENTITY']);

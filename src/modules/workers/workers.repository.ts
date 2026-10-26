@@ -11,6 +11,9 @@ const PROFILE_SELECT = {
   name: true,
   onboardingStatus: true,
   submittedAt: true,
+  applicationReference: true,
+  verificationSignedOffAt: true,
+  activatedAt: true,
   experienceMonths: true,
   expectedSalary: true,
   preferredLanguage: true,
@@ -43,6 +46,10 @@ export interface WorkerRecord {
   name: string;
   onboardingStatus: WorkerOnboardingStatus;
   submittedAt: Date | null;
+  /** SEVA + 8 digits, stamped at submission (D-90). */
+  applicationReference: string | null;
+  signedOffAt: Date | null;
+  activatedAt: Date | null;
   experienceMonths: number | null;
   expectedSalary: number | null;
   preferredLanguage: string | null;
@@ -70,6 +77,9 @@ function toRecord(row: ProfileRow): WorkerRecord {
     name: row.name,
     onboardingStatus: row.onboardingStatus,
     submittedAt: row.submittedAt,
+    applicationReference: row.applicationReference,
+    signedOffAt: row.verificationSignedOffAt,
+    activatedAt: row.activatedAt,
     experienceMonths: row.experienceMonths,
     expectedSalary: row.expectedSalary === null ? null : Number(row.expectedSalary),
     preferredLanguage: row.preferredLanguage,
@@ -297,6 +307,47 @@ export class WorkersRepository {
       data: { onboardingStatus: 'SUBMITTED', submittedAt: at },
       select: { id: true },
     });
+    // D-90: the human-readable reference is stamped once, at submission, by the database sequence.
+    await tx.$executeRaw`
+      UPDATE worker_profiles
+      SET application_reference = 'SEVA' || lpad(nextval('worker_application_reference_seq')::text, 8, '0')
+      WHERE id = ${id}::uuid AND application_reference IS NULL`;
+  }
+
+  /** Number of preferred service areas (activation needs at least one). */
+  async areaCount(id: string, db: Db = this.prisma): Promise<number> {
+    const rows = await db.$queryRaw<Array<{ n: number }>>(
+      Prisma.sql`SELECT count(*)::int AS n FROM worker_preferred_areas WHERE worker_id = ${id}::uuid`,
+    );
+    return rows[0]?.n ?? 0;
+  }
+
+  /** Stamps the final sign-off once (D-90). false = it was already stamped. Call under lock(). */
+  async setSignedOff(
+    id: string,
+    byUserId: string,
+    at: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const res = await tx.workerProfile.updateMany({
+      where: { id, verificationSignedOffAt: null },
+      data: { verificationSignedOffAt: at, verificationSignedOffByUserId: byUserId },
+    });
+    return res.count === 1;
+  }
+
+  /** Stamps the activation once (D-90). false = it was already stamped. Call under lock(). */
+  async setActivated(
+    id: string,
+    byUserId: string,
+    at: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const res = await tx.workerProfile.updateMany({
+      where: { id, activatedAt: null },
+      data: { activatedAt: at, activatedByUserId: byUserId },
+    });
+    return res.count === 1;
   }
 
   async list(

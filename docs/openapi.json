@@ -9530,9 +9530,19 @@
     },
     "/api/v1/workers/me/verification/checks/{checkType}/submit": {
       "post": {
-        "description": "Identity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved.",
+        "description": "Identity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Optional body: documentNumber (only the last four characters are kept) and expiresOn (a future date; required later for licence and police clearance). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved; 409 CHECK_DISQUALIFIED after a disqualifying rejection.",
         "operationId": "WorkerVerificationController_submit_v1",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentDetailsDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -9842,6 +9852,7 @@
     },
     "/api/v1/admin/verification/checks/{checkId}/reject": {
       "post": {
+        "description": "Body: reasonCode (BLURRY_IMAGE, DOCUMENT_EXPIRED, NAME_MISMATCH, INCOMPLETE_DOCUMENT, INVALID_DOCUMENT_TYPE, SUSPECTED_TAMPERING, UNVERIFIABLE_REFERENCE, CRIMINAL_RECORD_DISQUALIFIED, OTHER) and remarks (mandatory for OTHER, optional otherwise). The reviewer who claimed the check (or a supervisor) decides: 409 CHECK_NOT_ASSIGNED_TO_YOU otherwise. CRIMINAL_RECORD_DISQUALIFIED and SUSPECTED_TAMPERING are terminal.",
         "operationId": "AdminVerificationController_reject_v1",
         "parameters": [
           {
@@ -9858,7 +9869,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RemarksDto"
+                "$ref": "#/components/schemas/RejectCheckDto"
               }
             }
           }
@@ -9880,7 +9891,195 @@
             "bearer": []
           }
         ],
-        "summary": "Reject a check in review (remarks required)",
+        "summary": "Reject a check in review with an approved reason code",
+        "tags": [
+          "Admin - Verification"
+        ]
+      }
+    },
+    "/api/v1/admin/verification/checks/{checkId}/release-review": {
+      "post": {
+        "description": "The claiming reviewer, or a supervisor holding verification.reassign. 409 CHECK_NOT_CLAIMED, 409 CHECK_NOT_ASSIGNED_TO_YOU. A claim idle for 30 minutes is released automatically.",
+        "operationId": "AdminVerificationController_releaseReview_v1",
+        "parameters": [
+          {
+            "name": "checkId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseReviewDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerVerificationResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Release a claimed check back to the queue (IN_REVIEW to SUBMITTED)",
+        "tags": [
+          "Admin - Verification"
+        ]
+      }
+    },
+    "/api/v1/admin/verification/checks/{checkId}/reassign-review": {
+      "post": {
+        "description": "Body: reviewerUserId (an active admin holding verification.review), reason. 422 REVIEWER_NOT_ELIGIBLE.",
+        "operationId": "AdminVerificationController_reassignReview_v1",
+        "parameters": [
+          {
+            "name": "checkId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReassignReviewDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerVerificationResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Give a check in review to another reviewer (supervisors)",
+        "tags": [
+          "Admin - Verification"
+        ]
+      }
+    },
+    "/api/v1/admin/verification/checks/{checkId}/notes": {
+      "post": {
+        "description": "Body: kind (CALL or REVIEW) and body. Never shown to the worker. Counts as reviewer activity. Previous-employment approval needs at least one CALL note.",
+        "operationId": "AdminVerificationController_addNote_v1",
+        "parameters": [
+          {
+            "name": "checkId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerVerificationResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a reviewer note or a call note to a check in review (staff only)",
+        "tags": [
+          "Admin - Verification"
+        ]
+      }
+    },
+    "/api/v1/admin/verification/checks/{checkId}/document-details": {
+      "put": {
+        "description": "Licence and police clearance need expiresOn (and police clearance the reference number) before they can be approved: 422 APPROVAL_REQUIREMENTS_MISSING.",
+        "operationId": "AdminVerificationController_setDocumentDetails_v1",
+        "parameters": [
+          {
+            "name": "checkId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentDetailsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerVerificationResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record the document number (last four characters kept) and validity end for a check in review",
         "tags": [
           "Admin - Verification"
         ]
@@ -10000,6 +10199,90 @@
           }
         ],
         "summary": "A worker's checks, document metadata and full history",
+        "tags": [
+          "Admin - Verification"
+        ]
+      }
+    },
+    "/api/v1/admin/workers/{workerId}/verification/sign-off": {
+      "post": {
+        "description": "Repeating changes nothing and notifies nothing twice. 409 NOT_FULLY_VERIFIED, 409 WORKER_DISQUALIFIED, 422 PROFILE_NOT_SUBMITTED. It does not activate the worker.",
+        "operationId": "AdminWorkerVerificationController_signOff_v1",
+        "parameters": [
+          {
+            "name": "workerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignOffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerVerificationResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Final verification sign-off (every required check approved, then a supervisor accepts the worker)",
+        "tags": [
+          "Admin - Verification"
+        ]
+      }
+    },
+    "/api/v1/admin/workers/{workerId}/activate": {
+      "post": {
+        "description": "Needs the sign-off (409 NOT_SIGNED_OFF), every required check still approved, one service category, one service area, the criminal self-declaration, an active account and no blacklisting (422 ACTIVATION_REQUIREMENTS_MISSING lists what is missing). Repeating changes nothing.",
+        "operationId": "AdminWorkerActivationController_activate_v1",
+        "parameters": [
+          {
+            "name": "workerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWorkerVerificationResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Activate a signed-off worker: live in search and matching",
         "tags": [
           "Admin - Verification"
         ]
@@ -14490,6 +14773,7 @@
               "SUPER_ADMIN",
               "OPERATIONS_ADMIN",
               "VERIFICATION_EXECUTIVE",
+              "VERIFICATION_SUPERVISOR",
               "SUPPORT_EXECUTIVE"
             ]
           }
@@ -14509,6 +14793,7 @@
               "SUPER_ADMIN",
               "OPERATIONS_ADMIN",
               "VERIFICATION_EXECUTIVE",
+              "VERIFICATION_SUPERVISOR",
               "SUPPORT_EXECUTIVE"
             ]
           },
@@ -15280,6 +15565,12 @@
               "SUBMITTED"
             ]
           },
+          "applicationReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "SEVA00000042",
+            "description": "Human-readable application reference (SEVA + 8 digits), stamped when the profile is submitted. Null while DRAFT."
+          },
           "submittedAt": {
             "format": "date-time",
             "type": "string",
@@ -15370,6 +15661,7 @@
           "name",
           "mobile",
           "onboardingStatus",
+          "applicationReference",
           "submittedAt",
           "experienceMonths",
           "expectedSalary",
@@ -15651,6 +15943,12 @@
               "SUBMITTED"
             ]
           },
+          "applicationReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "SEVA00000042",
+            "description": "Human-readable application reference (SEVA + 8 digits), stamped when the profile is submitted. Null while DRAFT."
+          },
           "submittedAt": {
             "format": "date-time",
             "type": "string",
@@ -15765,6 +16063,7 @@
           "name",
           "mobile",
           "onboardingStatus",
+          "applicationReference",
           "submittedAt",
           "experienceMonths",
           "expectedSalary",
@@ -15828,6 +16127,11 @@
               "SUBMITTED"
             ]
           },
+          "applicationReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "SEVA00000042"
+          },
           "accountStatus": {
             "type": "string",
             "enum": [
@@ -15852,6 +16156,7 @@
           "name",
           "mobile",
           "onboardingStatus",
+          "applicationReference",
           "accountStatus",
           "categories",
           "createdAt"
@@ -20945,6 +21250,42 @@
               "LICENSE"
             ]
           },
+          "rejectionCode": {
+            "type": "string",
+            "enum": [
+              "BLURRY_IMAGE",
+              "DOCUMENT_EXPIRED",
+              "NAME_MISMATCH",
+              "INCOMPLETE_DOCUMENT",
+              "INVALID_DOCUMENT_TYPE",
+              "SUSPECTED_TAMPERING",
+              "UNVERIFIABLE_REFERENCE",
+              "CRIMINAL_RECORD_DISQUALIFIED",
+              "OTHER"
+            ],
+            "nullable": true,
+            "description": "Why the check was rejected (status REJECTED only)."
+          },
+          "rejectionMessage": {
+            "type": "string",
+            "nullable": true,
+            "description": "Standard worker-facing wording of the rejection code."
+          },
+          "terminal": {
+            "type": "boolean",
+            "description": "true = disqualifying rejection: the check cannot be resubmitted."
+          },
+          "maskedDocumentNumber": {
+            "type": "string",
+            "nullable": true,
+            "example": "XXXX-XXXX-1234",
+            "description": "Last four characters only."
+          },
+          "documentExpiresOn": {
+            "type": "string",
+            "nullable": true,
+            "example": "2027-10-09"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -20989,6 +21330,11 @@
         },
         "required": [
           "checkType",
+          "rejectionCode",
+          "rejectionMessage",
+          "terminal",
+          "maskedDocumentNumber",
+          "documentExpiresOn",
           "status",
           "required",
           "submittedAt",
@@ -21001,6 +21347,24 @@
       "WorkerVerificationResponse": {
         "type": "object",
         "properties": {
+          "applicationReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "SEVA00000042"
+          },
+          "applicationStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "ACTION_REQUIRED",
+              "VERIFIED",
+              "ACTIVE",
+              "REJECTED"
+            ],
+            "description": "Overall status; see the verification README for the meaning of each value."
+          },
           "level": {
             "type": "string",
             "enum": [
@@ -21033,6 +21397,8 @@
           }
         },
         "required": [
+          "applicationReference",
+          "applicationStatus",
           "level",
           "requiredChecks",
           "checks"
@@ -21114,6 +21480,38 @@
           "available"
         ]
       },
+      "NoteView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "CALL",
+              "REVIEW"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "authorUserId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "body",
+          "authorUserId",
+          "createdAt"
+        ]
+      },
       "EventView": {
         "type": "object",
         "properties": {
@@ -21159,6 +21557,42 @@
               "LICENSE"
             ]
           },
+          "rejectionCode": {
+            "type": "string",
+            "enum": [
+              "BLURRY_IMAGE",
+              "DOCUMENT_EXPIRED",
+              "NAME_MISMATCH",
+              "INCOMPLETE_DOCUMENT",
+              "INVALID_DOCUMENT_TYPE",
+              "SUSPECTED_TAMPERING",
+              "UNVERIFIABLE_REFERENCE",
+              "CRIMINAL_RECORD_DISQUALIFIED",
+              "OTHER"
+            ],
+            "nullable": true,
+            "description": "Why the check was rejected (status REJECTED only)."
+          },
+          "rejectionMessage": {
+            "type": "string",
+            "nullable": true,
+            "description": "Standard worker-facing wording of the rejection code."
+          },
+          "terminal": {
+            "type": "boolean",
+            "description": "true = disqualifying rejection: the check cannot be resubmitted."
+          },
+          "maskedDocumentNumber": {
+            "type": "string",
+            "nullable": true,
+            "example": "XXXX-XXXX-1234",
+            "description": "Last four characters only."
+          },
+          "documentExpiresOn": {
+            "type": "string",
+            "nullable": true,
+            "example": "2027-10-09"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -21200,6 +21634,44 @@
               "$ref": "#/components/schemas/AdminDocumentView"
             }
           },
+          "notes": {
+            "description": "Reviewer and call notes, oldest first. Staff only.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteView"
+            }
+          },
+          "lastActivityAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "Last reviewer action on the claim; a claim idle for 30 minutes is released automatically."
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "claimDueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "slaFlags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "OVERDUE",
+                "STALLED_CLAIM"
+              ]
+            }
+          },
+          "decidedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
           "checkId": {
             "type": "string"
           },
@@ -21222,6 +21694,11 @@
         },
         "required": [
           "checkType",
+          "rejectionCode",
+          "rejectionMessage",
+          "terminal",
+          "maskedDocumentNumber",
+          "documentExpiresOn",
           "status",
           "required",
           "submittedAt",
@@ -21229,6 +21706,12 @@
           "remarks",
           "recheckAt",
           "documents",
+          "notes",
+          "lastActivityAt",
+          "dueAt",
+          "claimDueAt",
+          "slaFlags",
+          "decidedAt",
           "checkId",
           "reviewerUserId",
           "claimedAt",
@@ -21240,6 +21723,35 @@
         "properties": {
           "workerId": {
             "type": "string"
+          },
+          "applicationReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "SEVA00000042"
+          },
+          "applicationStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "ACTION_REQUIRED",
+              "VERIFIED",
+              "ACTIVE",
+              "REJECTED"
+            ]
+          },
+          "signedOffAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "Final sign-off time (verification.signoff)."
+          },
+          "activatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "Activation time (worker.activate); live in search and matching."
           },
           "level": {
             "type": "string",
@@ -21273,6 +21785,10 @@
         },
         "required": [
           "workerId",
+          "applicationReference",
+          "applicationStatus",
+          "signedOffAt",
+          "activatedAt",
           "level",
           "requiredChecks",
           "checks"
@@ -21389,6 +21905,11 @@
       "QueueItem": {
         "type": "object",
         "properties": {
+          "applicationReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "SEVA00000042"
+          },
           "checkId": {
             "type": "string"
           },
@@ -21444,11 +21965,45 @@
             "nullable": true,
             "description": "When the reviewer took the check into review."
           },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "Submission SLA: 24 business hours (09:00-19:00 IST, Monday to Saturday) after the check was submitted."
+          },
+          "claimDueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "Claim SLA: 2 hours after the claim."
+          },
+          "slaFlags": {
+            "type": "array",
+            "description": "OVERDUE = still undecided past dueAt; STALLED_CLAIM = claimed more than 2 hours ago and still undecided.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "OVERDUE",
+                "STALLED_CLAIM"
+              ]
+            }
+          },
+          "isOverdue": {
+            "type": "boolean",
+            "description": "slaFlags contains OVERDUE."
+          },
+          "decidedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When the check was approved or rejected."
+          },
           "uploadedDocuments": {
             "type": "number"
           }
         },
         "required": [
+          "applicationReference",
           "checkId",
           "workerId",
           "workerName",
@@ -21458,6 +22013,11 @@
           "submittedAt",
           "reviewerUserId",
           "claimedAt",
+          "dueAt",
+          "claimDueAt",
+          "slaFlags",
+          "isOverdue",
+          "decidedAt",
           "uploadedDocuments"
         ]
       },
@@ -21478,6 +22038,20 @@
           "contentType",
           "sizeBytes"
         ]
+      },
+      "DocumentDetailsDto": {
+        "type": "object",
+        "properties": {
+          "documentNumber": {
+            "type": "string",
+            "description": "The document number as printed. Only the last four characters are kept (masked as XXXX-XXXX-1234); the full number is never stored or logged."
+          },
+          "expiresOn": {
+            "type": "string",
+            "example": "2027-10-09",
+            "description": "Validity end of the document. Must be a future date."
+          }
+        }
       },
       "SetRequirementsDto": {
         "type": "object",
@@ -21516,6 +22090,79 @@
           }
         }
       },
+      "RejectCheckDto": {
+        "type": "object",
+        "properties": {
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "BLURRY_IMAGE",
+              "DOCUMENT_EXPIRED",
+              "NAME_MISMATCH",
+              "INCOMPLETE_DOCUMENT",
+              "INVALID_DOCUMENT_TYPE",
+              "SUSPECTED_TAMPERING",
+              "UNVERIFIABLE_REFERENCE",
+              "CRIMINAL_RECORD_DISQUALIFIED",
+              "OTHER"
+            ]
+          },
+          "remarks": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Optional for every code except OTHER, where it is the mandatory explanation. When omitted the standard wording of the code is stored as the remarks the worker sees."
+          }
+        },
+        "required": [
+          "reasonCode"
+        ]
+      },
+      "ReleaseReviewDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "ReassignReviewDto": {
+        "type": "object",
+        "properties": {
+          "reviewerUserId": {
+            "type": "string",
+            "description": "Admin user id of the new reviewer (needs verification.review)."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reviewerUserId"
+        ]
+      },
+      "AddNoteDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "CALL",
+              "REVIEW"
+            ],
+            "description": "CALL = employer or phone call log; REVIEW = reviewer note. Staff only, never shown to the worker."
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "kind",
+          "body"
+        ]
+      },
       "RemarksDto": {
         "type": "object",
         "properties": {
@@ -21527,6 +22174,15 @@
         "required": [
           "remarks"
         ]
+      },
+      "SignOffDto": {
+        "type": "object",
+        "properties": {
+          "remarks": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        }
       },
       "OnboardingStepView": {
         "type": "object",

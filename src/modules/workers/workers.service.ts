@@ -64,6 +64,9 @@ export interface WorkerRef {
   workerId: string;
   userId: string;
   onboardingStatus: WorkerOnboardingStatus;
+  applicationReference: string | null;
+  signedOffAt: Date | null;
+  activatedAt: Date | null;
 }
 
 /**
@@ -91,7 +94,14 @@ export class WorkersService {
   async findRefByUserId(userId: string): Promise<WorkerRef | null> {
     const worker = await this.repository.findByUserId(userId);
     return worker
-      ? { workerId: worker.id, userId: worker.userId, onboardingStatus: worker.onboardingStatus }
+      ? {
+          workerId: worker.id,
+          userId: worker.userId,
+          onboardingStatus: worker.onboardingStatus,
+          applicationReference: worker.applicationReference,
+          signedOffAt: worker.signedOffAt,
+          activatedAt: worker.activatedAt,
+        }
       : null;
   }
 
@@ -122,7 +132,69 @@ export class WorkersService {
       workerId: worker.id,
       userId: worker.userId,
       onboardingStatus: worker.onboardingStatus,
+      applicationReference: worker.applicationReference,
+      signedOffAt: worker.signedOffAt,
+      activatedAt: worker.activatedAt,
     };
+  }
+
+  /**
+   * Contract for Verification (D-90): what activation needs besides the verification level. Read under the caller's transaction after
+   * lockForVerification.
+   */
+  async getActivationFacts(
+    workerId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<{
+    onboardingStatus: WorkerOnboardingStatus;
+    categoryCount: number;
+    areaCount: number;
+    criminalDeclared: boolean;
+    blacklisted: boolean;
+    accountStatus: string;
+    signedOffAt: Date | null;
+    activatedAt: Date | null;
+    applicationReference: string | null;
+  }> {
+    const worker = await this.repository.findById(workerId, tx);
+    if (!worker) {
+      throw this.workerNotFound();
+    }
+    const user = await this.users.findById(worker.userId);
+    return {
+      onboardingStatus: worker.onboardingStatus,
+      categoryCount: worker.categoryIds.length,
+      areaCount: await this.repository.areaCount(workerId, tx),
+      criminalDeclared: worker.criminalDeclaration !== null,
+      blacklisted: worker.blacklist !== null,
+      accountStatus: user?.status ?? 'ACTIVE',
+      signedOffAt: worker.signedOffAt,
+      activatedAt: worker.activatedAt,
+      applicationReference: worker.applicationReference,
+    };
+  }
+
+  /** Locks the profile row for a sign-off or activation. false = no such worker. */
+  lockForVerification(workerId: string, tx: Prisma.TransactionClient): Promise<boolean> {
+    return this.repository.lock(workerId, tx);
+  }
+
+  markSignedOff(
+    workerId: string,
+    byUserId: string,
+    at: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    return this.repository.setSignedOff(workerId, byUserId, at, tx);
+  }
+
+  markActivated(
+    workerId: string,
+    byUserId: string,
+    at: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    return this.repository.setActivated(workerId, byUserId, at, tx);
   }
 
   /** What Verification needs to know about the profile data it reviews, without handing out the private values. */
@@ -466,6 +538,7 @@ export class WorkersService {
         name: worker.name,
         mobile: maskMobile(userById.get(worker.userId)?.mobile),
         onboardingStatus: worker.onboardingStatus,
+        applicationReference: worker.applicationReference,
         accountStatus: userById.get(worker.userId)?.status ?? 'ACTIVE',
         categories: worker.categoryIds
           .map((id) => categories.get(id))
@@ -790,6 +863,7 @@ export class WorkersService {
       name: worker.name,
       mobile: user?.mobile ?? '',
       onboardingStatus: worker.onboardingStatus,
+      applicationReference: worker.applicationReference,
       submittedAt: worker.submittedAt,
       experienceMonths: worker.experienceMonths,
       expectedSalary: worker.expectedSalary,

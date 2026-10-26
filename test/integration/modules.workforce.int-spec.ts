@@ -35,7 +35,7 @@ describe('Module boundaries (static)', () => {
       // Workers imports only Verification's pure SQL definition of "verified" (verification-eligibility), never its services.
       workers: ['users', 'service-categories', 'verification'],
       availability: ['users', 'workers'],
-      verification: ['users', 'workers'],
+      verification: ['users', 'workers', 'alerts'],
       search: ['service-categories', 'availability', 'verification', 'worker-photo'],
       'worker-photo': ['workers'],
       // The customer's own photo reuses the worker-photo checks (types, renditions, error codes); it touches no other business module.
@@ -210,7 +210,8 @@ describe('Module boundaries (static)', () => {
 
   it('shares ONE definition of "verified": Search embeds the Verification fragment instead of re-implementing it', () => {
     const search = [...text.entries()].find(([f]) => f.endsWith('search.repository.ts'))![1];
-    expect(search).toContain('verifiedWorkerCondition');
+    // activeWorkerCondition embeds verifiedWorkerCondition and adds the sign-off and activation stamps (D-90).
+    expect(search).toContain('activeWorkerCondition');
     expect(search).not.toMatch(/worker_verification_checks|verification_requirements/);
   });
 

@@ -15,6 +15,10 @@ export const NotificationEvent = {
   REPLACEMENT_UPDATE: 'REPLACEMENT_UPDATE',
   TICKET_UPDATE: 'TICKET_UPDATE',
   RECHECK_DUE: 'RECHECK_DUE',
+  /** Worker: the final verification sign-off was given (D-90). */
+  WORKER_VERIFIED: 'WORKER_VERIFIED',
+  /** Worker: the account was activated and is now live in search and matching (D-90). */
+  WORKER_ACTIVATED: 'WORKER_ACTIVATED',
   /** Customer: a payment was received for a booking that can no longer proceed; staff are reviewing it. */
   PAYMENT_UNDER_REVIEW: 'PAYMENT_UNDER_REVIEW',
   /** Customer: the booking was cancelled and the refund was started automatically (DEC-04). */
@@ -62,7 +66,9 @@ export const EVENT_PARAMS: Record<NotificationEventCode, readonly string[]> = {
   PAYMENT_SUCCEEDED: ['bookingId', 'paymentId', 'receiptNumber'],
   PAYMENT_FAILED: ['bookingId', 'paymentId'],
   VERIFICATION_APPROVED: ['checkType'],
-  VERIFICATION_REJECTED: ['checkType'],
+  VERIFICATION_REJECTED: ['checkType', 'reasonCode'],
+  WORKER_VERIFIED: ['applicationReference'],
+  WORKER_ACTIVATED: ['applicationReference'],
   REPLACEMENT_UPDATE: ['bookingId', 'replacementId', 'status'],
   TICKET_UPDATE: ['ticketId', 'status'],
   RECHECK_DUE: ['checkType'],

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 import type { CheckType, StoredCheckStatus } from './dto/verification.dto';
+import type { RejectionCode } from './verification-policy';
 import { INDIA_TODAY_SQL, verifiedWorkerCondition } from './verification-eligibility';
 
 type Db = Prisma.TransactionClient | PrismaService;
@@ -15,6 +16,11 @@ export interface CheckRecord {
   reviewedAt: Date | null;
   reviewerUserId: string | null;
   claimedAt: Date | null;
+  lastActivityAt: Date | null;
+  rejectionCode: RejectionCode | null;
+  maskedDocumentNumber: string | null;
+  /** YYYY-MM-DD or null. */
+  documentExpiresOn: string | null;
   remarks: string | null;
   /** YYYY-MM-DD (India date) or null. */
   recheckAt: string | null;
@@ -55,6 +61,12 @@ function toCheck(row: CheckRow): CheckRecord {
     reviewedAt: row.reviewedAt,
     reviewerUserId: row.reviewerUserId,
     claimedAt: row.claimedAt,
+    lastActivityAt: row.lastActivityAt,
+    rejectionCode: row.rejectionCode,
+    maskedDocumentNumber: row.maskedDocumentNumber,
+    documentExpiresOn: row.documentExpiresOn
+      ? row.documentExpiresOn.toISOString().slice(0, 10)
+      : null,
     remarks: row.remarks,
     recheckAt: row.recheckAt ? row.recheckAt.toISOString().slice(0, 10) : null,
   };
@@ -66,6 +78,10 @@ export interface CheckUpdate {
   reviewedAt?: Date | null;
   reviewerUserId?: string | null;
   claimedAt?: Date | null;
+  lastActivityAt?: Date | null;
+  rejectionCode?: RejectionCode | null;
+  maskedDocumentNumber?: string | null;
+  documentExpiresOn?: string | null;
   remarks?: string | null;
   recheckAt?: string | null;
 }
@@ -172,6 +188,15 @@ export class VerificationRepository {
         reviewedAt: data.reviewedAt,
         reviewerUserId: data.reviewerUserId,
         claimedAt: data.claimedAt,
+        lastActivityAt: data.lastActivityAt,
+        rejectionCode: data.rejectionCode,
+        maskedDocumentNumber: data.maskedDocumentNumber,
+        documentExpiresOn:
+          data.documentExpiresOn === undefined
+            ? undefined
+            : data.documentExpiresOn === null
+              ? null
+              : new Date(`${data.documentExpiresOn}T00:00:00.000Z`),
         remarks: data.remarks,
         recheckAt:
           data.recheckAt === undefined
@@ -231,13 +256,26 @@ export class VerificationRepository {
     skip: number,
     take: number,
   ): Promise<{
-    items: Array<CheckRecord & { workerName: string; applicationSubmittedAt: Date | null }>;
+    items: Array<
+      CheckRecord & {
+        workerName: string;
+        applicationSubmittedAt: Date | null;
+        applicationReference: string | null;
+      }
+    >;
     total: number;
     uploadedByCheck: Map<string, number>;
   }> {
     const worker: Prisma.WorkerProfileWhereInput = {
       ...(filter.categoryId ? { skills: { some: { categoryId: filter.categoryId } } } : {}),
-      ...(filter.search ? { name: { contains: filter.search, mode: 'insensitive' as const } } : {}),
+      ...(filter.search
+        ? {
+            OR: [
+              { name: { contains: filter.search, mode: 'insensitive' as const } },
+              { applicationReference: { startsWith: filter.search.toUpperCase() } },
+            ],
+          }
+        : {}),
     };
     const where: Prisma.WorkerVerificationCheckWhereInput = {
       status: { in: filter.statuses },
@@ -251,7 +289,9 @@ export class VerificationRepository {
         orderBy: [{ submittedAt: 'asc' }, { id: 'asc' }],
         skip,
         take,
-        include: { worker: { select: { name: true, submittedAt: true } } },
+        include: {
+          worker: { select: { name: true, submittedAt: true, applicationReference: true } },
+        },
       }),
       this.prisma.workerVerificationCheck.count({ where }),
     ]);
@@ -267,6 +307,7 @@ export class VerificationRepository {
         ...toCheck(r),
         workerName: r.worker.name,
         applicationSubmittedAt: r.worker.submittedAt,
+        applicationReference: r.worker.applicationReference,
       })),
       total,
       uploadedByCheck: new Map(counts.map((c) => [c.checkId, c._count._all])),
@@ -348,6 +389,74 @@ export class VerificationRepository {
       where: { checkId, submittedAt: null, status: 'UPLOADED' },
       data: { submittedAt: at },
     });
+  }
+
+  /** Keeps a claim alive: the reviewer who holds the check did something. Does nothing for anyone else. */
+  async touchActivity(checkId: string, reviewerUserId: string, at: Date): Promise<void> {
+    await this.prisma.workerVerificationCheck.updateMany({
+      where: { id: checkId, reviewerUserId, status: 'IN_REVIEW' },
+      data: { lastActivityAt: at },
+    });
+  }
+
+  // --- notes (D-90) ------------------------------------------------------------------------------------------
+
+  addNote(
+    input: { checkId: string; kind: 'CALL' | 'REVIEW'; body: string; authorUserId: string },
+    tx: Prisma.TransactionClient,
+  ): Promise<{ id: string }> {
+    return tx.workerVerificationNote.create({ data: input, select: { id: true } });
+  }
+
+  countNotes(
+    checkId: string,
+    kind: 'CALL' | 'REVIEW',
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
+    return tx.workerVerificationNote.count({ where: { checkId, kind } });
+  }
+
+  async listNotes(
+    checkIds: string[],
+    db: Db = this.prisma,
+  ): Promise<
+    Array<{
+      id: string;
+      checkId: string;
+      kind: 'CALL' | 'REVIEW';
+      body: string;
+      authorUserId: string;
+      createdAt: Date;
+    }>
+  > {
+    if (checkIds.length === 0) return [];
+    return db.workerVerificationNote.findMany({
+      where: { checkId: { in: checkIds } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  // --- claim inactivity (D-90) ----------------------------------------------------------------------------------
+
+  /**
+   * Claimed checks whose last reviewer activity (or claim, when there was none) is older than `before`. Locked (SKIP LOCKED) so two
+   * sweeper runs never take the same row. Returns the previous reviewer so the release can be attributed.
+   */
+  async claimInactive(
+    before: Date,
+    limit: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<
+    Array<{ id: string; workerId: string; checkType: CheckType; reviewerUserId: string }>
+  > {
+    return tx.$queryRaw(Prisma.sql`
+      SELECT id, worker_id AS "workerId", check_type::text AS "checkType", reviewer_user_id AS "reviewerUserId"
+      FROM worker_verification_checks
+      WHERE status = 'IN_REVIEW' AND reviewer_user_id IS NOT NULL
+        AND coalesce(last_activity_at, claimed_at) < ${before}
+      ORDER BY coalesce(last_activity_at, claimed_at), id
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED`);
   }
 
   // --- eligibility ------------------------------------------------------------------------------------------
