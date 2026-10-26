@@ -295,7 +295,7 @@ export class PricingGuidanceService {
 
 @ApiTags('Pricing')
 @ApiBearerAuth()
-@RequireUserType('CUSTOMER')
+@RequireUserType('CUSTOMER', 'WORKER')
 @Controller({ path: 'pricing', version: '1' })
 export class PricingGuidanceController {
   constructor(private readonly pricing: PricingGuidanceService) {}

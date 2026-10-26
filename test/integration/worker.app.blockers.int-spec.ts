@@ -363,6 +363,19 @@ describe('Worker app blockers (integration)', () => {
     const C = '/api/v1/service-categories';
     const A = '/api/v1/service-areas';
 
+    it('lets a worker read pricing guidance and resolve a service area, but not an admin or anonymous caller', async () => {
+      const worker = await onboardWorker(api, { submit: false });
+      const pricing = '/api/v1/pricing/guidance?category=COOK&engagement=PART_TIME';
+      const resolve = '/api/v1/locations/service-area?latitude=17.45&longitude=78.39';
+      // 200 when data exists, otherwise the documented 404; never 403 for a worker.
+      expect([200, 404]).toContain((await as(api, worker).get(pricing)).status);
+      expect([200, 404]).toContain((await as(api, worker).get(resolve)).status);
+      for (const path of [pricing, resolve]) {
+        expect((await as(api, admin).get(path)).status).toBe(403);
+        expect((await api.http().get(path)).status).toBe(401);
+      }
+    });
+
     it('anonymous callers get 401; customer, worker and admin get the same read-only list', async () => {
       const worker = await onboardWorker(api, { submit: false });
       for (const path of [

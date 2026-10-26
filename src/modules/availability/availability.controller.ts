@@ -61,10 +61,10 @@ export class ServiceAreasController {
   }
 }
 
-/** Customer helper: where is this position? (the "Use my current location" button). */
+/** Customer and worker helper: where is this position? (the "Use my current location" button). Read-only reference data. */
 @ApiTags('Service Areas')
 @ApiBearerAuth()
-@RequireUserType('CUSTOMER')
+@RequireUserType('CUSTOMER', 'WORKER')
 @Controller({ path: 'locations', version: '1' })
 export class LocationsController {
   constructor(private readonly areas: ServiceAreasService) {}

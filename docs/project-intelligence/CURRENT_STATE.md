@@ -78,3 +78,6 @@ Audit in `docs/qa/worker-verification-api-gap-audit.md`. Built: reviewer assignm
 
 ## 2026-10-26 Admin Portal document-link 404 and dossier references
 Link endpoint now separates 404 (unknown id), 409 DOCUMENT_NOT_AVAILABLE (unconfirmed or discarded upload) and 409 DOCUMENT_OBJECT_MISSING; admin dossier documents carry documentId, documentType, mimeType, available/availability. No migration. Report: docs/qa/admin-worker-verification-api-gap-report.md. Open: release-review, activation, reason codes (Q-123..Q-129). Local evidence only; one unrelated qa.inventory failure from commit c8833ff (PUT users/me/notification-preferences). Nothing committed.
+
+## 2026-10-26 worker access to reference reads
+`GET /pricing/guidance` and `GET /locations/service-area` now allow WORKER as well as CUSTOMER (read-only reference data; admin still 403, anonymous 401). Test in `worker.app.blockers.int-spec.ts`; 43/43 with `appgaps2` and `contract.openapi` on a fresh DB. Live staging accept-to-complete flow not run (needs a staging booking).
