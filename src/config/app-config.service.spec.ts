@@ -33,6 +33,23 @@ describe('AppConfigService.testOtpCodeFor', () => {
   });
 });
 
+describe('AppConfigService.demoOtpAccepts', () => {
+  const on = { NODE_ENV: 'development', DEMO_OTP_ACCEPT_ANY: true };
+
+  it('accepts any number when no allow-list is set, or only listed ones when it is', () => {
+    expect(make(on).demoOtpAccepts('+919000000001')).toBe(true);
+    expect(make({ ...on, DEMO_OTP_NUMBERS: '' }).demoOtpAccepts('+919000000001')).toBe(true);
+    const listed = make({ ...on, DEMO_OTP_NUMBERS: '+919123456789, +919876543210' });
+    expect(listed.demoOtpAccepts('+919876543210')).toBe(true);
+    expect(listed.demoOtpAccepts('+919000000001')).toBe(false);
+  });
+
+  it('never accepts when the flag is off or in production', () => {
+    expect(make({ ...on, DEMO_OTP_ACCEPT_ANY: false }).demoOtpAccepts('+919000000001')).toBe(false);
+    expect(make({ ...on, NODE_ENV: 'production' }).demoOtpAccepts('+919000000001')).toBe(false);
+  });
+});
+
 describe('AppConfigService.appPolicy support contact', () => {
   it('passes configured values through trimmed', () => {
     const policy = make({

@@ -807,8 +807,8 @@ export class EnvironmentVariables {
   @IsBoolean()
   DEMO_OTP_ACCEPT_ANY: boolean = false;
 
-  /** Comma-separated E.164 numbers allowed to use DEMO_OTP_ACCEPT_ANY. Required when it is on: no other number is ever accepted without a real code. */
-  @ValidateIf((o: EnvironmentVariables) => o.DEMO_OTP_ACCEPT_ANY)
+  /** Optional comma-separated E.164 allow-list for DEMO_OTP_ACCEPT_ANY. Empty/unset = every number is accepted (staging/dev only, never production). */
+  @ValidateIf((o: EnvironmentVariables) => Boolean(o.DEMO_OTP_NUMBERS))
   @IsString()
   @Matches(/^\+[1-9]\d{9,14}(,\s*\+[1-9]\d{9,14})*$/, {
     message:

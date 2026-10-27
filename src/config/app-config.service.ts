@@ -134,13 +134,14 @@ export class AppConfigService {
   get demoOtpAcceptAny(): boolean {
     return !this.isProduction && this.get('DEMO_OTP_ACCEPT_ANY');
   }
-  /** True only for a number on the DEMO_OTP_NUMBERS allow-list while the demo flag is on (never in production). */
+  /** While the demo flag is on (never in production): any number, or only those in DEMO_OTP_NUMBERS when that list is set. */
   demoOtpAccepts(mobile: string): boolean {
     if (!this.demoOtpAcceptAny) return false;
-    return (this.get('DEMO_OTP_NUMBERS') ?? '')
+    const listed = (this.get('DEMO_OTP_NUMBERS') ?? '')
       .split(',')
       .map((n) => n.trim())
-      .includes(mobile);
+      .filter(Boolean);
+    return listed.length === 0 || listed.includes(mobile);
   }
   /** Staging/demo login for allow-listed numbers (see ALLOW_TEST_OTP). Returns the fixed code for such a number, else null. */
   testOtpCodeFor(mobile: string): string | null {

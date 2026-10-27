@@ -11,7 +11,7 @@
 ## Demo login
 
 - `ALLOW_TEST_OTP` + `TEST_OTP_NUMBERS` + `TEST_OTP_CODE`: listed numbers log in with a fixed code.
-- `DEMO_OTP_ACCEPT_ANY=true` now **requires** `DEMO_OTP_NUMBERS` (E.164, comma separated). Only those numbers skip the code check; every other number needs a real OTP.
+- `DEMO_OTP_ACCEPT_ANY=true` accepts any code for ANY number (no SMS). Optionally set `DEMO_OTP_NUMBERS` (E.164, comma separated) to restrict it; then every other number needs a real OTP.
 - Both flags make the process refuse to start when `NODE_ENV=production` or `APP_ENV=production`.
 - Staging must not share a database with production or real people's data.
 

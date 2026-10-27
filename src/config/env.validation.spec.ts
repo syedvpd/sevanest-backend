@@ -425,10 +425,13 @@ describe('validateEnvironment', () => {
         ).toBe(true);
       });
 
-      it('requires an explicit number allow-list', () => {
-        expect(() => validateEnvironment({ ...valid, DEMO_OTP_ACCEPT_ANY: 'true' })).toThrow(
-          'DEMO_OTP_NUMBERS',
-        );
+      it('needs no allow-list (any number), but a given list must be E.164', () => {
+        expect(
+          validateEnvironment({ ...valid, DEMO_OTP_ACCEPT_ANY: 'true' }).DEMO_OTP_ACCEPT_ANY,
+        ).toBe(true);
+        expect(() =>
+          validateEnvironment({ ...valid, DEMO_OTP_ACCEPT_ANY: 'true', DEMO_OTP_NUMBERS: '' }),
+        ).not.toThrow();
         expect(() =>
           validateEnvironment({
             ...valid,
