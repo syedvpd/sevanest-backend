@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BookingModule } from '../booking/booking.module';
+import { PlatformConfigModule } from '../platform-config/platform-config.module';
 import { UsersModule } from '../users/users.module';
 import { WorkersModule } from '../workers/workers.module';
 import {
@@ -17,7 +18,7 @@ import { RatingsService } from './ratings.service';
  * Eligibility is the RATING_POLICY boundary (Q-58).
  */
 @Module({
-  imports: [BookingModule, UsersModule, WorkersModule],
+  imports: [BookingModule, PlatformConfigModule, UsersModule, WorkersModule],
   controllers: [RatingsController, WorkerRatingsController, AdminRatingsController],
   providers: [
     RatingsRepository,

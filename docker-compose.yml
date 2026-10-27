@@ -51,14 +51,14 @@ services:
     restart: 'no'
 
   # One-shot, idempotent: roles/permissions/service categories (`dist/seed`) and the launch data from the PRD, pilot areas and starter
-  # content (`dist/seed-launch`). Safe to run again; it never creates a production user and never deletes anything.
+  # content (`dist/seed-launch`); fake demo people (`dist/seed-demo`) only with SEED_DEMO=true. Safe to run again; it never creates a production user and never deletes anything.
   seed:
     profiles: ['app']
     image: sevanest-backend:local
     command:
       - sh
       - -c
-      - node dist/seed && node dist/seed-launch && if [ "$${SEED_DEMO:-true}" = "true" ]; then node dist/seed-demo; fi
+      - node dist/seed && node dist/seed-launch && if [ "$${SEED_DEMO:-false}" = "true" ]; then node dist/seed-demo; fi
     init: true
     env_file: docker.env
     environment:

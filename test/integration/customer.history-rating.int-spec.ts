@@ -4,7 +4,13 @@ import { AppConfigService } from '../../src/config/app-config.service';
 import { ProviderError } from '../../src/integrations/provider-error';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp } from '../support/api-app';
 import { inDays, makeBooking } from '../support/bookings';
-import { as, categoryId, createArea, setRequiredChecks } from '../support/workforce';
+import {
+  as,
+  categoryId,
+  createArea,
+  ensureRatingTags,
+  setRequiredChecks,
+} from '../support/workforce';
 
 const B = '/api/v1/bookings';
 const R = '/api/v1/ratings';
@@ -344,6 +350,9 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
     });
 
     it('review limit: published in /reference-data, enforced in characters at the boundary, empty refused, tags are catalogue codes', async () => {
+      await ensureRatingTags(api, admin, [
+        { code: 'PUNCTUAL', label: 'Punctual', sentiment: 'POSITIVE' },
+      ]);
       const ref = (await api.http().get('/api/v1/reference-data').expect(200)).body;
       expect(ref.ratingReviewMax).toBe(300);
       expect(ref.ratingTags.map((t: { code: string }) => t.code)).toContain('PUNCTUAL');

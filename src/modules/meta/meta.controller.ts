@@ -1,13 +1,13 @@
 import { Controller, Get, Header } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { ApiModelResponse } from '../../common/swagger/api-responses';
-import { RATING_TAGS } from '../../common/rating/rating-tags';
 import { LegalCurrentView } from '../legal/legal.dto';
 import { Public } from '../../common/decorators/auth.decorators';
 import { AppConfigService } from '../../config/app-config.service';
 import { BOOKING_STATUS_LABELS, BUDGET_PERIODS } from '../booking/dto/booking.dto';
 import { INTERVIEW_STATUS_LABELS } from '../booking/dto/interview.dto';
 import { LegalService } from '../legal/legal.service';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ENGAGEMENTS } from '../search/search.types';
 import { REPLACEMENT_REASONS } from '../replacement/dto/replacement.dto';
 import { REPORT_REASONS } from '../safety/safety.dto';
@@ -137,7 +137,7 @@ export class ReferenceDataView {
   @ApiProperty({
     type: [RatingTagView],
     description:
-      'Fixed rating tag catalogue (Q-103, pending client confirmation). Send the `code` values in `tags` of POST /ratings; `label` is display text. Any tag is accepted with any score.',
+      'Rating tags configured by staff (empty until some are added). Send the `code` values in `tags` of POST /ratings; `label` is display text. Any active tag is accepted with any score.',
   })
   ratingTags!: RatingTagView[];
   @ApiProperty({ type: [String] }) languages!: string[];
@@ -150,6 +150,7 @@ export class MetaController {
   constructor(
     private readonly config: AppConfigService,
     private readonly legal: LegalService,
+    private readonly platform: PlatformConfigService,
   ) {}
 
   @Get('app-config')
@@ -161,7 +162,7 @@ export class MetaController {
     description:
       'An app older than `minVersion` for its kind should force an update; `maintenance: true` means show the maintenance screen.',
   })
-  appConfig(): {
+  async appConfig(): Promise<{
     customer: { minVersion: string | null; storeUrl: string | null };
     worker: { minVersion: string | null; storeUrl: string | null };
     maintenance: boolean;
@@ -174,26 +175,20 @@ export class MetaController {
       refundUrl: string | null;
     };
     languages: string[];
-  } {
-    const policy = this.config.appPolicy;
-    const content = this.config.policyContent;
+  }> {
+    // Database settings (edited by staff) win over the deployment defaults, on every request.
+    const s = await this.platform.effective();
     return {
-      customer: {
-        minVersion: policy.minVersionCustomer ?? null,
-        storeUrl: policy.storeUrlCustomer ?? null,
-      },
-      worker: {
-        minVersion: policy.minVersionWorker ?? null,
-        storeUrl: policy.storeUrlWorker ?? null,
-      },
-      maintenance: policy.maintenance,
-      support: { phone: policy.supportPhone ?? null, email: policy.supportEmail ?? null },
+      customer: { minVersion: s.customerMinVersion, storeUrl: s.customerStoreUrl },
+      worker: { minVersion: s.workerMinVersion, storeUrl: s.workerStoreUrl },
+      maintenance: s.maintenance,
+      support: { phone: s.supportPhone, email: s.supportEmail },
       legal: this.legal.current(),
       policy: {
-        cancellationText: content.cancellationText ?? null,
-        cancellationUrl: content.cancellationUrl ?? null,
-        refundText: content.refundText ?? null,
-        refundUrl: content.refundUrl ?? null,
+        cancellationText: s.cancellationPolicyText,
+        cancellationUrl: s.cancellationPolicyUrl,
+        refundText: s.refundPolicyText,
+        refundUrl: s.refundPolicyUrl,
       },
       languages: this.languages(),
     };
@@ -207,7 +202,7 @@ export class MetaController {
     summary:
       'Fixed vocabularies for forms: engagement types, budget periods, report reasons, languages',
   })
-  referenceData(): {
+  async referenceData(): Promise<{
     engagements: readonly string[];
     budgetPeriods: readonly string[];
     reportReasons: readonly string[];
@@ -220,7 +215,7 @@ export class MetaController {
     ratingTags: ReadonlyArray<{ code: string; label: string; sentiment: string }>;
     languages: string[];
     statusLabels: { booking: Record<string, string>; interview: Record<string, string> };
-  } {
+  }> {
     return {
       engagements: ENGAGEMENTS,
       budgetPeriods: BUDGET_PERIODS,
@@ -229,7 +224,7 @@ export class MetaController {
       replacementReasons: REPLACEMENT_REASONS,
       ratingScaleMax: this.config.ratingScaleMax,
       ratingReviewMax: this.config.ratingReviewMax,
-      ratingTags: RATING_TAGS,
+      ratingTags: await this.platform.activeTags(),
       languages: this.languages(),
       statusLabels: { booking: BOOKING_STATUS_LABELS, interview: INTERVIEW_STATUS_LABELS },
     };

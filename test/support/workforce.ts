@@ -231,3 +231,19 @@ export async function signOffAndActivateIfVerified(
 
 export type { CheckBody };
 export const uniqueName = (prefix: string): string => `${prefix} ${unique()}`;
+
+/** Rating tags are admin data (none seeded): create the ones a spec needs through the admin API; an existing tag is left as it is. */
+export async function ensureRatingTags(
+  api: ApiApp,
+  admin: Caller,
+  tags: ReadonlyArray<{ code: string; label: string; sentiment: 'POSITIVE' | 'NEGATIVE' }>,
+): Promise<void> {
+  for (const tag of tags) {
+    const res = await as(api, admin).post('/api/v1/admin/rating-tags', tag);
+    if (res.status !== 201 && res.status !== 409) {
+      throw new Error(
+        `Could not create rating tag ${tag.code}: ${res.status} ${JSON.stringify(res.body)}`,
+      );
+    }
+  }
+}

@@ -5,16 +5,15 @@ import {
   ArrayUnique,
   IsArray,
   IsEnum,
-  IsIn,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Length,
+  Matches,
   Min,
 } from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
-import { RATING_TAG_CODES } from '../../../common/rating/rating-tags';
 import {
   RATING_ELIGIBILITY_CODES,
   type RatingEligibilityCode,
@@ -32,6 +31,8 @@ export type RatingStatusValue = (typeof RATING_STATUSES)[number];
  */
 export const REVIEW_MAX_LENGTH = 2000;
 export const REVIEW_DEFAULT_MAX_LENGTH = 300;
+/** Technical cap on tags per rating (abuse guard); which tags exist is configuration. */
+export const TAGS_PER_RATING_MAX = 20;
 
 export class CreateRatingDto {
   @ApiProperty({
@@ -63,15 +64,15 @@ export class CreateRatingDto {
 
   @ApiPropertyOptional({
     type: [String],
-    enum: RATING_TAG_CODES,
     description:
-      'Optional tag codes from GET /reference-data ratingTags (Q-103, catalogue pending client confirmation). Unknown codes and duplicates are 400; null or [] means none. Any tag is accepted with any score.',
+      'Optional tag codes from GET /reference-data ratingTags (configured by staff). Duplicates are 400; a code that is not an active tag is 422 RATING_TAG_INVALID; null or [] means none. Any active tag is accepted with any score.',
   })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(RATING_TAG_CODES.length)
+  @ArrayMaxSize(TAGS_PER_RATING_MAX)
   @ArrayUnique()
-  @IsIn(RATING_TAG_CODES, { each: true })
+  @IsString({ each: true })
+  @Matches(/^[A-Z][A-Z0-9_]{1,39}$/, { each: true })
   tags?: string[] | null;
 }
 
@@ -110,7 +111,6 @@ export class RatingView {
   @ApiProperty({ nullable: true, type: String }) review!: string | null;
   @ApiProperty({
     type: [String],
-    enum: RATING_TAG_CODES,
     description: 'Chosen tag codes; empty when none.',
   })
   tags!: string[];
@@ -148,7 +148,7 @@ export class AdminRatingView {
   @ApiProperty() customerUserId!: string;
   @ApiProperty() score!: number;
   @ApiProperty({ nullable: true, type: String }) review!: string | null;
-  @ApiProperty({ type: [String], enum: RATING_TAG_CODES }) tags!: string[];
+  @ApiProperty({ type: [String] }) tags!: string[];
   @ApiProperty({ enum: RATING_STATUSES }) status!: RatingStatusValue;
   @ApiProperty({ nullable: true, type: String }) moderatedByUserId!: string | null;
   @ApiProperty({ nullable: true, type: Date }) moderatedAt!: Date | null;

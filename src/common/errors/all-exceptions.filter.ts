@@ -81,6 +81,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (response.headersSent) {
       return;
     }
+    // @Header() values are applied before the handler runs, so an error would inherit them: a CSV content type with an attachment name,
+    // or a public cache lifetime. An error is always an uncached JSON body.
+    response.removeHeader('Content-Disposition');
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-store');
     response.status(status).json(body);
   }
 

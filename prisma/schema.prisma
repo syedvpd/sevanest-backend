@@ -1617,3 +1617,28 @@ model WorkerPaymentReference {
   @@index([bookingId])
   @@map("worker_payment_references")
 }
+
+/// Admin-managed app start-up values (GET /app-config): update policy, maintenance flag, support contact, policy text. A row overrides
+/// the environment value of the same key; deleting the row falls back to the environment. Allow-listed keys only (platform-config module).
+model AppSetting {
+  key             String   @id
+  value           String
+  updatedByUserId String?  @map("updated_by_user_id") @db.Uuid
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_settings")
+}
+
+/// Rating tag catalogue (GET /reference-data ratingTags). Admin data; the migration inserts the nine tags the apps already used (D-88). Ratings keep the codes they were written with,
+/// so a retired tag is deactivated (`isActive = false`), never deleted.
+model RatingTag {
+  code      String   @id
+  label     String
+  sentiment String
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("rating_tags")
+}

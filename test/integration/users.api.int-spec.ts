@@ -476,6 +476,7 @@ describe('Users API (integration)', () => {
         AdminRoleCode.OPERATIONS_ADMIN,
         AdminRoleCode.VERIFICATION_EXECUTIVE,
         AdminRoleCode.SUPPORT_EXECUTIVE,
+        AdminRoleCode.VERIFICATION_SUPERVISOR,
       ];
 
       // The shared test database keeps these roles empty for the other suites.

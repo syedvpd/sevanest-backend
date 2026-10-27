@@ -14,14 +14,15 @@ function run(exception: unknown) {
   };
   const json = jest.fn();
   const status = jest.fn().mockReturnValue({ json });
+  const headers = { removeHeader: jest.fn(), setHeader: jest.fn() };
   const host = {
     switchToHttp: () => ({
       getRequest: () => ({ id: 'req-id-0001' }),
-      getResponse: () => ({ headersSent: false, status }),
+      getResponse: () => ({ headersSent: false, status, ...headers }),
     }),
   } as unknown as ArgumentsHost;
   new AllExceptionsFilter(logger).catch(exception, host);
-  return { status, body: json.mock.calls[0]?.[0] as Record<string, unknown>, logger };
+  return { status, headers, body: json.mock.calls[0]?.[0] as Record<string, unknown>, logger };
 }
 
 describe('AllExceptionsFilter', () => {
@@ -38,6 +39,16 @@ describe('AllExceptionsFilter', () => {
       details: [{ field: 'status', messages: ['x'] }],
       requestId: 'req-id-0001',
     });
+  });
+
+  it('never lets an error inherit handler headers (CSV attachment, public cache lifetime)', () => {
+    const { headers } = run(new NotFoundException());
+    expect(headers.removeHeader).toHaveBeenCalledWith('Content-Disposition');
+    expect(headers.setHeader).toHaveBeenCalledWith(
+      'Content-Type',
+      'application/json; charset=utf-8',
+    );
+    expect(headers.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 
   it('logs a handled 503 (provider outage) as one warning, not as an error with a stack', () => {

@@ -17,6 +17,7 @@ import {
   WorkerRatingView,
 } from './dto/ratings.dto';
 import { evaluateRatingEligibility } from '../../common/rating/rating-eligibility';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { RATING_POLICY, type RatingPolicy } from './ratings.policy';
 import { RatingRecord, RatingsRepository } from './ratings.repository';
 
@@ -53,6 +54,7 @@ export class RatingsService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
     private readonly hooks: BookingLifecycleHooks,
+    private readonly platform: PlatformConfigService,
     @Inject(RATING_POLICY) private readonly policy: RatingPolicy,
   ) {}
 
@@ -68,6 +70,7 @@ export class RatingsService implements OnModuleInit {
     // A booking that is not the caller's looks exactly like a booking that does not exist.
     if (!booking || booking.customerUserId !== customerUserId) throw this.bookingNotFound();
     const scaleMax = this.config.ratingScaleMax;
+    await this.platform.assertTagsAllowed(dto.tags ?? []);
     if (dto.score > scaleMax) {
       throw new DomainException(
         RatingErrorCode.RATING_SCORE_OUT_OF_SCALE,

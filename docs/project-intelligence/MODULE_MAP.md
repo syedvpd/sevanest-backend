@@ -53,6 +53,7 @@ health/readiness · provider adapters (`src/integrations/*`) · Prisma/Redis/Bul
 | Shared storage | `src/integrations/storage/storage.module.ts` | provider `STORAGE_PROVIDER` (one instance for KYC and photos) |
 | Worker photo | `src/modules/worker-photo/*`, `WorkersService.setPhotoRef`, table `worker_profile_photos` | `POST /workers/me/photo`, `POST /workers/me/photo/{photoId}/confirm`, `GET /workers/me/photo` |
 | Profile + cards | `src/modules/search/*` (`findVisibleByIds`, `ratingSummaries`, `getVisibleCards`) | `GET /search/workers/{workerId}` |
+| Platform configuration (2026-10-27) | `src/modules/platform-config/*`, tables `app_settings`, `rating_tags` | `GET/PUT/DELETE /admin/app-settings`, `GET/POST/PATCH /admin/rating-tags`; feeds `GET /app-config`, `GET /reference-data`, `POST /ratings` |
 | Shortlist | `src/modules/shortlist/*`, table `customer_shortlist_items` | `GET /shortlist`, `PUT /shortlist/{workerId}`, `DELETE /shortlist/{workerId}` |
 | Outbox recovery | `OutboxService.recordFailure/retryDeadLettered/backlog`, `NotificationsService.dispatchOutbox/retryOutboxEvent`, columns on `outbox_events` | `POST /admin/outbox-events/{eventId}/retry`; health shows `deadLettered` |
 | Re-check reminder | `src/modules/verification/verification.worker.ts`, `VerificationService.notifyRecheckDue`, column `worker_verification_checks.recheck_notified_for`, event `RECHECK_DUE` | worker-process loop every 5 min |

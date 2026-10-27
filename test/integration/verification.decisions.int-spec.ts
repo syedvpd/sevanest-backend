@@ -64,8 +64,9 @@ describe('Verification decisions: reasons, ownership, release, notes, SLA, sign-
 
   const events = async (event: string, userId: string) =>
     (await api.prisma.outboxEvent.findMany({ where: { topic: 'notification' } })).filter((e) => {
-      const p = e.payload as { event: string; recipients: string[] };
-      return p.event === event && p.recipients.includes(userId);
+      // other suites leave outbox rows without a payload in the shared test database
+      const p = e.payload as { event: string; recipients: string[] } | null;
+      return p?.event === event && p.recipients.includes(userId);
     });
 
   beforeAll(async () => {

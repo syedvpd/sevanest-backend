@@ -72,6 +72,8 @@ export const PermissionCode = {
   AUDIT_VIEW: 'audit.view',
   ALERT_VIEW: 'alert.view',
   ALERT_MANAGE: 'alert.manage',
+  /** Edit the app start-up settings and the rating tag catalogue (platform-config module). */
+  CONFIG_MANAGE: 'config.manage',
 } as const;
 
 export const PERMISSION_CATALOG: ReadonlyArray<{
@@ -202,6 +204,11 @@ export const PERMISSION_CATALOG: ReadonlyArray<{
     description: 'See operational alerts addressed to the permissions this role holds',
   },
   { code: PermissionCode.ALERT_MANAGE, description: 'Acknowledge and resolve operational alerts' },
+  {
+    code: PermissionCode.CONFIG_MANAGE,
+    description:
+      'Edit the app start-up settings (update policy, support contact, policy text) and the rating tag catalogue',
+  },
 ];
 
 /**

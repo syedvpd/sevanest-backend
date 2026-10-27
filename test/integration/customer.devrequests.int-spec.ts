@@ -2,21 +2,22 @@ import '../support/env-api-integration';
 import { AppConfigService } from '../../src/config/app-config.service';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp } from '../support/api-app';
 import { inDays, makeBooking } from '../support/bookings';
-import { as, createArea, setRequiredChecks } from '../support/workforce';
+import { as, createArea, ensureRatingTags, setRequiredChecks } from '../support/workforce';
 
 const R = '/api/v1/replacement-requests';
 const UNKNOWN_ID = '00000000-0000-7000-8000-000000000000';
-const TAGS = [
-  'PUNCTUAL',
-  'POLITE',
-  'SKILLED',
-  'CLEAN_WORK',
-  'TRUSTWORTHY',
-  'LATE',
-  'RUDE',
-  'POOR_QUALITY_WORK',
-  'UNRELIABLE',
-];
+const TAG_CATALOGUE = [
+  { code: 'PUNCTUAL', label: 'Punctual', sentiment: 'POSITIVE' },
+  { code: 'POLITE', label: 'Polite', sentiment: 'POSITIVE' },
+  { code: 'SKILLED', label: 'Skilled', sentiment: 'POSITIVE' },
+  { code: 'CLEAN_WORK', label: 'Clean work', sentiment: 'POSITIVE' },
+  { code: 'TRUSTWORTHY', label: 'Trustworthy', sentiment: 'POSITIVE' },
+  { code: 'LATE', label: 'Late', sentiment: 'NEGATIVE' },
+  { code: 'RUDE', label: 'Rude', sentiment: 'NEGATIVE' },
+  { code: 'POOR_QUALITY_WORK', label: 'Poor quality work', sentiment: 'NEGATIVE' },
+  { code: 'UNRELIABLE', label: 'Unreliable', sentiment: 'NEGATIVE' },
+] as const;
+const TAGS: string[] = TAG_CATALOGUE.map((t) => t.code);
 
 type Customer = Awaited<ReturnType<typeof loginWithOtp>> & { userId: string };
 
@@ -53,17 +54,19 @@ describe('Customer app developer requests (integration)', () => {
     customer = await newCustomer();
     other = await newCustomer();
     await setRequiredChecks(api, admin, ['IDENTITY']);
+    // the catalogue is staff-managed data: the spec creates the tags it uses
+    await ensureRatingTags(api, admin, [...TAG_CATALOGUE]);
   });
   afterAll(async () => {
     await setRequiredChecks(api, admin, []);
     await api.close();
   });
 
-  describe('rating tags (Q-103, catalogue pending client confirmation)', () => {
+  describe('rating tags (staff-managed catalogue)', () => {
     it('publishes the catalogue in reference-data as codes with separate labels', async () => {
       const res = await as(api, customer).get('/api/v1/reference-data');
       const tags = (res.body as { ratingTags: Array<{ code: string; label: string }> }).ratingTags;
-      expect(tags.map((t) => t.code)).toEqual(TAGS);
+      expect(tags.map((t) => t.code)).toEqual(expect.arrayContaining(TAGS));
       expect(tags.find((t) => t.code === 'POOR_QUALITY_WORK')).toMatchObject({
         label: 'Poor quality work',
         sentiment: 'NEGATIVE',
@@ -118,7 +121,6 @@ describe('Customer app developer requests (integration)', () => {
       const post = (tags: unknown) =>
         as(api, customer).post('/api/v1/ratings', { bookingId: b.id, score: 4, tags });
       const bad: unknown[] = [
-        ['NOT_A_TAG'],
         ['Punctual'],
         ['punctual'],
         ['PUNCTUAL', 'PUNCTUAL'],
@@ -132,6 +134,10 @@ describe('Customer app developer requests (integration)', () => {
         expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
         expect(JSON.stringify(res.body)).toContain('tags');
       }
+      // well-formed but not an active tag: refused with its own code, nothing written
+      const unknown = await post(['NOT_A_TAG']);
+      expect(unknown.status).toBe(422);
+      expect((unknown.body as { code: string }).code).toBe('RATING_TAG_INVALID');
       expect(await api.prisma.rating.count({ where: { bookingId: b.id } })).toBe(0);
       expect((await post(['LATE'])).status).toBe(201);
     });

@@ -11,7 +11,7 @@ cd sevanest-backend
 ```bash
 docker compose --profile app up -d --build
 ```
-Startup order: PostgreSQL 17 and Redis 7 → `migrate` (`prisma migrate deploy`) → `seed` (roles, permissions, categories, pilot areas, starter templates, demo customers and workers) → `api` and `worker`. Settings come from `docker.env`.
+Startup order: PostgreSQL 17 and Redis 7 → `migrate` (`prisma migrate deploy`) → `seed` (roles, permissions, categories, pilot areas, starter templates; demo customers and workers only when `SEED_DEMO=true`) → `api` and `worker`. Settings come from `docker.env`.
 
 Check readiness:
 ```bash
@@ -41,7 +41,7 @@ docker compose --profile app up -d --build api worker
 | Demo customers `+919000000201` to `+919000000203` | `POST /api/v1/auth/otp/request`, then `POST /api/v1/auth/otp/verify` with `{ "mobile", "appType": "CUSTOMER", "otp": "123456" }` |
 | Demo workers `+919000000101` to `+919000000103` | same, `appType: "WORKER"` |
 
-The fixed OTP comes from `ALLOW_TEST_OTP`, `TEST_OTP_NUMBERS` and `TEST_OTP_CODE`; only the listed numbers use it, and config validation forces it off in production. The demo seed (`src/seed-demo.ts`) refuses `NODE_ENV=production` and hosted database hosts. Skip it with `SEED_DEMO=false`. Run it alone with `npm run seed:demo` against a local database.
+The fixed OTP comes from `ALLOW_TEST_OTP`, `TEST_OTP_NUMBERS` and `TEST_OTP_CODE`; only the listed numbers use it, and config validation forces it off in production. The demo seed (`src/seed-demo.ts`) refuses `NODE_ENV=production` and hosted database hosts. It is OFF by default (no invented people in any database unless you ask): start the stack with `SEED_DEMO=true docker compose --profile app up -d --build` to load it, or run it alone with `npm run seed:demo` against a local database. The demo accounts below exist only after that.
 
 ## Reset local data
 Deletes the local Docker volumes (PostgreSQL and Redis) of this compose project. Local only, never run against a shared database.

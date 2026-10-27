@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SevaNest Backend API",
-    "description": "All 290 operations of the SevaNest API (OpenAPI generated). Folders follow the module lifecycle (create, list, read, update, state change, delete). Ids are captured into collection variables by the tests of create/list requests. Each request checks: no 5xx, a documented status or a business-state answer (404/409/422), response time under slowMs, the standard error envelope.\n\nOrder: run \"00 Start here\" first, then the module folders from top to bottom. Some operations only succeed once earlier state exists (for example a booking must be ACTIVE before attendance); a 409/422 there is an accepted answer.",
+    "description": "All 302 operations of the SevaNest API (OpenAPI generated). Folders follow the module lifecycle (create, list, read, update, state change, delete). Ids are captured into collection variables by the tests of create/list requests. Each request checks: no 5xx, a documented status or a business-state answer (404/409/422), response time under slowMs, the standard error envelope.\n\nOrder: run \"00 Start here\" first, then the module folders from top to bottom. Some operations only succeed once earlier state exists (for example a booking must be ACTIVE before attendance); a 409/422 there is an accepted answer.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -2732,6 +2732,122 @@
           }
         },
         {
+          "name": "POST /admin/verification/checks/{checkId}/notes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/verification/checks/{{checkId}}/notes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "verification",
+                "checks",
+                "{{checkId}}",
+                "notes"
+              ],
+              "query": []
+            },
+            "description": "Add a reviewer note or a call note to a check in review (staff only)\n\nBody: kind (CALL or REVIEW) and body. Never shown to the worker. Counts as reviewer activity. Previous-employment approval needs at least one CALL note.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"CALL\",\n  \"body\": \"Postman body\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /admin/verification/checks/{checkId}/reassign-review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/verification/checks/{{checkId}}/reassign-review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "verification",
+                "checks",
+                "{{checkId}}",
+                "reassign-review"
+              ],
+              "query": []
+            },
+            "description": "Give a check in review to another reviewer (supervisors)\n\nBody: reviewerUserId (an active admin holding verification.review), reason. 422 REVIEWER_NOT_ELIGIBLE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewerUserId\": \"Postman reviewerUserId\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "POST /admin/verification/checks/{checkId}/recheck",
           "event": [
             {
@@ -2835,10 +2951,68 @@
               ],
               "query": []
             },
-            "description": "Reject a check in review (remarks required)",
+            "description": "Reject a check in review with an approved reason code\n\nBody: reasonCode (BLURRY_IMAGE, DOCUMENT_EXPIRED, NAME_MISMATCH, INCOMPLETE_DOCUMENT, INVALID_DOCUMENT_TYPE, SUSPECTED_TAMPERING, UNVERIFIABLE_REFERENCE, CRIMINAL_RECORD_DISQUALIFIED, OTHER) and remarks (mandatory for OTHER, optional otherwise). The reviewer who claimed the check (or a supervisor) decides: 409 CHECK_NOT_ASSIGNED_TO_YOU otherwise. CRIMINAL_RECORD_DISQUALIFIED and SUSPECTED_TAMPERING are terminal.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"remarks\": \"Postman remarks\"\n}",
+              "raw": "{\n  \"reasonCode\": \"BLURRY_IMAGE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /admin/verification/checks/{checkId}/release-review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/verification/checks/{{checkId}}/release-review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "verification",
+                "checks",
+                "{{checkId}}",
+                "release-review"
+              ],
+              "query": []
+            },
+            "description": "Release a claimed check back to the queue (IN_REVIEW to SUBMITTED)\n\nThe claiming reviewer, or a supervisor holding verification.reassign. 409 CHECK_NOT_CLAIMED, 409 CHECK_NOT_ASSIGNED_TO_YOU. A claim idle for 30 minutes is released automatically.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2894,6 +3068,112 @@
               "query": []
             },
             "description": "Claim a check for review (SUBMITTED to IN_REVIEW; persists the reviewer and claim time)\n\nRepeating on my own claim changes nothing. 409 CHECK_ALREADY_ASSIGNED when another reviewer holds it; there is no reassignment (no rule is defined)."
+          }
+        },
+        {
+          "name": "POST /admin/workers/{workerId}/activate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/workers/{{workerId}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "workers",
+                "{{workerId}}",
+                "activate"
+              ],
+              "query": []
+            },
+            "description": "Activate a signed-off worker: live in search and matching\n\nNeeds the sign-off (409 NOT_SIGNED_OFF), every required check still approved, one service category, one service area, the criminal self-declaration, an active account and no blacklisting (422 ACTIVATION_REQUIREMENTS_MISSING lists what is missing). Repeating changes nothing."
+          }
+        },
+        {
+          "name": "POST /admin/workers/{workerId}/verification/sign-off",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/workers/{{workerId}}/verification/sign-off",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "workers",
+                "{{workerId}}",
+                "verification",
+                "sign-off"
+              ],
+              "query": []
+            },
+            "description": "Final verification sign-off (every required check approved, then a supervisor accepts the worker)\n\nRepeating changes nothing and notifies nothing twice. 409 NOT_FULLY_VERIFIED, 409 WORKER_DISQUALIFIED, 422 PROFILE_NOT_SUBMITTED. It does not activate the worker.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -2983,6 +3263,64 @@
               "query": []
             },
             "description": "A worker's checks, document metadata and full history"
+          }
+        },
+        {
+          "name": "PUT /admin/verification/checks/{checkId}/document-details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/verification/checks/{{checkId}}/document-details",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "verification",
+                "checks",
+                "{{checkId}}",
+                "document-details"
+              ],
+              "query": []
+            },
+            "description": "Record the document number (last four characters kept) and validity end for a check in review\n\nLicence and police clearance need expiresOn (and police clearance the reference number) before they can be approved: 422 APPROVAL_REQUIREMENTS_MISSING.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
@@ -6133,7 +6471,16 @@
               ],
               "query": []
             },
-            "description": "Submit one check for review\n\nIdentity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved."
+            "description": "Submit one check for review\n\nIdentity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in my profile (422 CHECK_INCOMPLETE otherwise). Optional body: documentNumber (only the last four characters are kept) and expiresOn (a future date; required later for licence and police clearance). Repeating while it waits for review changes nothing; 409 CHECK_ALREADY_APPROVED once approved; 409 CHECK_DISQUALIFIED after a disqualifying rejection.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -13259,7 +13606,7 @@
               ],
               "query": []
             },
-            "description": "Home screen in one call: active booking, upcoming interview, unread count, shortlist preview"
+            "description": "Home screen in one call: active booking, upcoming interview, unread count, shortlist preview\n\nPersonalised: `Cache-Control: private, no-cache` and `Vary: Authorization`. Send `If-None-Match` with the last `ETag` to get 304 while nothing changed. Photo links inside are short-lived: cache the image by `photo.cacheKey`."
           }
         }
       ]
@@ -14631,6 +14978,305 @@
               "query": []
             },
             "description": "Confirm the upload; the photo becomes current once its size, file signature and content check out\n\nErrors: 422 PHOTO_NOT_UPLOADED, PHOTO_CONTENT_MISMATCH or PHOTO_MALWARE_DETECTED; 404 for an unknown photo or a photo of another customer. Repeating is harmless. The previous photo is removed."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Configuration",
+      "item": [
+        {
+          "name": "POST /admin/rating-tags",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([201, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/rating-tags",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "rating-tags"
+              ],
+              "query": []
+            },
+            "description": "Add a rating tag (audited)\n\n409 RATING_TAG_EXISTS for a code already used. The tag is offered to customers at once.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PUNCTUAL\",\n  \"label\": \"Home\",\n  \"sentiment\": \"POSITIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /admin/app-settings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/app-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "app-settings"
+              ],
+              "query": []
+            },
+            "description": "Every app start-up setting with its current value and where the value comes from\n\nsource DATABASE = set here, ENVIRONMENT = deployment default, UNSET = nothing. GET /app-config serves exactly these values."
+          }
+        },
+        {
+          "name": "GET /admin/rating-tags",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/rating-tags",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "rating-tags"
+              ],
+              "query": []
+            },
+            "description": "All rating tags, active and retired"
+          }
+        },
+        {
+          "name": "PUT /admin/app-settings/{key}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/app-settings/{{key}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "app-settings",
+                "{{key}}"
+              ],
+              "query": []
+            },
+            "description": "Set one app start-up setting (audited)\n\n404 SETTING_UNKNOWN for a key not in the list. 422 SETTING_VALUE_INVALID for a wrong type or format (versions like 1.4.0, https links, phone, e-mail). The apps see the change at once.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"Postman value\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PATCH /admin/rating-tags/{code}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/rating-tags/{{code}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "rating-tags",
+                "{{code}}"
+              ],
+              "query": []
+            },
+            "description": "Rename, reorder, change the sentiment of, or retire a rating tag (audited)\n\nThe code never changes. Retiring (isActive false) keeps the tag on old ratings.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "DELETE /admin/app-settings/{key}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const slow = Number(pm.environment.get('slowMs') || 500);",
+                  "pm.test('no server error (status ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test('status is a documented success or a business-state answer', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404, 409, 422]));",
+                  "pm.test('responds within ' + slow + ' ms', () => pm.expect(pm.response.responseTime).to.be.below(slow));",
+                  "let json = null; try { json = pm.response.json(); } catch (e) {}",
+                  "pm.test('JSON bodies use the standard envelope', () => { if (json && pm.response.code >= 400) { pm.expect(json).to.have.property('code'); pm.expect(json).to.have.property('requestId'); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/app-settings/{{key}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "app-settings",
+                "{{key}}"
+              ],
+              "query": []
+            },
+            "description": "Clear a setting so the deployment default applies again (audited)"
           }
         }
       ]

@@ -37,6 +37,10 @@ interface Suppressed {
  * (`flushSuppressed`). A hammered endpoint therefore costs two rows per minute instead of thousands, and no refusal is lost. The audit
  * table is append-only, so a row can never be updated: that is why the count is a second row. If Redis is down nothing is suppressed.
  */
+const FLUSH_BATCH = 200;
+/** Upper bound of one run (20 000 entries); a larger backlog is finished by the next run. */
+const MAX_FLUSH_BATCHES = 100;
+
 @Injectable()
 export class SecurityEventService {
   private readonly logger = new Logger(SecurityEventService.name);
@@ -108,27 +112,45 @@ export class SecurityEventService {
     let written = 0;
     try {
       await this.redis.ensureConnected();
-      const due = await this.redis.client.zrangebyscore(PENDING, '-inf', now, 'LIMIT', 0, 200);
-      for (const id of due) {
-        if ((await this.redis.client.zrem(PENDING, id)) !== 1) continue; // another worker took it
-        const stored = await this.redis.client.hgetall(`sec:denied:n:${id}`);
-        await this.redis.client.del(`sec:denied:n:${id}`);
-        if (!stored.event || !stored.count) continue;
-        const event = JSON.parse(stored.event) as Suppressed;
-        await this.audit.record({
-          action: 'security.access_denied_repeated',
-          entityType: 'route',
-          actorId: event.actorId,
-          metadata: {
-            method: event.method,
-            route: event.route,
-            reason: event.reason,
-            userType: event.userType,
-            suppressed: Number(stored.count),
-            windowStart: new Date(event.windowStart).toISOString(),
-          },
-        });
-        written++;
+      // Batches until nothing is due: one run must not leave a backlog (entries whose count expired still occupy the head of the set).
+      for (let batch = 0; batch < MAX_FLUSH_BATCHES; batch++) {
+        const due = await this.redis.client.zrangebyscore(
+          PENDING,
+          '-inf',
+          now,
+          'LIMIT',
+          0,
+          FLUSH_BATCH,
+        );
+        if (due.length === 0) break;
+        for (const id of due) {
+          if ((await this.redis.client.zrem(PENDING, id)) !== 1) continue; // another worker took it
+          const stored = await this.redis.client.hgetall(`sec:denied:n:${id}`);
+          await this.redis.client.del(`sec:denied:n:${id}`);
+          if (!stored.event || !stored.count) continue;
+          try {
+            const event = JSON.parse(stored.event) as Suppressed;
+            await this.audit.record({
+              action: 'security.access_denied_repeated',
+              entityType: 'route',
+              actorId: event.actorId,
+              metadata: {
+                method: event.method,
+                route: event.route,
+                reason: event.reason,
+                userType: event.userType,
+                suppressed: Number(stored.count),
+                windowStart: new Date(event.windowStart).toISOString(),
+              },
+            });
+            written++;
+          } catch (error) {
+            // One entry that cannot be written (for example its actor no longer exists) must not stop the others.
+            this.logger.warn(
+              `A suppressed access-denied count was dropped: ${(error as Error).message}`,
+            );
+          }
+        }
       }
     } catch (error) {
       this.logger.warn(

@@ -24,6 +24,7 @@ import { LegalModule } from './modules/legal/legal.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { SystemModule } from './modules/system/system.module';
 import { MetaModule } from './modules/meta/meta.module';
+import { PlatformConfigModule } from './modules/platform-config/platform-config.module';
 import { SafetyModule } from './modules/safety/safety.module';
 import { HomeModule } from './modules/home/home.module';
 import { HistoryModule } from './modules/history/history.module';
@@ -109,6 +110,7 @@ const embeddedWorkers =
     HistoryModule,
     SafetyModule,
     MetaModule,
+    PlatformConfigModule,
     SystemModule,
     CustomersModule,
     ServiceCategoriesModule,

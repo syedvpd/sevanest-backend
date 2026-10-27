@@ -3919,6 +3919,7 @@
     },
     "/api/v1/customers/me/home": {
       "get": {
+        "description": "Personalised: `Cache-Control: private, no-cache` and `Vary: Authorization`. Send `If-None-Match` with the last `ETag` to get 304 while nothing changed. Photo links inside are short-lived: cache the image by `photo.cacheKey`.",
         "operationId": "HomeController_home_v1",
         "parameters": [],
         "responses": {
@@ -9401,6 +9402,231 @@
         "summary": "Fixed vocabularies for forms: engagement types, budget periods, report reasons, languages",
         "tags": [
           "App"
+        ]
+      }
+    },
+    "/api/v1/admin/app-settings": {
+      "get": {
+        "description": "source DATABASE = set here, ENVIRONMENT = deployment default, UNSET = nothing. GET /app-config serves exactly these values.",
+        "operationId": "AdminPlatformConfigController_listSettings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AppSettingView"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Every app start-up setting with its current value and where the value comes from",
+        "tags": [
+          "Admin - Configuration"
+        ]
+      }
+    },
+    "/api/v1/admin/app-settings/{key}": {
+      "put": {
+        "description": "404 SETTING_UNKNOWN for a key not in the list. 422 SETTING_VALUE_INVALID for a wrong type or format (versions like 1.4.0, https links, phone, e-mail). The apps see the change at once.",
+        "operationId": "AdminPlatformConfigController_setSetting_v1",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAppSettingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettingView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set one app start-up setting (audited)",
+        "tags": [
+          "Admin - Configuration"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminPlatformConfigController_clearSetting_v1",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettingView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear a setting so the deployment default applies again (audited)",
+        "tags": [
+          "Admin - Configuration"
+        ]
+      }
+    },
+    "/api/v1/admin/rating-tags": {
+      "get": {
+        "operationId": "AdminPlatformConfigController_listTags_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RatingTagAdminView"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "All rating tags, active and retired",
+        "tags": [
+          "Admin - Configuration"
+        ]
+      },
+      "post": {
+        "description": "409 RATING_TAG_EXISTS for a code already used. The tag is offered to customers at once.",
+        "operationId": "AdminPlatformConfigController_createTag_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRatingTagDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingTagAdminView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a rating tag (audited)",
+        "tags": [
+          "Admin - Configuration"
+        ]
+      }
+    },
+    "/api/v1/admin/rating-tags/{code}": {
+      "patch": {
+        "description": "The code never changes. Retiring (isActive false) keeps the tag on old ratings.",
+        "operationId": "AdminPlatformConfigController_updateTag_v1",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRatingTagDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingTagAdminView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename, reorder, change the sentiment of, or retire a rating tag (audited)",
+        "tags": [
+          "Admin - Configuration"
         ]
       }
     },
@@ -16217,6 +16443,18 @@
               "type": "string"
             }
           },
+          "engagements": {
+            "example": [
+              "PART_TIME",
+              "FULL_TIME",
+              "LIVE_IN"
+            ],
+            "description": "Same value as allowedEngagements, named like the admin PUT body (`engagements`). Empty = not restricted.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "code": {
             "type": "string"
           },
@@ -16231,6 +16469,7 @@
         "required": [
           "id",
           "allowedEngagements",
+          "engagements",
           "code",
           "name",
           "description"
@@ -16244,6 +16483,18 @@
           },
           "allowedEngagements": {
             "description": "Engagement types this category offers; empty = not restricted.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "engagements": {
+            "example": [
+              "PART_TIME",
+              "FULL_TIME",
+              "LIVE_IN"
+            ],
+            "description": "Same value as allowedEngagements, named like the admin PUT body (`engagements`). Empty = not restricted.",
             "type": "array",
             "items": {
               "type": "string"
@@ -16274,6 +16525,7 @@
         "required": [
           "id",
           "allowedEngagements",
+          "engagements",
           "code",
           "name",
           "description",
@@ -16603,6 +16855,18 @@
             "type": "string",
             "description": "Opaque worker reference for the next step (not the account id)."
           },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "example": "Lakshmi D.",
+            "description": "Display name: first name and last initial only (the surname, mobile and other personal data are never returned). null only when the worker profile has no name yet."
+          },
+          "initials": {
+            "type": "string",
+            "nullable": true,
+            "example": "LD",
+            "description": "Initials for the avatar when there is no photo; null when there is no name."
+          },
           "experienceMonths": {
             "type": "number",
             "nullable": true,
@@ -16652,6 +16916,11 @@
             ],
             "description": "Customers only ever see fully verified workers."
           },
+          "verified": {
+            "type": "boolean",
+            "example": true,
+            "description": "Always true on a card: customers only ever see fully verified workers (same rule as `verification`). A worker who stops being verified is no longer returned as a card at all."
+          },
           "rating": {
             "nullable": true,
             "type": "object",
@@ -16673,6 +16942,8 @@
         },
         "required": [
           "workerId",
+          "name",
+          "initials",
           "experienceMonths",
           "categories",
           "languages",
@@ -16680,6 +16951,7 @@
           "engagementPreference",
           "availability",
           "verification",
+          "verified",
           "rating",
           "photo"
         ]
@@ -17056,6 +17328,16 @@
             "example": "Ramesh K.",
             "description": "First name and last initial."
           },
+          "name": {
+            "type": "string",
+            "example": "Ramesh K.",
+            "description": "Same value as displayName (alias for clients that read `name`)."
+          },
+          "verified": {
+            "type": "boolean",
+            "example": true,
+            "description": "true while the worker is fully verified, active and submitted (the rule that decides who customers can see); false when that no longer holds. Never assumed."
+          },
           "initials": {
             "type": "string",
             "example": "RK",
@@ -17074,6 +17356,8 @@
         },
         "required": [
           "displayName",
+          "name",
+          "verified",
           "initials",
           "photo"
         ]
@@ -17346,7 +17630,7 @@
           "at"
         ]
       },
-      "InterviewView": {
+      "HomeInterviewView": {
         "type": "object",
         "properties": {
           "id": {
@@ -17464,6 +17748,16 @@
             "items": {
               "$ref": "#/components/schemas/InterviewTimelineEntry"
             }
+          },
+          "worker": {
+            "nullable": true,
+            "description": "The booking worker as the customer may see them (`name`, `displayName`, `initials`, `photo`, `verified`); null when not available.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkerDisplayView"
+              }
+            ]
           }
         },
         "required": [
@@ -17486,7 +17780,8 @@
           "createdAt",
           "updatedAt",
           "allowedActions",
-          "timeline"
+          "timeline",
+          "worker"
         ]
       },
       "HomeView": {
@@ -17494,7 +17789,7 @@
         "properties": {
           "activeBooking": {
             "nullable": true,
-            "description": "Newest booking that is not finished.",
+            "description": "The most recently created booking that is not finished (COMPLETED, CANCELLED and REPLACED are finished). A customer can hold several; see activeBookingsTotal. `worker` carries name, photo and verified from the interview stage on.",
             "type": "object",
             "allOf": [
               {
@@ -17502,13 +17797,17 @@
               }
             ]
           },
+          "activeBookingsTotal": {
+            "type": "number",
+            "description": "How many unfinished bookings the customer has (0 when activeBooking is null). activeBooking is the newest of them."
+          },
           "upcomingInterview": {
             "nullable": true,
-            "description": "Next confirmed interview or trial.",
+            "description": "Next confirmed interview or trial, with the worker.",
             "type": "object",
             "allOf": [
               {
-                "$ref": "#/components/schemas/InterviewView"
+                "$ref": "#/components/schemas/HomeInterviewView"
               }
             ]
           },
@@ -17516,18 +17815,20 @@
             "type": "number"
           },
           "shortlistPreview": {
-            "description": "The most recently shortlisted workers.",
+            "description": "The 5 most recently shortlisted workers at most.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShortlistItemView"
             }
           },
           "shortlistTotal": {
-            "type": "number"
+            "type": "number",
+            "description": "All entries on the shortlist, not only the preview (independent of the 5-item cap)."
           }
         },
         "required": [
           "activeBooking",
+          "activeBookingsTotal",
           "upcomingInterview",
           "unreadNotifications",
           "shortlistPreview",
@@ -18801,6 +19102,149 @@
           "timeline",
           "customerUserId",
           "cancelledByUserId"
+        ]
+      },
+      "InterviewView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bookingId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INTERVIEW",
+              "TRIAL"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "REQUESTED",
+              "CONFIRMED",
+              "RESCHEDULE_PROPOSED",
+              "DECLINED",
+              "CANCELLED",
+              "COMPLETED"
+            ]
+          },
+          "statusLabel": {
+            "type": "string",
+            "description": "Short label for the status."
+          },
+          "requestedBy": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "WORKER",
+              "ADMIN",
+              "SYSTEM"
+            ]
+          },
+          "preferredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scheduledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "The agreed time."
+          },
+          "proposedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "A different time proposed, waiting for an answer."
+          },
+          "proposedBy": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "CUSTOMER",
+              "WORKER"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "declineReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "cancelReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "outcomeNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "allowedActions": {
+            "type": "array",
+            "description": "What the CUSTOMER may do now (POST /interviews/{id}/<action>). Empty once the session is closed. Staff and the worker use their own routes.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "reschedule",
+                "cancel",
+                "complete",
+                "accept-proposal",
+                "reject-proposal"
+              ]
+            }
+          },
+          "timeline": {
+            "description": "Derived from the recorded times, oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InterviewTimelineEntry"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "bookingId",
+          "type",
+          "status",
+          "statusLabel",
+          "requestedBy",
+          "preferredAt",
+          "scheduledAt",
+          "proposedAt",
+          "proposedBy",
+          "note",
+          "declineReason",
+          "cancelReason",
+          "outcomeNote",
+          "completedAt",
+          "cancelledAt",
+          "createdAt",
+          "updatedAt",
+          "allowedActions",
+          "timeline"
         ]
       },
       "RequestInterviewDto": {
@@ -21169,7 +21613,7 @@
             "description": "Longest review text the server accepts (RATING_REVIEW_MAX_LENGTH, default 300)."
           },
           "ratingTags": {
-            "description": "Fixed rating tag catalogue (Q-103, pending client confirmation). Send the `code` values in `tags` of POST /ratings; `label` is display text. Any tag is accepted with any score.",
+            "description": "Rating tags configured by staff (empty until some are added). Send the `code` values in `tags` of POST /ratings; `label` is display text. Any active tag is accepted with any score.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RatingTagView"
@@ -21197,6 +21641,170 @@
           "languages",
           "statusLabels"
         ]
+      },
+      "AppSettingView": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "supportPhone"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "string",
+              "boolean"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "value": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "description": "The value the apps receive now; null when nothing is set."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "DATABASE",
+              "ENVIRONMENT",
+              "UNSET"
+            ],
+            "description": "DATABASE = set here; ENVIRONMENT = deployment default; UNSET = no value."
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "description",
+          "value",
+          "source",
+          "updatedAt"
+        ]
+      },
+      "SetAppSettingDto": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "description": "A string, or true/false for `maintenance`. The format is checked per key."
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "RatingTagAdminView": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "PUNCTUAL"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sentiment": {
+            "type": "string",
+            "enum": [
+              "POSITIVE",
+              "NEGATIVE"
+            ]
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "sentiment",
+          "sortOrder",
+          "isActive",
+          "updatedAt"
+        ]
+      },
+      "CreateRatingTagDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "PUNCTUAL",
+            "description": "Stable code: A-Z, 0-9, underscore. Never changes."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "Text shown in the app."
+          },
+          "sentiment": {
+            "type": "string",
+            "enum": [
+              "POSITIVE",
+              "NEGATIVE"
+            ]
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0,
+            "description": "Lower numbers are listed first."
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "sentiment"
+        ]
+      },
+      "UpdateRatingTagDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "sentiment": {
+            "type": "string",
+            "enum": [
+              "POSITIVE",
+              "NEGATIVE"
+            ]
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "false retires the tag: new ratings cannot use it, old ones keep it."
+          }
+        }
       },
       "DocumentView": {
         "type": "object",
@@ -23539,21 +24147,10 @@
             "nullable": true
           },
           "tags": {
-            "type": "array",
             "description": "Chosen tag codes; empty when none.",
+            "type": "array",
             "items": {
-              "type": "string",
-              "enum": [
-                "PUNCTUAL",
-                "POLITE",
-                "SKILLED",
-                "CLEAN_WORK",
-                "TRUSTWORTHY",
-                "LATE",
-                "RUDE",
-                "POOR_QUALITY_WORK",
-                "UNRELIABLE"
-              ]
+              "type": "string"
             }
           },
           "status": {
@@ -23597,21 +24194,10 @@
             "description": "Optional. At most `ratingReviewMax` characters (GET /reference-data; 300 unless configured otherwise). 400 RATING_REVIEW_TOO_LONG above that."
           },
           "tags": {
+            "description": "Optional tag codes from GET /reference-data ratingTags (configured by staff). Duplicates are 400; a code that is not an active tag is 422 RATING_TAG_INVALID; null or [] means none. Any active tag is accepted with any score.",
             "type": "array",
-            "description": "Optional tag codes from GET /reference-data ratingTags (Q-103, catalogue pending client confirmation). Unknown codes and duplicates are 400; null or [] means none. Any tag is accepted with any score.",
             "items": {
-              "type": "string",
-              "enum": [
-                "PUNCTUAL",
-                "POLITE",
-                "SKILLED",
-                "CLEAN_WORK",
-                "TRUSTWORTHY",
-                "LATE",
-                "RUDE",
-                "POOR_QUALITY_WORK",
-                "UNRELIABLE"
-              ]
+              "type": "string"
             }
           }
         },
@@ -23714,18 +24300,7 @@
           "tags": {
             "type": "array",
             "items": {
-              "type": "string",
-              "enum": [
-                "PUNCTUAL",
-                "POLITE",
-                "SKILLED",
-                "CLEAN_WORK",
-                "TRUSTWORTHY",
-                "LATE",
-                "RUDE",
-                "POOR_QUALITY_WORK",
-                "UNRELIABLE"
-              ]
+              "type": "string"
             }
           },
           "status": {

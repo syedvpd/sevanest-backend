@@ -161,7 +161,9 @@ describe('QA - end-to-end journeys (integration)', () => {
       verification: 'VERIFIED',
       experienceMonths: 60,
     });
-    expect(JSON.stringify(found.body)).not.toContain('Lakshmi');
+    // the card shows a display name (first name and last initial) and never the surname
+    expect(found.body.data[0]).toMatchObject({ name: 'Lakshmi D.' });
+    expect(JSON.stringify(found.body)).not.toContain('Devi');
     const matched = await as(api, admin).post('/api/v1/admin/matching/candidates', matchBody);
     expect(matched.body.data.map((x: { workerId: string }) => x.workerId)).toEqual([workerId]);
 
