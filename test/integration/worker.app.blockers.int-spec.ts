@@ -392,7 +392,7 @@ describe('Worker app blockers (integration)', () => {
         expect(cats.status).toBe(200);
         expect(cats.body.data.length).toBeGreaterThan(0);
         expect(Object.keys(cats.body.data[0] as object).sort()).toEqual(
-          ['allowedEngagements', 'code', 'description', 'id', 'name'].sort(),
+          ['allowedEngagements', 'code', 'description', 'engagements', 'id', 'name'].sort(),
         );
         const areas = await as(api, who).get(A);
         expect(areas.status).toBe(200);
@@ -430,7 +430,10 @@ describe('Worker app blockers (integration)', () => {
       );
       expect((await w.get(`${A}/${extraArea.id}`)).status).toBe(404);
 
-      const cats = (await w.get(C).expect(200)).body.data as Array<{ id: string; code: string }>;
+      const cats = (await w.get(`${C}?limit=100`).expect(200)).body.data as Array<{
+        id: string;
+        code: string;
+      }>;
       const cook = cats.find((c) => c.code === 'COOK')!;
       await as(api, admin)
         .put(`/api/v1/admin/service-categories/${cook.id}/engagements`, {
