@@ -43,3 +43,7 @@ Public responses carry `id, code, name, description` only.
 Category-to-engagement-type mapping ("as allowed for the category") is not modelled: the vocabulary in the documents is inconsistent
 (FR-SD-003 lists full-time/part-time/daily/hourly/live-in; the PRD table also uses Monthly, Shift, One-time). Display ordering,
 localised names, and config-master ownership (Q-14) are undefined.
+
+## Engagement types per category (2026-10-27)
+
+The PRD section 4 engagement types are available as OPT-IN seed data (`RECOMMENDED_ENGAGEMENTS`): `SEED_CATEGORY_ENGAGEMENTS=dry-run npm run seed` reports the plan, `=true` applies it, only to categories that exist and have no engagement rows. "Monthly" is read as FULL_TIME until the client confirms (Q-93). Details: `docs/qa/service-categories-audit.md`. Category responses carry the allowed types as `allowedEngagements` and the same value as `engagements`.

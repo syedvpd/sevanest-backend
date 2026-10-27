@@ -86,6 +86,13 @@ export class ServiceCategoryResponse {
     description: 'Engagement types this category offers; empty = not restricted.',
   })
   allowedEngagements!: string[];
+  @ApiProperty({
+    type: [String],
+    example: ['PART_TIME', 'FULL_TIME', 'LIVE_IN'],
+    description:
+      'Same value as allowedEngagements, named like the admin PUT body (`engagements`). Empty = not restricted.',
+  })
+  engagements!: string[];
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
   @ApiProperty({ nullable: true, type: String }) description!: string | null;

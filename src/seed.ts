@@ -47,6 +47,17 @@ async function seed(): Promise<void> {
       `Service categories ensured: ${createdCategories} created (existing rows untouched)`,
     );
 
+    // Opt-in (Q-93): SEED_CATEGORY_ENGAGEMENTS=dry-run reports, =true applies the PRD engagement types to unconfigured categories.
+    const engagementMode = process.env.SEED_CATEGORY_ENGAGEMENTS?.trim().toLowerCase();
+    if (engagementMode === 'true' || engagementMode === 'dry-run') {
+      const report = await app
+        .get(CategorySeedService)
+        .ensureRecommendedEngagements(engagementMode === 'dry-run');
+      console.log(
+        `Category engagements (${engagementMode === 'dry-run' ? 'DRY RUN, nothing written' : 'applied'}): ${JSON.stringify(report)}`,
+      );
+    }
+
     const email = process.env.BOOTSTRAP_SUPER_ADMIN_EMAIL?.trim().toLowerCase();
     const password = process.env.BOOTSTRAP_SUPER_ADMIN_PASSWORD;
     if (!email && !password) {

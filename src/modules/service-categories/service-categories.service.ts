@@ -26,6 +26,7 @@ export const CategoryErrorCode = {
 function toPublic(category: CategoryRecord, allowed: string[] = []): ServiceCategoryResponse {
   return {
     allowedEngagements: allowed,
+    engagements: allowed,
     id: category.id,
     code: category.code,
     name: category.name,

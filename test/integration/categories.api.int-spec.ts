@@ -143,6 +143,7 @@ describe('Service Categories API (integration)', () => {
           'allowedEngagements',
           'code',
           'description',
+          'engagements',
           'id',
           'name',
         ]);
