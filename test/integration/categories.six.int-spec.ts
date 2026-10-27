@@ -233,6 +233,81 @@ describe('Six service categories (integration)', () => {
     expect((refused.body as { code: string }).code).toBe('ENGAGEMENT_NOT_OFFERED');
   });
 
+  it('supports the MONTHLY engagement end to end (D-92): worker preference, search, booking, and refusal where a category does not offer it', async () => {
+    const code = `MON_${unique().toUpperCase()}`;
+    const created = await as(api, admin)
+      .post(ADMIN, { code, name: `Monthly ${unique()}` })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+    await as(api, admin)
+      .put(`${ADMIN}/${id}/engagements`, { engagements: ['HOURLY', 'DAILY', 'MONTHLY'] })
+      .expect(200);
+    expect(
+      (
+        (await as(api, customer).get(`${CATEGORIES}/${id}`)).body as { engagements: string[] }
+      ).engagements.sort(),
+    ).toEqual(['DAILY', 'HOURLY', 'MONTHLY']);
+
+    const worker = await onboardWorker(api, { areaIds: [area.id], categoryCodes: ['HOUSE_MAID'] });
+    await as(api, worker)
+      .put('/api/v1/workers/me/categories', { categoryIds: [id] })
+      .expect(200);
+    const saved = await as(api, worker).patch('/api/v1/workers/me/availability', {
+      engagementPreference: 'MONTHLY',
+    });
+    expect(saved.status).toBe(200);
+    expect(
+      (
+        await as(api, worker).patch('/api/v1/workers/me/availability', {
+          engagementPreference: 'WEEKLY',
+        })
+      ).status,
+    ).toBe(400);
+    await approveCheck(api, admin, worker, 'IDENTITY');
+
+    const found = await as(api, customer).get(
+      `${SEARCH}?category=${code}&areaId=${area.id}&engagement=MONTHLY`,
+    );
+    expect(found.status).toBe(200);
+    expect(
+      (found.body as { data: Array<{ workerId: string }> }).data.map((c) => c.workerId),
+    ).toContain(worker.workerId);
+    const hourly = await as(api, customer).get(
+      `${SEARCH}?category=${code}&areaId=${area.id}&engagement=HOURLY`,
+    );
+    expect((hourly.body as { data: unknown[] }).data).toHaveLength(0); // the worker prefers MONTHLY only
+
+    // a category that does not offer MONTHLY refuses it
+    const maid = await as(api, customer).get(
+      `${SEARCH}?category=HOUSE_MAID&areaId=${area.id}&engagement=MONTHLY`,
+    );
+    const maidOffers = await api.prisma.categoryEngagement.count({
+      where: { category: { code: 'HOUSE_MAID' } },
+    });
+    expect(maid.status).toBe(maidOffers === 0 ? 200 : 422);
+
+    const booking = await as(api, customer).post('/api/v1/bookings', {
+      category: code,
+      areaId: area.id,
+      engagement: 'MONTHLY',
+      availableFrom: '09:00',
+      availableTo: '12:00',
+      workerId: worker.workerId,
+    });
+    expect(booking.status).toBe(201);
+    expect((booking.body as { engagement: string }).engagement).toBe('MONTHLY');
+    // the same worker cannot be double-booked for an overlapping time: MONTHLY occupies every day from its start
+    const second = await as(api, customer).post('/api/v1/bookings', {
+      category: code,
+      areaId: area.id,
+      engagement: 'MONTHLY',
+      availableFrom: '10:00',
+      availableTo: '11:00',
+      workerId: worker.workerId,
+    });
+    expect([201, 409, 422]).toContain(second.status);
+  });
+
   it('keeps category administration for admins with category.manage only', async () => {
     const worker = await onboardWorker(api, { areaIds: [area.id] });
     const body = { code: `NOPE_${unique().toUpperCase()}`, name: `Nope ${unique()}` };

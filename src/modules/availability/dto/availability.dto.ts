@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ENGAGEMENTS } from '../../../common/validation/engagements';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -27,15 +28,8 @@ const trim = ({ value }: { value: unknown }): unknown =>
 const toBoolean = ({ value }: { value: unknown }): unknown =>
   value === 'true' ? true : value === 'false' ? false : value;
 
-const ENGAGEMENT = [
-  'FULL_TIME',
-  'PART_TIME',
-  'LIVE_IN',
-  'DAILY',
-  'HOURLY',
-  'SHIFT',
-  'ONE_TIME',
-] as const;
+// The shared vocabulary (one list for categories, availability, search and booking).
+const ENGAGEMENT = ENGAGEMENTS;
 
 /** Sizes below are TECHNICAL bounds (the specs set no limits), not product rules. */
 export class TimeWindowDto {

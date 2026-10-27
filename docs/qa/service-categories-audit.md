@@ -32,13 +32,13 @@ Checked and found fine: duplicate associations (a worker holds a category once),
    | Category | Engagements applied |
    |---|---|
    | House Maid | PART_TIME, FULL_TIME, LIVE_IN |
-   | Driver | HOURLY, DAILY |
-   | Cook | PART_TIME |
+   | Driver | HOURLY, DAILY, MONTHLY |
+   | Cook | PART_TIME, MONTHLY |
    | Babysitter | HOURLY, FULL_TIME |
    | Elderly Care Helper | SHIFT, FULL_TIME |
    | Cleaning Helper | ONE_TIME, HOURLY |
 
-   **"Monthly" (PRD, Driver and Cook) is not offered**: the platform has no MONTHLY value and the client has not said whether it means a new type or FULL_TIME/PART_TIME billed monthly (Q-93, Q-38). The table above is the one agreed with the customer-app team on 2026-10-27.
+   **"Monthly" (PRD, Driver and Cook) is the `MONTHLY` engagement (D-92, 2026-10-28)**, added by migration `20261113090000_engagement_monthly` (an additive enum value, recurring for double-booking). The table above is the one agreed with the customer-app team; it follows the client's category table as recorded in `docs/BACKEND_REQUESTS.md`, which should still be checked against the original document. Cook and Driver have no FULL_TIME by design. Rolling it out to an existing database: apply the migration, then `node scripts/apply-category-engagements.mjs --top-up --apply` (adds only the missing values, never removes) and `node scripts/seed-demo-refresh.mjs --apply` (demo drivers prefer HOURLY, DAILY and MONTHLY).
    **Applied to the shared Supabase database on 2026-10-27** with `scripts/apply-category-engagements.mjs` (backup `supabase-public-pre-engagements-20261027-151501.dump`, dry run, one transaction, 6 audit rows). Demo workers' engagement preferences were aligned with `scripts/seed-demo-refresh.mjs`, because search matches a worker's own preference.
 2. **Name mismatch:** the category response exposed the allowed engagement types as `allowedEngagements`, while the admin write body uses `engagements`. Added `engagements` with the same value (additive; `allowedEngagements` stays).
 

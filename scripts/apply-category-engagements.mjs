@@ -14,6 +14,8 @@ import pg from 'pg';
 import { RECOMMENDED_ENGAGEMENTS } from '../dist/modules/service-categories/category-seed.service.js';
 
 const APPLY = process.argv.includes('--apply');
+// --top-up: also ADD recommended engagements that a configured category lacks (never removes any); used when the table grew (MONTHLY, D-92).
+const TOP_UP = process.argv.includes('--top-up');
 const url = process.env.DATABASE_URL ?? '';
 if (!url) throw new Error('Set DATABASE_URL');
 const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url);
@@ -44,6 +46,31 @@ async function main() {
           cat.id,
         ])
       ).rowCount;
+      if (has && TOP_UP) {
+        const current = (
+          await db.query(`SELECT engagement FROM category_engagements WHERE category_id = $1`, [
+            cat.id,
+          ])
+        ).rows.map((r) => r.engagement);
+        const missing = [...engagements].filter((e) => !current.includes(e)).sort();
+        for (const e of missing) {
+          await db.query(
+            `INSERT INTO category_engagements (category_id, engagement) VALUES ($1, $2::"EngagementPreference")`,
+            [cat.id, e],
+          );
+        }
+        if (missing.length > 0) {
+          await db.query(
+            `INSERT INTO audit_logs (id, action, entity_type, entity_id, actor_id, metadata, created_at)
+             VALUES (gen_random_uuid(), 'service_category.engagements_seeded', 'service_category', $1, NULL, $2::jsonb, now())`,
+            [cat.id, JSON.stringify({ code, from: current.sort(), added: missing })],
+          );
+        }
+        lines.push(
+          `${code}: ${missing.length > 0 ? `added ${missing.join(', ')} to ${current.sort().join(', ')}` : 'nothing to add'}`,
+        );
+        continue;
+      }
       if (has) {
         const current = (
           await db.query(

@@ -7,5 +7,6 @@ export const ENGAGEMENTS = [
   'HOURLY',
   'SHIFT',
   'ONE_TIME',
+  'MONTHLY',
 ] as const;
 export type Engagement = (typeof ENGAGEMENTS)[number];

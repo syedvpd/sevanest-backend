@@ -47,8 +47,8 @@ describe('RECOMMENDED_ENGAGEMENTS (PRD section 4)', () => {
       for (const e of list) expect(ENGAGEMENTS).toContain(e);
     }
     expect(RECOMMENDED_ENGAGEMENTS.HOUSE_MAID).toEqual(['PART_TIME', 'FULL_TIME', 'LIVE_IN']);
-    expect(RECOMMENDED_ENGAGEMENTS.DRIVER).toEqual(['HOURLY', 'DAILY']);
-    expect(RECOMMENDED_ENGAGEMENTS.COOK).toEqual(['PART_TIME']);
+    expect(RECOMMENDED_ENGAGEMENTS.DRIVER).toEqual(['HOURLY', 'DAILY', 'MONTHLY']);
+    expect(RECOMMENDED_ENGAGEMENTS.COOK).toEqual(['PART_TIME', 'MONTHLY']);
     expect(RECOMMENDED_ENGAGEMENTS.BABYSITTER).toEqual(['HOURLY', 'FULL_TIME']);
     expect(RECOMMENDED_ENGAGEMENTS.CLEANING_HELPER).toEqual(['ONE_TIME', 'HOURLY']);
     expect(RECOMMENDED_ENGAGEMENTS.ELDERLY_CARE_HELPER).toContain('SHIFT');
@@ -62,7 +62,7 @@ describe('CategorySeedService.ensureRecommendedEngagements', () => {
     expect(report.applied.map((a) => a.code).sort()).toEqual(
       Object.keys(RECOMMENDED_ENGAGEMENTS).sort(),
     );
-    expect(engagements.get('id-DRIVER')).toEqual(['DAILY', 'HOURLY']);
+    expect(engagements.get('id-DRIVER')).toEqual(['DAILY', 'HOURLY', 'MONTHLY']);
     expect(audited).toHaveLength(6);
     expect(audited[0]).toMatchObject({
       action: 'service_category.engagements_seeded',

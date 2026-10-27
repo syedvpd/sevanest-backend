@@ -397,7 +397,7 @@ describe('Worker scheduling and category engagements (integration)', () => {
           .post(`${A}/service-categories`, { code, name: `Cat ${unique()}` })
           .expect(201)
       ).body.id as string;
-      for (const bad of [{ engagements: ['MONTHLY'] }, { engagements: 'HOURLY' }, {}]) {
+      for (const bad of [{ engagements: ['WEEKLY'] }, { engagements: 'HOURLY' }, {}]) {
         expect(
           (await as(api, admin).put(`${A}/service-categories/${id}/engagements`, bad)).status,
         ).toBe(400);

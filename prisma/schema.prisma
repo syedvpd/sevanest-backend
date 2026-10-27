@@ -370,6 +370,8 @@ enum EngagementPreference {
   HOURLY
   SHIFT
   ONE_TIME
+  /// Monthly engagement (PRD section 4: Driver and Cook). Recurring like FULL_TIME for double-booking purposes.
+  MONTHLY
 }
 
 /// One per worker user. Every field except `name` is nullable because onboarding saves progress step by step; grouped

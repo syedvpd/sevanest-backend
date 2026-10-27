@@ -33,7 +33,7 @@ const isSingleDay = (engagement?: string): boolean =>
  * booking (refuse a double booking). A worker is busy when a holding booking of theirs overlaps BOTH in dates and in time of day:
  * a 1-hour cleaning on a date blocks only that hour of that date, so the worker can take another service the same day at another hour
  * and is free again as soon as the hour ends. A live-in engagement occupies the whole day. Recurring engagements (full-time,
- * part-time, live-in) occupy every day from their start date until they are completed or cancelled.
+ * part-time, live-in, monthly) occupy every day from their start date until they are completed or cancelled.
  */
 export function workerBusyCondition(workerId: Prisma.Sql, r: BusyRequest): Prisma.Sql {
   const liveIn = r.engagement === 'LIVE_IN';

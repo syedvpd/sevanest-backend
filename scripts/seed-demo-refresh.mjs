@@ -118,6 +118,7 @@ const EXISTING_WORKERS = [
     pay: 21000,
     langs: ['ur', 'hi', 'te', 'en'],
     to: 'DRIVER',
+    pref: 'HOURLY',
   },
   {
     n: 112,
@@ -157,6 +158,7 @@ const NEW_WORKERS = [
     months: 120,
     pay: 24000,
     langs: ['te', 'hi', 'en'],
+    pref: 'MONTHLY',
   },
   {
     n: 114,
@@ -417,7 +419,7 @@ async function main() {
         await db.query(
           `INSERT INTO worker_work_preferences (worker_id, engagement_preference, updated_at) VALUES ($1, $2::"EngagementPreference", now())
            ON CONFLICT (worker_id) DO UPDATE SET engagement_preference = EXCLUDED.engagement_preference, updated_at = now()`,
-          [row.id, p.pref],
+          [row.id, w.pref ?? p.pref],
         );
         if (row.st !== 'SUBMITTED') {
           await db.query(
@@ -456,7 +458,7 @@ async function main() {
         await goLive(exists.id, admin);
         await db.query(
           `UPDATE worker_work_preferences SET engagement_preference = $2::"EngagementPreference", updated_at = now() WHERE worker_id = $1`,
-          [exists.id, PROFILE[w.cat].pref],
+          [exists.id, w.pref ?? PROFILE[w.cat].pref],
         );
         say(`new worker ${m(w.n)}: already present (go-live steps ensured)`);
         continue;
@@ -490,7 +492,7 @@ async function main() {
       );
       await db.query(
         `INSERT INTO worker_work_preferences (worker_id, engagement_preference, updated_at) VALUES ($1, $2::"EngagementPreference", now())`,
-        [id, p.pref],
+        [id, w.pref ?? p.pref],
       );
       for (const l of w.langs)
         await db.query(`INSERT INTO worker_languages (worker_id, language_code) VALUES ($1, $2)`, [
