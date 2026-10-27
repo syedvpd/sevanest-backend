@@ -48,6 +48,7 @@ const EXISTING_WORKERS = [
     months: 84,
     pay: 15000,
     langs: ['te', 'hi', 'en'],
+    pref: 'PART_TIME',
   },
   {
     n: 104,
@@ -73,6 +74,7 @@ const EXISTING_WORKERS = [
     months: 96,
     pay: 17000,
     langs: ['te', 'en'],
+    pref: 'PART_TIME',
   },
   {
     n: 107,
@@ -97,6 +99,7 @@ const EXISTING_WORKERS = [
     months: 18,
     pay: 14000,
     langs: ['en', 'te', 'hi'],
+    pref: 'PART_TIME',
   },
   {
     n: 110,
@@ -128,7 +131,7 @@ const EXISTING_WORKERS = [
 ];
 
 const PROFILE = {
-  DRIVER: { pref: 'FULL_TIME', window: [360, 1200], areas: ['Madhapur', 'Gachibowli', 'Kondapur'] },
+  DRIVER: { pref: 'DAILY', window: [360, 1200], areas: ['Madhapur', 'Gachibowli', 'Kondapur'] },
   BABYSITTER: {
     pref: 'FULL_TIME',
     window: [480, 1260],
@@ -385,6 +388,13 @@ async function main() {
           row.id,
           l,
         ]);
+      if (w.pref && !w.to) {
+        // Cook offers PART_TIME only (2026-10-27): a worker holding Cook must prefer an engagement the category offers.
+        await db.query(
+          `UPDATE worker_work_preferences SET engagement_preference = $2::"EngagementPreference", updated_at = now() WHERE worker_id = $1`,
+          [row.id, w.pref],
+        );
+      }
       if (w.to) {
         const p = PROFILE[w.to];
         await db.query(`DELETE FROM worker_skills WHERE worker_id = $1`, [row.id]);
@@ -444,6 +454,10 @@ async function main() {
       );
       if (exists) {
         await goLive(exists.id, admin);
+        await db.query(
+          `UPDATE worker_work_preferences SET engagement_preference = $2::"EngagementPreference", updated_at = now() WHERE worker_id = $1`,
+          [exists.id, PROFILE[w.cat].pref],
+        );
         say(`new worker ${m(w.n)}: already present (go-live steps ensured)`);
         continue;
       }

@@ -10,6 +10,7 @@ Replaces the repeated demo people on the shared Supabase database with varied, r
 | New demo workers `+919000000113..120` (8) | 1 Driver, 2 Babysitters, 2 Elderly Care Helpers, 3 Cleaning Helpers. Each has identity approved, an application reference, sign-off and activation (D-90), so they are live in search. |
 | Demo customers `+919000000201..206` (6) | Renamed, e-mail changed, default address street and pincode made consistent with the area. 14 bookings and 8 payments untouched. |
 | Areas | "Hitech City" merged into "HITEC City" (6 worker preferences, 2 bookings, 2 addresses moved) and disabled. Nothing deleted except the duplicate preference rows that were moved. |
+| Engagements (2026-10-27) | Category engagement types applied per the customer-app team's table; Cook-holders prefer PART_TIME, Drivers DAILY (see `docs/qa/service-categories-audit.md`). |
 | Result | Live workers per category: Babysitter 3, Cleaning Helper 3, Cook 3, Driver 3, Elderly Care Helper 3, House Maid 8 (eight maids stay because the demo bookings belong to them). |
 
 ## Not touched

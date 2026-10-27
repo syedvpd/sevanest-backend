@@ -32,13 +32,14 @@ Checked and found fine: duplicate associations (a worker holds a category once),
    | Category | Engagements applied |
    |---|---|
    | House Maid | PART_TIME, FULL_TIME, LIVE_IN |
-   | Driver | HOURLY, DAILY, FULL_TIME (PRD "Monthly") |
-   | Cook | PART_TIME, FULL_TIME (PRD "Monthly") |
+   | Driver | HOURLY, DAILY |
+   | Cook | PART_TIME |
    | Babysitter | HOURLY, FULL_TIME |
    | Elderly Care Helper | SHIFT, FULL_TIME |
    | Cleaning Helper | ONE_TIME, HOURLY |
 
-   **"Monthly" has no value in the platform vocabulary.** It is mapped to FULL_TIME as an interim reading; the client must confirm (Q-93, Q-38), or a MONTHLY value must be added (additive enum migration plus availability, search and scheduling handling).
+   **"Monthly" (PRD, Driver and Cook) is not offered**: the platform has no MONTHLY value and the client has not said whether it means a new type or FULL_TIME/PART_TIME billed monthly (Q-93, Q-38). The table above is the one agreed with the customer-app team on 2026-10-27.
+   **Applied to the shared Supabase database on 2026-10-27** with `scripts/apply-category-engagements.mjs` (backup `supabase-public-pre-engagements-20261027-151501.dump`, dry run, one transaction, 6 audit rows). Demo workers' engagement preferences were aligned with `scripts/seed-demo-refresh.mjs`, because search matches a worker's own preference.
 2. **Name mismatch:** the category response exposed the allowed engagement types as `allowedEngagements`, while the admin write body uses `engagements`. Added `engagements` with the same value (additive; `allowedEngagements` stays).
 
 Existing environments: no change happens unless someone runs the opt-in seed. Dry-run plan for staging or production: `SEED_CATEGORY_ENGAGEMENTS=dry-run npm run seed` against that environment's database by its owner, or read the table above and apply it with `PUT /admin/service-categories/{id}/engagements`. I did neither.

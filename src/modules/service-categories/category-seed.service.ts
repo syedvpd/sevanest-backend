@@ -48,13 +48,13 @@ export const INITIAL_CATEGORIES: ReadonlyArray<{
 /**
  * Engagement types per category from the PRD section 4 table. OPT-IN seed data (never applied by default, never to a category that
  * already has any engagement row), because a category with no rows is unrestricted and switching that on changes what existing
- * environments accept. Interim reading of "Monthly" (Driver, Cook): FULL_TIME, the monthly-salaried arrangement; the platform has
- * no separate MONTHLY value. Q-93 stays open until the client confirms the vocabulary.
+ * environments accept. The PRD's "Monthly" (Driver, Cook) is NOT offered: the platform has no MONTHLY engagement value and the client has
+ * not said whether it means a new type or FULL_TIME/PART_TIME billed monthly (Q-93). Values agreed with the customer-app team 2026-10-27.
  */
 export const RECOMMENDED_ENGAGEMENTS: Readonly<Record<string, readonly Engagement[]>> = {
   HOUSE_MAID: ['PART_TIME', 'FULL_TIME', 'LIVE_IN'],
-  DRIVER: ['HOURLY', 'DAILY', 'FULL_TIME'],
-  COOK: ['PART_TIME', 'FULL_TIME'],
+  DRIVER: ['HOURLY', 'DAILY'],
+  COOK: ['PART_TIME'],
   BABYSITTER: ['HOURLY', 'FULL_TIME'],
   ELDERLY_CARE_HELPER: ['SHIFT', 'FULL_TIME'],
   CLEANING_HELPER: ['ONE_TIME', 'HOURLY'],
