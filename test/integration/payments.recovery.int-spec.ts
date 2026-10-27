@@ -284,13 +284,15 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
         const row = await payment(started.id);
         const status = await bookingStatus(booking.id);
         const exceptions = await exceptionsOf(started.id);
-        // Either order is acceptable; a contradiction is not.
-        expect(row.status).toBe('SUCCEEDED');
-        if (status === 'CANCELLED') {
-          expect(exceptions).toHaveLength(1);
-        } else {
-          expect(status).toBe('CONFIRMED');
+        // Either order is acceptable; a contradiction is not. Cancellation is allowed from CONFIRMED, so the booking always ends cancelled.
+        expect(status).toBe('CANCELLED');
+        if (row.status === 'REFUND_PENDING') {
+          // payment first: the CONFIRMED booking is cancelled and refunded automatically (DEC-04), nothing for a person to settle
           expect(exceptions).toHaveLength(0);
+        } else {
+          // cancellation first: the late payment is held for a person
+          expect(row.status).toBe('SUCCEEDED');
+          expect(exceptions).toHaveLength(1);
         }
       }
     });

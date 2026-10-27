@@ -19,6 +19,8 @@ const SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 export class CustomerPhotoSweepLoop implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(CustomerPhotoSweepLoop.name);
   private timer?: NodeJS.Timeout;
+  // The delayed first run must be cancelled too: it would otherwise query a closed database after shutdown.
+  private firstTick?: NodeJS.Timeout;
   private running = false;
 
   constructor(
@@ -28,11 +30,12 @@ export class CustomerPhotoSweepLoop implements OnApplicationBootstrap, OnModuleD
 
   onApplicationBootstrap(): void {
     this.timer = setInterval(() => void this.tick(), SWEEP_INTERVAL_MS);
-    setTimeout(() => void this.tick(), 35_000).unref();
+    this.firstTick = setTimeout(() => void this.tick(), 35_000).unref();
   }
 
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
+    clearTimeout(this.firstTick);
   }
 
   private async tick(): Promise<void> {

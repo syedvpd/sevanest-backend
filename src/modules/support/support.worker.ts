@@ -18,6 +18,8 @@ const INTERVAL_MS = 60_000;
 export class SupportSlaLoop implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(SupportSlaLoop.name);
   private timer?: NodeJS.Timeout;
+  // The delayed first run must be cancelled too: it would otherwise query a closed database after shutdown.
+  private firstTick?: NodeJS.Timeout;
   private running = false;
 
   constructor(
@@ -27,11 +29,12 @@ export class SupportSlaLoop implements OnApplicationBootstrap, OnModuleDestroy {
 
   onApplicationBootstrap(): void {
     this.timer = setInterval(() => void this.tick(), INTERVAL_MS);
-    setTimeout(() => void this.tick(), 20_000).unref();
+    this.firstTick = setTimeout(() => void this.tick(), 20_000).unref();
   }
 
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
+    clearTimeout(this.firstTick);
   }
 
   private async tick(): Promise<void> {
