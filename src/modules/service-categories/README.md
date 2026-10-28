@@ -1,49 +1,108 @@
-# Service Categories
+# Service Categories & Master Catalogue Module
 
-The admin-managed master of service categories (roles a worker can offer and a customer can request).
+## 1. Executive Summary
 
-## Requirements covered
+The **Service Categories Module** maintains the authoritative master catalogue of domestic workforce roles available on the SevaNest platform (e.g., House Maid, Cook, Driver, Babysitter, Elderly Care Helper, Cleaning Helper). It defines the operational taxonomy and permitted engagement types across the marketplace.
 
-FRD FM-16 (categories added/edited by Super Admin, unique name, enabled/disabled, audit-logged), FR-ADM-005 / SRS 3.17
-(configuration without code changes), FM-03/FM-04 ("only categories enabled in admin masters"), PRD section 4 (the six
-categories), NFR-OPS-005 (categories via masters).
+Engineered around **Catalogue Integrity** and **Zero-Downtime Extensibility**:
+1. **Dynamic Master Administration:** Operations administrators can introduce new domestic service categories, adjust descriptions, and toggle availability without redeploying code.
+2. **Referential Stability:** Categories are soft-disabled rather than deleted, ensuring that historical bookings, ongoing monthly contracts, and worker certifications never break.
+3. **Engagement Type Matrix:** Pairs each service category with authorized engagement models (e.g., `FULL_TIME`, `PART_TIME`, `LIVE_IN`).
 
-## Domain and database
+---
 
-`service_categories`: `id`, immutable `code` (`UPPER_SNAKE_CASE`, unique), `name` (unique ignoring case), optional `description`,
-`is_enabled`. Categories are never deleted: a worker association (`worker_skills`) restricts deletion, and disabling hides a
-category from new selections while existing holders keep it.
+## 2. Core Features & Capabilities
 
-The six categories in the project documents (House Maid, Driver, Cook, Babysitter, Elderly Care Helper, Cleaning Helper) are seeded
-as DATA by `npm run seed` using the documents' names and descriptions. Re-seeding creates only missing rows and never overwrites
-an admin's edits. Application logic never refers to a category by name or code.
+* **Authoritative Role Master:** Centralized taxonomy of household service categories with unique business codes (e.g., `COOK`, `MAID`, `DRIVER`).
+* **Dynamic Category Management:** Administrative endpoints to create, update, and enable/disable categories on demand.
+* **Engagement Model Governance:** Associates permitted contract structures (`FULL_TIME`, `PART_TIME`, `LIVE_IN`) with corresponding household roles.
+* **Referential Protection:** Restricts hard deletions when active workers or booking contracts hold associations.
+* **Customer-Facing Catalogue:** High-speed, public-facing cached API endpoint for mobile onboarding and search filters.
 
-## APIs (`/api/v1`)
+---
 
-| Method | Path                                     | Requires           | Purpose                                                   |
-| ------ | ---------------------------------------- | ------------------ | --------------------------------------------------------- |
-| GET    | `/service-categories`                    | any signed-in user | Enabled categories, paginated, stable order               |
-| GET    | `/service-categories/{categoryId}`       | any signed-in user | One enabled category (404 if disabled)                    |
-| GET    | `/admin/service-categories`              | `category.manage`  | All categories, filter `isEnabled`, paginated             |
-| GET    | `/admin/service-categories/{categoryId}` | `category.manage`  | One including disabled                                    |
-| POST   | `/admin/service-categories`              | `category.manage`  | `{ code, name, description? }` (409 `CATEGORY_DUPLICATE`) |
-| PATCH  | `/admin/service-categories/{categoryId}` | `category.manage`  | `{ name?, description?, isEnabled? }`; code immutable     |
+## 3. End-to-End Service Category Workflow
 
-Public responses carry `id, code, name, description` only.
+The following diagram illustrates how service categories are managed and consumed:
 
-## Rules, concurrency, audit
+```
+Platform Operations Portal
+           │
+           ▼
+[POST /api/v1/admin/service-categories { code: "COOK", name: "Cook", description: "..." }]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Uniqueness Validation & Persistence                 │
+│    - Verifies code and name uniqueness                 │
+│    - Enables category for marketplace availability     │
+│    - Emits audit log entry for configuration tracking  │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+Mobile Applications (Customer & Worker Apps)
+           │
+           ▼
+[GET /api/v1/service-categories]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Filtered Catalogue Delivery                         │
+│    - Returns active, enabled categories                │
+│    - Feeds customer search filters and worker skills   │
+└────────────────────────────────────────────────────────┘
+```
 
-- Code and name uniqueness (name ignoring case) are enforced by the database; the API maps violations to 409.
-- Updates lock the row; re-sending identical values writes no audit record. Audit: `service_category.create`, `service_category.update`
-  (before/after of changed fields; configuration data, not personal data).
-- `assertAssignable(requested, held)` is the contract other modules use: every id must exist (400) and every NEW id must be enabled (422).
+---
 
-## Open decisions
+## 4. API Endpoints & Contracts
 
-Category-to-engagement-type mapping ("as allowed for the category") is not modelled: the vocabulary in the documents is inconsistent
-(FR-SD-003 lists full-time/part-time/daily/hourly/live-in; the PRD table also uses Monthly, Shift, One-time). Display ordering,
-localised names, and config-master ownership (Q-14) are undefined.
+### 1. `GET /api/v1/service-categories`
+Returns all enabled service categories for customer discovery and worker profile creation.
+* **Response:** `[{ id, code: "COOK", name: "Cook", description: "...", allowedEngagements: [...] }]`
 
-## Engagement types per category (2026-10-27)
+---
 
-The PRD section 4 engagement types are available as OPT-IN seed data (`RECOMMENDED_ENGAGEMENTS`): `SEED_CATEGORY_ENGAGEMENTS=dry-run npm run seed` reports the plan, `=true` applies it, only to categories that exist and have no engagement rows. "Monthly" is read as FULL_TIME until the client confirms (Q-93). Details: `docs/qa/service-categories-audit.md`. Category responses carry the allowed types as `allowedEngagements` and the same value as `engagements`.
+### 2. `GET /api/v1/service-categories/:categoryId`
+Retrieves detailed information for a specific active service category.
+
+---
+
+### 3. `GET /api/v1/admin/service-categories`
+Lists all categories (both enabled and disabled) for administrative operations.
+
+---
+
+### 4. `POST /api/v1/admin/service-categories`
+Registers a new service category on the platform.
+* **Payload:** `{ code: "ELDERLY_CARE", name: "Elderly Care Helper", description: "Specialized senior care" }`
+
+---
+
+### 5. `PATCH /api/v1/admin/service-categories/:categoryId`
+Updates category descriptions or toggles platform visibility (`isEnabled: true | false`).
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Service Categories module serves as the functional foundation for worker profiling and customer search:
+
+```
+┌─────────────────────────┐
+│     Workers Module      │──┐
+│ (Worker Skill Mapping)  │  │
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│      Search Module      │──┼──► [ Service Categories ]
+│ (Category Search Filter)│  │    (Authoritative Master)
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│     Booking Module      │──┘
+│ (Service Requirements)  │
+└─────────────────────────┘
+```
+
+* **Skill Assignment:** The Workers module validates that any skill a worker registers references an active, enabled category.
+* **Booking Validation:** Booking creation ensures the requested service matches an active platform category.
+

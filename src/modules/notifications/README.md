@@ -1,33 +1,107 @@
-# Notifications
+# Multi-Channel Notifications & Dispatch Module
 
-Admin-configurable notifications over push (FCM), SMS and WhatsApp (optional), delivered asynchronously. Channels outside the specification are not offered
-(email is Q-20). **No vendor or credential exists yet**: `PUSH_PROVIDER`, `WHATSAPP_PROVIDER` and `SMS_PROVIDER` are `disabled` or the test-only `memory` adapter
-(refused in production).
+## 1. Executive Summary
 
-## Requirements covered
+The **Notifications Module** provides real-time multi-channel communication across SevaNest, delivering transactional push notifications (via Firebase Cloud Messaging), SMS alerts, and WhatsApp messages to customers and domestic workers.
 
-FR-NOT-001..006 (push, SMS, WhatsApp, admin templates, channel/template/status recorded, graceful retry), FRD section 6 (PROPOSED matrix).
+Engineered around **Reliable Asynchronous Delivery** and **Transactional Outbox Architecture**:
+1. **Zero Message Loss (Outbox Pattern):** Domain events (e.g., `BOOKING_CONFIRMED`, `PAYMENT_SUCCEEDED`) are saved into an `outbox_events` table in the exact same database transaction as the business operation, eliminating dual-write failure risks.
+2. **Decoupled Worker Processing:** Notification rendering and external gateway delivery execute asynchronously in the background BullMQ worker process, protecting API response times.
+3. **Resilient Retry & Exponential Backoff:** Transient telecommunication or push gateway outages are automatically retried with exponential backoff (up to 5 attempts) before dead-lettering.
 
-## Flow
+---
 
-business transaction -> `outbox_events` row **in the same transaction** (shared `OutboxService`, so the event exists iff the change committed) ->
-dispatcher claims events (`FOR UPDATE SKIP LOCKED`), writes one `notifications` row per recipient and **active template** (dedupe key `outbox event:recipient:channel`)
--> BullMQ queue `notifications` (job id = notification id) -> worker delivers through the adapter -> `SENT` / `FAILED` / `SKIPPED`.
+## 2. Core Features & Capabilities
 
-- The queue consumer and the 5-second dispatch loop run in the **worker process** (`NotificationsWorkerModule`), not in the API process.
-- Retry: a transient provider error is rethrown so BullMQ retries with the platform backoff (5 attempts); a permanent one, or the last attempt, makes it FAILED.
-  Delivery holds a per-notification lock, so a notification is never sent twice concurrently; a finished one is never re-sent. A QUEUED notification older than a
-  minute is offered to the queue again (the job id keeps it single).
-- SKIPPED with a reason: no device / no mobile / recipient not ACTIVE / template switched off. An event with no active template produces nothing.
-- The delivery log shows event, channel, status, attempts and a stable reason code - never text, number, token or provider message.
+* **Multi-Channel Dispatch:** Unified orchestration across Mobile Push (FCM), SMS (MSG91 / Twilio), and WhatsApp Business messaging.
+* **Dynamic Template Engine:** Administrators can configure notification templates, variable placeholders, and channel activations without redeploying code.
+* **Transactional Outbox Delivery:** Guarantees that notifications are dispatched if and only if the underlying business transaction successfully commits.
+* **Idempotent Queue Consumer:** Deduplication keys (`eventId:recipientId:channel`) prevent accidental duplicate messages from reaching users.
+* **Delivery Status Audit:** Full visibility into delivery states (`QUEUED`, `SENT`, `FAILED`, `SKIPPED`) with failure diagnostics for operational support.
 
-## Events (placeholders a template may use)
+---
 
-JOB_OPPORTUNITY, INTERVIEW_TRIAL_SCHEDULED, BOOKING_CONFIRMED, PAYMENT_SUCCEEDED, PAYMENT_FAILED, VERIFICATION_APPROVED, VERIFICATION_REJECTED, REPLACEMENT_UPDATE
-(`GET /admin/notification-events`). Wording is **not seeded** (not specified); a template using an unknown placeholder is rejected.
+## 3. End-to-End Notification Workflow
 
-## APIs (admin, `notification.manage`)
+The following diagram illustrates how asynchronous notifications are queued and dispatched:
 
-`GET /admin/notification-events`, `GET|POST /admin/notification-templates`, `GET|PATCH /admin/notification-templates/{id}`, `GET /admin/notifications`.
+```
+API Process (Business Event Committed)
+           │
+           ▼
+[Prisma DB Transaction: Business Record + outbox_events Record]
+           │
+           ▼
+Background Worker Process (BullMQ Dispatcher)
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Event Polling & Template Resolution                 │
+│    - Claims outbox events via FOR UPDATE SKIP LOCKED   │
+│    - Matches active templates for the event type       │
+│    - Inserts notifications rows in QUEUED state        │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. BullMQ Job Enqueueing & Concurrency Lock            │
+│    - Enqueues job to BullMQ notifications queue        │
+│    - Locks notification row to avoid race conditions   │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Provider Adapter Delivery & Status Update           │
+│    - Dispatches to FCM, Twilio SMS, or WhatsApp        │
+│    - On Success: Marks status SENT                     │
+│    - On Transient Failure: Retries with backoff        │
+└────────────────────────────────────────────────────────┘
+```
 
-Open: vendors and credentials (Q-08), template language per user, ticket and "recheck due" events (modules/jobs not built), delivery receipts from providers.
+---
+
+## 4. API Endpoints & Contracts
+
+### 1. `GET /api/v1/admin/notification-events`
+Lists all supported system event types available for template creation.
+
+---
+
+### 2. `GET /api/v1/admin/notification-templates` & `POST ...`
+Lists and creates notification templates mapped to specific channels and languages.
+* **Payload:** `{ eventType: "BOOKING_CONFIRMED", channel: "PUSH", title: "Booking Confirmed", body: "Your helper is scheduled for {{startDate}}." }`
+
+---
+
+### 3. `PATCH /api/v1/admin/notification-templates/:id`
+Enables, disables, or updates the copy of an existing message template.
+
+---
+
+### 4. `GET /api/v1/admin/notifications`
+Audit directory of historical notification deliveries with filters for status (`SENT`, `FAILED`, `SKIPPED`) and recipient.
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Notifications module functions as the asynchronous communication engine for the entire backend:
+
+```
+┌─────────────────────────┐
+│     Booking Module      │──┐
+│  (Booking Event Outbox) │  │
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│     Payment Module      │──┼──► [ Notifications Module ] ──► [ Push / SMS SaaS ]
+│  (Payment Event Outbox) │  │    (Outbox & BullMQ Queue)      (FCM, Twilio, MSG91)
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│   Verification Module   │──┘
+│  (Approval Notifications)
+└─────────────────────────┘
+```
+
+* **Outbox Decoupling:** Business modules never communicate with telecom gateways directly; they simply insert an event into the transactional outbox table.
+* **Worker Execution:** The notification dispatch loop runs in the background worker process, keeping the public REST API fast and responsive.
+

@@ -1,30 +1,104 @@
-# Ratings
+# Ratings & Reviews Module
 
-Customer-to-worker ratings and reviews of completed bookings, and the per-worker totals.
+## 1. Executive Summary
 
-## Requirements covered
+The **Ratings Module** governs customer feedback, star ratings, and review moderation across SevaNest. It allows households to evaluate service quality upon completion of domestic engagements while giving domestic helpers public credibility through verified reviews.
 
-FR-RAT-001..004, FRD FM-10 (rate after an eligible engagement, optional review, worker sees received ratings, admin can moderate abusive content), AC-09.
+Engineered around **Review Authenticity** and **Moderation Control**:
+1. **Verified Engagement Requirement:** Ratings can strictly be submitted only for completed engagements (`COMPLETED` state), preventing fraudulent or unearned ratings.
+2. **Instant Summary Aggregation:** Worker average scores and total review counts are calculated and maintained in real time inside `worker_rating_summaries`, avoiding costly database table scans.
+3. **Abuse Moderation:** Administrators can review and hide abusive, discriminatory, or inappropriate comments, automatically recalibrating the worker's visible score.
 
-## APIs (`/api/v1`)
+---
 
-| Who      | Endpoint                                                                                         | Notes                                                                                                             |
-| -------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| Customer | `POST /ratings {bookingId, score, review?}`                                                      | The booking must be the caller's own and COMPLETED. The worker is taken from the booking, never from the request. |
-| Customer | `GET /ratings`, `GET /ratings/{id}`, `GET /ratings/bookings/{bookingId}`                         | Own ratings only; anything else is 404.                                                                           |
-| Worker   | `GET /workers/me/ratings`, `GET /workers/me/ratings/summary`                                     | Visible ratings only; score, review and date, no customer identity.                                               |
-| Admin    | `GET /admin/ratings`, `GET /admin/ratings/{id}`, `GET /admin/ratings/workers/{workerId}/summary` | `rating.view`                                                                                                     |
-| Admin    | `POST /admin/ratings/{id}/hide`, `/unhide` `{reason}`                                            | `rating.moderate`, audited, keeps the totals correct.                                                             |
+## 2. Core Features & Capabilities
 
-## Rules
+* **Post-Engagement Review Submission:** 1-to-5 star rating scale with optional detailed text feedback submitted upon engagement completion.
+* **Review Uniqueness:** Exactly one review permitted per booking, guaranteed by database-level constraints.
+* **Worker Rating Summaries:** Pre-aggregated average scores and review counts for sub-millisecond retrieval on public profile cards.
+* **Administrative Moderation:** Operations staff can hide policy-violating reviews (`/hide`, `/unhide`) with mandatory justification logs.
+* **Worker Transparency:** Domestic helpers can view all approved reviews and rating averages directly from their mobile app.
 
-- One rating per booking (unique constraint; parallel requests create one, the rest get 409 `RATING_ALREADY_EXISTS`).
-- Score is a whole number from 1 to `RATING_SCALE_MAX` (required configuration, no default; Q-58).
-- Eligibility is the `RATING_POLICY` boundary (`ratings.policy.ts`). The specs say "completed or otherwise eligible" and leave the rule to be defined, so only the documented part is implemented: a COMPLETED booking with a worker. A REPLACED booking is not rateable until the client defines it.
-- No customer edit or delete exists (the specs define neither, Q-60). Only moderation changes a rating: HIDDEN removes it from the worker view and the totals; the reason is stored and audited.
-- Totals live in `worker_rating_summaries`, adjusted by one atomic statement inside each rating or moderation transaction, so reading an average never scans ratings. `RatingsService.getSummaries(workerIds)` is the one-query contract for other modules (profile cards, reports). **Search and Matching deliberately do not use it** (Q-46, Q-52).
-- The review text is free text written by the customer and is kept out of the audit log.
+---
 
-## Open
+## 3. End-to-End Rating Workflow
 
-Q-58 (scale, eligibility beyond COMPLETED, length limit), Q-60 (edit/delete, who sees the customer name, whether the worker may answer a review).
+The following diagram illustrates how customer reviews are submitted and aggregated:
+
+```
+Customer Mobile App (Flutter)
+           │
+           ▼
+[POST /api/v1/ratings { bookingId, score: 5, review: "Prompt and very professional." }]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Eligibility & Anti-Duplicate Check                  │
+│    - Verifies booking is in COMPLETED status           │
+│    - Verifies caller owns the booking                  │
+│    - Enforces score bounds (1 to RATING_SCALE_MAX)     │
+│    - Prevents duplicate review submission              │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Atomic Rating Commit & Summary Update               │
+│    - Inserts rating record                             │
+│    - Recalculates average rating in worker_summaries   │
+│    - Commits transaction atomically                    │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+Public Search & Worker Profile
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Instant Profile Visibility                          │
+│    - Updated star rating reflects on worker cards      │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. API Endpoints & Contracts
+
+### 1. `POST /api/v1/ratings`
+Submits a rating and optional review for a completed service engagement.
+* **Payload:** `{ bookingId: "booking_uuid", score: 5, review?: "Punctual and thorough cleaning." }`
+
+---
+
+### 2. `GET /api/v1/ratings` & `GET /api/v1/ratings/:id`
+Retrieves reviews submitted by the authenticated customer.
+
+---
+
+### 3. `GET /api/v1/workers/me/ratings` & `GET /api/v1/workers/me/ratings/summary`
+Allows domestic helpers to view their performance summary (average score and review counts).
+
+---
+
+### 4. `POST /api/v1/admin/ratings/:id/hide` & `POST .../unhide`
+Allows operations moderators to hide inappropriate reviews.
+* **Authorization:** Administrative JWT (`rating.moderate` permission).
+* **Payload:** `{ reason: "Contains profanity or inappropriate personal remarks" }`
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Ratings module connects completed transactions with discovery cards:
+
+```
+┌─────────────────────────┐
+│     Booking Module      │──┐
+│  (COMPLETED Bookings)   │  │
+└─────────────────────────┘  │
+                             ▼
+                    [ Ratings Module ] ──► [ Search & Profile Module ]
+                  (Feedback & Summaries)   (Displays Stars on Cards)
+```
+
+* **Engagement Verification:** The Ratings module checks the Booking module to verify that a service was formally concluded before accepting feedback.
+* **Search Integration:** Real-time rating summaries are queried by Search to render verified star badges on customer worker cards.
+

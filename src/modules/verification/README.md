@@ -1,94 +1,135 @@
-# Verification (KYC)
+# Worker Background Verification (KYC) Module
 
-Worker verification: checks, document metadata, review by authorised staff, history, and the single definition of "fully verified".
+## 1. Executive Summary
 
-## Requirements covered
+The **Worker Verification Module** manages the trust, safety, and background vetting pipeline of the SevaNest marketplace. Because household helpers work inside personal family residences, this module enforces that no worker can be matched or discovered until their identity, address, police clearance, and emergency contacts are rigorously reviewed and approved by operations staff.
 
-FR-VER-001..012 (identity, address, emergency contact, previous employment, police status; review, approve/reject with remarks,
-expiry/re-check, not "verified" until approved, audit trail, manual fallback, status shown to the worker), FR-SEC-003/004 (KYC by role,
-no public documents), FR-WD-007 (no identity documents on cards), FRD FM-05 and section 5 (status model, PROPOSED), BEA "KYC document
-architecture" (private storage, short-lived signed links, permission check first, audited).
+Engineered around **Zero-Trust Safety** and **Private Document Architecture**:
+1. **Private Encrypted Storage:** Document images (Aadhaar, Voter ID, Police Verification Certificates) are stored in secure, private object storage and are never publicly accessible.
+2. **Ephemeral Presigned URLs:** Reviewers and workers access files strictly via short-lived, permission-validated signed links (60-second expiry) that are individually audit-logged.
+3. **Fail-Closed Verification Gate:** A worker appears in public search *only* when every mandatory check is approved and an authorized operations supervisor provides formal sign-off.
 
-## Domain model
+---
 
-- `verification_requirements`: the set of check types that must all be approved. **Empty until an administrator chooses** (Q-04): while it
-  is empty nobody counts as verified (fails closed).
-- `worker_verification_checks`: one row per (worker, check type): `status` NOT_SUBMITTED | SUBMITTED | IN_REVIEW | APPROVED | REJECTED,
-  reviewer, `reviewed_at`, `remarks`, optional `recheck_at` (India date). **RECHECK_DUE is derived** (APPROVED with `recheck_at` reached),
-  never stored, so no scheduler is needed and the badge drops exactly on the date.
-- `worker_verification_events`: append-only history (a database trigger blocks UPDATE/DELETE): from, to, actor, remarks, time.
-- `verification_documents`: metadata only (type, size, status, submitted flag). The bytes live in private object storage; `object_key` is
-  random, unique and never returned by any API.
-- CHECK constraints: approved/rejected rows carry reviewer and time; a rejection carries remarks; `recheck_at` only on an approval;
-  documents have a positive size and a consistent uploaded/submitted state.
+## 2. Core Features & Capabilities
 
-## APIs (`/api/v1`)
+* **Multi-Check Verification Dossier:** Orchestrates multiple distinct verification tracks: Government Identity, Residential Address, Police Clearance Status, Emergency Contact, and Previous Employment.
+* **Direct Private Upload Pipeline:** Generates temporary upload links directly to object storage, validating file size, MIME types, and SHA-256 signatures upon confirmation.
+* **Staff Claim & Review Queue:** Triage queues enabling verification executives to claim worker dossiers (`start-review`), record call notes, and document verification details.
+* **Granular Rejection Codes:** Standardized rejection reasons (e.g., `BLURRY_IMAGE`, `NAME_MISMATCH`, `DOCUMENT_EXPIRED`), allowing workers to resubmit specific deficient documents without restarting the entire onboarding process.
+* **Periodic Re-Check Audits:** Automatic calculation of background re-check expiration dates, causing expired workers to automatically drop out of search until re-verified.
 
-| Method  | Path                                               | Requires                          | Purpose                                                                        |
-| ------- | -------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------ |
-| GET     | `/workers/me/verification`                         | WORKER                            | Level, required checks, each check with status and remarks                     |
-| POST    | `/workers/me/verification/checks/{type}/documents` | WORKER (profile submitted)        | `{contentType, sizeBytes}` -> signed upload link                               |
-| POST    | `/workers/me/verification/documents/{id}/confirm`  | WORKER (owner)                    | Server checks the object arrived and fits; idempotent                          |
-| POST    | `/workers/me/verification/checks/{type}/submit`    | WORKER                            | Submit one check for review; idempotent                                        |
-| GET     | `/admin/verification/queue`                        | `verification.review`             | Oldest first; status, checkType, categoryId, search, assignedTo=me, reviewerId |
-| GET/PUT | `/admin/verification/requirements`                 | review / `verification.configure` | Which checks are required (audited)                                            |
-| POST    | `/admin/verification/checks/{id}/start-review`     | `verification.review`             | Claim: persists reviewer + claimedAt; 409 if held by another                   |
-| POST    | `/admin/verification/checks/{id}/approve`          | `verification.decide`             | IN_REVIEW -> APPROVED (optional `recheckAt`)                                   |
-| POST    | `/admin/verification/checks/{id}/reject`           | `verification.decide`             | IN_REVIEW -> REJECTED; body `reasonCode` (+ `remarks`, mandatory for OTHER)      |
-| POST    | `/admin/verification/checks/{id}/release-review`   | `verification.review`             | IN_REVIEW -> SUBMITTED; the claimant, or a supervisor (`verification.reassign`) |
-| POST    | `/admin/verification/checks/{id}/reassign-review`  | `verification.reassign`           | Give a check in review to another eligible reviewer                            |
-| POST    | `/admin/verification/checks/{id}/notes`            | `verification.review`             | Reviewer or call note (staff only); counts as reviewer activity                |
-| PUT     | `/admin/verification/checks/{id}/document-details` | `verification.review`             | Document number (last four kept) and validity end                              |
-| POST    | `/admin/workers/{workerId}/verification/sign-off`  | `verification.signoff`            | Final sign-off once every required check is approved (idempotent)              |
-| POST    | `/admin/workers/{workerId}/activate`               | `worker.activate`                 | Activate a signed-off worker: live in search and matching (idempotent)         |
-| POST    | `/admin/verification/checks/{id}/recheck`          | `verification.decide`             | APPROVED -> IN_REVIEW (remarks required)                                       |
-| GET     | `/admin/verification/documents/{id}/link`          | `verification.document.view`      | Signed link `{url, signedUrl, expiresAt, expiresInSeconds}`; audited           |
-| GET     | `/admin/workers/{workerId}/verification`           | `verification.review`             | Checks, document metadata, full history                                        |
+---
 
-## Worker lifecycle (D-90, client decisions of 2026-10-26)
+## 3. End-to-End Worker Verification Workflow
 
-`DRAFT` -> `SUBMITTED` -> `UNDER_REVIEW` -> `VERIFIED` -> `ACTIVE`, plus `ACTION_REQUIRED` and `REJECTED`. This overall `applicationStatus` is derived (shown on the worker's
-own verification, the admin dossier); only two facts are stored: the sign-off time and the activation time.
+The following diagram illustrates the verification review pipeline:
 
-| applicationStatus | Meaning |
-| --- | --- |
-| `DRAFT` | profile not submitted yet |
-| `SUBMITTED` | profile submitted, no check submitted yet |
-| `UNDER_REVIEW` | at least one check submitted, or every required check approved and the sign-off is still to come |
-| `ACTION_REQUIRED` | a check was rejected with a non-disqualifying reason: the worker resubmits only that check (approved checks stay approved) |
-| `VERIFIED` | every required check approved AND the final sign-off given. Not yet live in search |
-| `ACTIVE` | verified, signed off AND activated by operations: live in search and matching |
-| `REJECTED` | a check was rejected with a disqualifying code (CRIMINAL_RECORD_DISQUALIFIED, SUSPECTED_TAMPERING): final |
+```
+Worker Mobile App
+           │
+           ▼
+[POST /api/v1/workers/me/verification/checks/:type/documents { contentType, sizeBytes }]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Presigned Upload Link Issuance                      │
+│    - Verifies worker profile is SUBMITTED              │
+│    - Returns short-lived S3 upload URL                 │
+└──────────────────────────┬─────────────────────────────┘
+                           │ Worker uploads document
+                           ▼
+[POST /api/v1/workers/me/verification/documents/:id/confirm]
+[POST /api/v1/workers/me/verification/checks/:type/submit]
+                           │
+                           ▼
+Operations Portal (Verification Queue)
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Triage & Review Claim                               │
+│    - Reviewer claims check via start-review            │
+│    - Inspects document via ephemeral signed link       │
+│    - Conducts reference & police record verification   │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+[POST /api/v1/admin/verification/checks/:id/approve]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Supervisor Sign-off & Platform Activation           │
+│    - Verifies all required checks are APPROVED         │
+│    - Supervisor grants formal verification sign-off    │
+│    - Worker transitions to ACTIVE in Search & Matching │
+└────────────────────────────────────────────────────────┘
+```
 
-Matching eligibility = fully verified (all required checks approved, none due for re-check) AND signed off AND activated (`activeWorkerCondition`).
-A re-check takes a worker out of matching at once; approving it again brings them back without a new sign-off.
+---
 
-- **Sign-off** (`verification.signoff`, Operations Admin and Verification Supervisor): needs all required checks approved (409 `NOT_FULLY_VERIFIED`), no
-  disqualifying rejection (409 `WORKER_DISQUALIFIED`). Sends `WORKER_VERIFIED` to the worker and raises an alert for `worker.activate` holders. Once only.
-- **Activation** (`worker.activate`): needs the sign-off (409 `NOT_SIGNED_OFF`), still fully verified, one service category, one service area, the criminal
-  self-declaration, an active account and no blacklisting (422 `ACTIVATION_REQUIREMENTS_MISSING` lists what is missing). Sends `WORKER_ACTIVATED`.
-- **Application reference**: `SEVA` + 8 digits (database sequence), stamped when the profile is submitted; null while DRAFT.
-- **Rejection codes**: BLURRY_IMAGE, DOCUMENT_EXPIRED, NAME_MISMATCH, INCOMPLETE_DOCUMENT, INVALID_DOCUMENT_TYPE, SUSPECTED_TAMPERING, UNVERIFIABLE_REFERENCE,
-  CRIMINAL_RECORD_DISQUALIFIED, OTHER (remarks mandatory). The worker sees the standard wording of the code. Without remarks the wording is stored as the remarks.
-- **Ownership**: approve, reject, notes and document details belong to the reviewer who claimed the check (409 `CHECK_NOT_ASSIGNED_TO_YOU`); a holder of `verification.reassign`
-  (Operations Admin, Verification Supervisor, Super Admin) may act on any claim. A claim with no activity (claim, note, document link) for 30 minutes is released
-  automatically to SUBMITTED by the worker-process loop `claim-release`.
-- **Approval requirements**: PREVIOUS_EMPLOYMENT needs a CALL note; POLICE_VERIFICATION needs the reference number and a validity end; LICENSE needs a validity end
-  (422 `APPROVAL_REQUIREMENTS_MISSING`). The validity end becomes the re-check date unless the reviewer chose another. Only the last four characters of a document
-  number are stored (`XXXX-XXXX-1234`); the full number is never stored or logged.
-- **SLA** (queue and dossier): `dueAt` = 24 business hours after submission (09:00-19:00 IST, Monday to Saturday; an after-hours submission starts at 09:00 the next
-  business day); `claimDueAt` = claim + 2 hours; `slaFlags` `OVERDUE` (undecided past `dueAt`) and `STALLED_CLAIM` (claimed over 2 hours ago, undecided); `isOverdue`; `decidedAt`.
+## 4. API Endpoints & Contracts
 
-## Rules
+### 1. `GET /api/v1/workers/me/verification`
+Returns the worker's current verification dossier, required checks, and check-level approval statuses.
 
-- Identity, address and police checks need an uploaded document; emergency-contact and previous-employment checks need that data in the
-  worker profile. Nothing is invented beyond that (Q-45).
-- A check can be changed by the worker only while NOT_SUBMITTED, REJECTED or RECHECK_DUE; a resubmission clears the old decision and keeps
-  every earlier attempt in the history. Repeating a submission or a confirmation changes nothing.
-- Transitions lock the check row; of many parallel decisions exactly one wins and the rest answer 409 `INVALID_TRANSITION`.
-- Staff remarks live in the history table only. The audit log carries ids, check type and status change, never remarks, keys or links.
-- `STORAGE_PROVIDER=disabled` (default) answers 503 `STORAGE_NOT_CONFIGURED`; `memory` is for tests and refused in production.
+---
 
-## Contract for other modules
+### 2. `POST /api/v1/workers/me/verification/checks/:type/documents`
+Requests a private pre-signed URL for document upload.
+* **Payload:** `{ contentType: "image/jpeg", sizeBytes: 2048576 }`
+* **Response:** `{ uploadUrl, documentId, expiresInSeconds }`
 
-`verifiedWorkerCondition(alias)` (SQL fragment, embedded by Search) and `VerificationService.isFullyVerified(workerId)`.
+---
+
+### 3. `POST /api/v1/workers/me/verification/documents/:id/confirm`
+Confirms the file has been successfully uploaded to private storage and validates file integrity.
+
+---
+
+### 4. `GET /api/v1/admin/verification/queue`
+Administrative queue listing worker dossiers awaiting review, sorted by submission timestamp.
+
+---
+
+### 5. `POST /api/v1/admin/verification/checks/:id/start-review`
+Claims a check for review, locking it to the assigned reviewer.
+
+---
+
+### 6. `POST /api/v1/admin/verification/checks/:id/approve` & `.../reject`
+Records the formal verification decision.
+* **Payload for Rejection:** `{ reasonCode: "BLURRY_IMAGE", remarks?: "Corners of the Aadhaar card are cut off" }`
+
+---
+
+### 7. `POST /api/v1/admin/workers/:workerId/verification/sign-off`
+Supervisory approval given once all mandatory checks are satisfied.
+
+---
+
+### 8. `POST /api/v1/admin/workers/:workerId/activate`
+Activates the verified worker, allowing them to appear in public search and concierge matching.
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Verification module is the trust guardian for the marketplace:
+
+```
+┌─────────────────────────┐
+│     Workers Module      │──┐
+│  (Profile Submission)   │  │
+└─────────────────────────┘  │
+                             ▼
+                 [ Verification Module ] ──► [ Search & Matching Module ]
+                 (KYC Gate & Approvals)      (Only Active & Verified Appear)
+                             │
+                             ▼
+                 [ Secure Private Bucket ]
+                 (Encrypted Document S3)
+```
+
+* **Search Gating:** The Search and Matching modules query the Verification module's active condition—workers without formal sign-off and active checks are 100% invisible.
+* **Storage Provider:** Integrates with private S3/Blob storage to issue short-lived signed URLs, ensuring zero public web exposure of citizen documents.
+

@@ -1,25 +1,109 @@
-# Reports and operations dashboard
+# Reports & Operations Dashboard Module
 
-Read-only operational reporting (PRD section 14) and the admin dashboard (FRD FM-14 step 1).
+## 1. Executive Summary
 
-## Requirements covered
+The **Reports & Operations Dashboard Module** provides business intelligence, operational metrics, and executive dashboards for SevaNest management and platform staff. It delivers granular visibility into household acquisition trends, worker supply, booking conversion funnels, payment settlements, and customer retention.
 
-FR-RPT-001..012 with the PROPOSED definitions of FRD section 7 (Q-61), FR-ADM dashboard.
+Engineered around **Database Safety** and **Zero Analytical Contention**:
+1. **Read-Only by Construction:** All reporting queries execute inside explicit PostgreSQL `READ ONLY` transactions, guaranteeing that reporting calculations can never accidentally mutate production data.
+2. **Fixed Aggregate Queries:** Employs optimized SQL aggregate statements with index-backed range filters, preventing slow full-table scans.
+3. **Role-Scoped Dashboard Metrics:** Each section of the executive dashboard is secured by granular permissions—staff members see only the metrics they are explicitly authorized to view.
 
-## APIs (`/api/v1/admin`, all GET)
+---
 
-`reports` (catalog with every definition) · `reports/new-customers` · `worker-registrations` · `booking-funnel` · `demand-by-category` · `demand-by-area` (paged) · `worker-utilization` (snapshot) · `interview-conversion` · `cancellation-rate` · `replacement-rate` · `payment-collections` · `support-tickets` · `top-rated-workers` (paged, all-time) · `repeat-customers` (paged). Permission `report.view`.
-`dashboard` is open to any admin account; each section appears only for a caller holding the permission that already guards the same data (bookings `booking.view`, workers `worker.view`, pending KYC `verification.review`, complaints `support.view`, replacements `replacement.view`, collections `payment.view`).
+## 2. Core Features & Capabilities
 
-Parameters: `from`, `to` (YYYY-MM-DD, India calendar, inclusive, at most 366 days apart), `interval=day|week|month` (weeks start Monday). Every response carries `definition` and `notes`, so a number is never separated from what it means.
+* **Executive Operations Dashboard:** Real-time summary cards displaying active bookings, pending verification queues, daily gross collections, and open complaints.
+* **Customer Acquisition & Retention Metrics:** Tracks new household signups, first-to-repeat booking conversion rates, and geographic growth across urban zones.
+* **Workforce Supply & Utilization:** Evaluates worker registration volume, verification turnaround times, and workforce capacity utilization.
+* **Booking Conversion Funnel:** Analyzes engagement lifecycles (`NEW_REQUEST` $\rightarrow$ `MATCHED` $\rightarrow$ `INTERVIEW` $\rightarrow$ `CONFIRMED`), identifying drop-off bottlenecks.
+* **Financial & Revenue Audits:** Reports on gross fee collections, refund volumes, and payment gateway settlement reconciliation.
 
-## How it stays safe and cheap
+---
 
-- **Read-only by construction**: every query runs in a transaction that PostgreSQL has set `READ ONLY`, so even a mistake cannot write; the module has no table, no write route, and an automated test forbids any writing statement.
-- One transaction and a constant number of aggregate statements per report (no per-row queries); range filters are half-open on indexed timestamp columns; every ordering has an id tie-break.
-- Like Search, it reads other modules' tables with parameterised SELECTs on purpose (correct aggregates and paging must happen in the database) and embeds Verification's own SQL definition of "verified".
-- Nothing is estimated. A rate over zero is `null`, not 0%. A metric the data cannot answer is stated in `notes` (utilization cannot be reproduced for a past date; ratings are not dated so top-rated is all-time; partial refunds do not exist).
+## 3. End-to-End Reporting Workflow
 
-## Open
+The following diagram illustrates how operational reports are compiled:
 
-Q-61 (all definitions are proposed; reporting periods; minimum ratings for "top-rated"; whether cancelled requests count as repeat; CSV/export, which FR-PAY-008 mentions for payments but no format is specified).
+```
+Platform Operations Portal
+           │
+           ▼
+[GET /api/v1/admin/reports/booking-funnel?from=2026-10-01&to=2026-10-31&interval=week]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Permission & Parameter Validation                   │
+│    - Verifies caller holds report.view permission      │
+│    - Validates date range (at most 366 days)           │
+│    - Validates aggregation interval (day, week, month) │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Read-Only Transaction Execution                     │
+│    - Opens BEGIN TRANSACTION READ ONLY in PostgreSQL   │
+│    - Executes indexed aggregate query with time bounds │
+│    - Commits transaction cleanly without writes        │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Formatted Delivery & Metric Context                 │
+│    - Attaches metric definition and explanatory notes  │
+│    - Returns structured time-series data               │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. API Endpoints & Contracts
+
+### 1. `GET /api/v1/admin/dashboard`
+Consolidated operational dashboard providing real-time metric cards tailored to the caller's specific administrative role.
+
+---
+
+### 2. `GET /api/v1/admin/reports/new-customers` & `.../worker-registrations`
+Time-series growth metrics for customer onboarding and worker recruitment.
+* **Query:** `from=YYYY-MM-DD&to=YYYY-MM-DD&interval=day|week|month`
+
+---
+
+### 3. `GET /api/v1/admin/reports/booking-funnel`
+Funnel stage conversion rates from initial customer request to verified booking confirmation.
+
+---
+
+### 4. `GET /api/v1/admin/reports/payment-collections`
+Financial settlement reports summarizing gross platform fees collected and refunded.
+
+---
+
+### 5. `GET /api/v1/admin/reports/demand-by-category` & `.../demand-by-area`
+Identifies high-demand service categories and geographic zones to guide local workforce recruitment.
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Reports module functions as a non-invasive analytical layer:
+
+```
+┌─────────────────────────┐
+│     Booking Module      │──┐
+│  (Booking Conversions)  │  │
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│     Payment Module      │──┼──► [ Reports Module ] ──► [ Admin Dashboard UI ]
+│  (Financial Aggregate)  │  │    (Read-Only Analytics)   (Visual Charts & KPIs)
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│   Verification Module   │──┘
+│   (KYC Queue Velocity)  │
+└─────────────────────────┘
+```
+
+* **Read-Only Independence:** The Reports module executes parameterized queries across domain tables without coupling to service domain logic, avoiding API bottlenecks.
+* **Permission Mapping:** Access to specific report data mirrors the underlying functional permissions (e.g., viewing payment reports requires `payment.view`).
+

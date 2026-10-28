@@ -1,66 +1,109 @@
-# Availability
+# Availability & Service Area Management Module
 
-A worker's engagement preference, preferred service areas and daily available time windows, plus the service-area master.
+## 1. Executive Summary
 
-## Requirements covered
+The **Availability Module** manages operational service areas, worker engagement preferences, and daily shift availability across SevaNest. It ensures that customer search queries and automated booking algorithms only consider workers who are genuinely available to work during requested hours within designated geographic territories.
 
-FR-WP-003 (preferred work locations), FR-WP-005 (available timings), FR-WP-006 (full-time / part-time / live-in preference),
-FRD FM-04 ("Available timings: valid ranges", "Preferred locations: enabled service areas", preference: Select),
-FM-16 (areas: unique within the city, enabled/disabled), FR-ADM-005 (admins manage availability), FR-SD-005 / FM-03 (data that
-search filters by category, location and availability will read).
+Engineered around **Geographic Precision** and **Mathematical Invariant Guarantees**:
+1. **Overlap Prevention via Database GiST Constraints:** Enforces strict non-overlapping time windows per worker directly in PostgreSQL (`btree_gist`), guaranteeing zero duplicate shifts even under concurrent updates.
+2. **Dynamic Service Areas:** Master catalogue of platform-enabled urban zones (e.g., HITEC City, Kondapur, Madhapur, Gachibowli) with instant operational toggles.
+3. **Engagement Models:** Captures worker employment preferences across `FULL_TIME`, `PART_TIME`, and `LIVE_IN` contracts.
 
-## Domain model
+---
 
-- `service_areas`: `name`, `city`, `is_enabled`; unique per (city, name) ignoring case. **No areas are seeded**: the documents name
-  pilot localities only as launch planning, so an admin creates the areas.
-- `worker_work_preferences`: one row per worker, `engagement_preference` FULL_TIME | PART_TIME | LIVE_IN (a single "Select").
-- `worker_preferred_areas`: (worker, area).
-- `worker_time_windows`: (worker, `start_minute`, `end_minute`): minutes after local midnight, `[start, end)`, one timezone (India),
-  applied every day. The documents mention no weekdays, so none are modelled.
+## 2. Core Features & Capabilities
 
-## APIs (`/api/v1`)
+* **Service Area Master Catalogue:** Administrative management of operational coverage zones and geographic launch areas.
+* **Granular Time Windows:** Definition of daily shift hours (e.g., `08:00 - 12:00`, `14:00 - 18:00`) calculated in 24-hour minute offsets.
+* **Engagement Preferences:** Worker specification of preferred contract styles (`FULL_TIME`, `PART_TIME`, `LIVE_IN`).
+* **Territory Mapping:** Multi-area preferences allowing workers to select all neighboring localities where they are willing to travel.
+* **Transactional Advisory Locking:** Worker-level advisory locks prevent race conditions during schedule adjustments.
 
-| Method         | Path                                     | Requires           | Purpose                                                                                     |
-| -------------- | ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------- |
-| GET            | `/service-areas?city=`                   | any signed-in user | Enabled areas, paginated                                                                    |
-| GET            | `/service-areas/{areaId}`                | any signed-in user | One enabled area                                                                            |
-| GET/POST/PATCH | `/admin/service-areas[/{areaId}]`        | `area.manage`      | Manage the master                                                                           |
-| GET            | `/workers/me/availability`               | WORKER             | `{ engagementPreference, areas[], timeWindows[{start,end}] }`                               |
-| PATCH          | `/workers/me/availability`               | WORKER             | `{ engagementPreference?, areaIds?, timeWindows? }`; each part sent replaces the stored one |
-| GET            | `/admin/workers/{workerId}/availability` | `worker.view`      | A worker's availability                                                                     |
-| PATCH          | `/admin/workers/{workerId}/availability` | `worker.manage`    | Assisted edit                                                                               |
+---
 
-## Rules
+## 3. End-to-End Availability Workflow
 
-- Times are `HH:mm` (24 h); `24:00` is allowed only as an end. A window must start before it ends and stay inside one day (no overnight
-  windows); windows of one worker must not overlap or repeat; windows that only touch (09:00-12:00 and 12:00-14:00) are allowed;
-  1-24 windows; 1-50 areas (technical bounds).
-- New areas must be enabled (422 `AREA_NOT_AVAILABLE`); areas already held may stay if later disabled; unknown ids are 400.
-- A request is atomic: if any part fails, none is saved. Validation of windows happens before the database is touched.
-- These items are mandatory for submitting a worker profile (contributed to Workers through `WorkerSubmissionRegistry`).
+The following diagram illustrates how service areas and worker availability are configured:
 
-## Database guarantees and concurrency
+```
+Platform Operations Portal
+           │
+           ▼
+[POST /api/v1/admin/service-areas { name: "HITEC City", city: "Hyderabad" }]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Service Area Activation                             │
+│    - Verifies name uniqueness within city              │
+│    - Sets is_enabled to true                           │
+└────────────────────────────────────────────────────────┘
 
-`worker_time_windows` has CHECK `0 <= start < end <= 1440` and a GiST exclusion constraint (`btree_gist`) forbidding overlapping
-windows for one worker, so the rule holds even if the application is bypassed. Updates take a transaction-scoped advisory lock keyed by
-the worker id (it does not lock the Workers table), so parallel updates serialise and the last writer wins whole.
+Worker Mobile App
+           │
+           ▼
+[PATCH /api/v1/workers/me/availability]
+{ engagementPreference: "PART_TIME", areaIds: [...], timeWindows: [{ start: "08:00", end: "12:00" }] }
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Schedule Validation & Atomic Persistence            │
+│    - Verifies all selected areas are enabled           │
+│    - Validates shift boundaries (start < end)          │
+│    - Verifies zero overlapping windows                 │
+│    - Commits preferences and shifts in one transaction │
+└────────────────────────────────────────────────────────┘
+```
 
-## Indexes and the future Search/Matching query
+---
 
-Indexes: unique (city, name) on areas; `worker_preferred_areas(area_id)` (reverse lookup "workers in area X"; the primary key serves
-"areas of worker W"); the exclusion constraint's GiST index on `(worker_id, range)` serves per-worker window lookups. A query such as
-"workers in area X available 09:00-12:00" is `worker_preferred_areas.area_id = X` joined to `worker_time_windows` with
-`start_minute <= 540 AND end_minute >= 720`; this is exercised in the integration tests. No time-range index was added: its shape depends
-on the real Search query and should be chosen with `EXPLAIN` on production-like data. Windows that touch can jointly cover a longer
-period; Search must merge adjacent windows if it wants union coverage.
+## 4. API Endpoints & Contracts
 
-## Audit
+### 1. `GET /api/v1/service-areas`
+Retrieves all enabled service areas within a city for customer location selection.
+* **Query:** `city=Hyderabad`
 
-`availability.update` (changed parts, preference from/to, area ids added/removed, window counts before/after; admin edits record the
-admin), `service_area.create`, `service_area.update` (before/after).
+---
 
-## Open decisions
+### 2. `POST /api/v1/admin/service-areas` & `PATCH /api/v1/admin/service-areas/:areaId`
+Enables operations staff to introduce new service territories or temporarily disable zones.
 
-Weekday granularity, effective dates, recurring vs one-time availability, overnight windows, a temporary "not available" switch;
-single vs multiple engagement preferences and the engagement-type vocabulary; the area catalogue and ownership of config masters (Q-14);
-timezone beyond India.
+---
+
+### 3. `GET /api/v1/workers/me/availability`
+Fetches the authenticated worker's current preferences, active areas, and time windows.
+
+---
+
+### 4. `PATCH /api/v1/workers/me/availability`
+Updates working engagement preference, serviceable areas, and daily shift windows.
+* **Payload:** `{ engagementPreference: "PART_TIME", areaIds: ["area_1_uuid"], timeWindows: [{ start: "09:00", end: "13:00" }] }`
+
+---
+
+### 5. `GET /api/v1/admin/workers/:workerId/availability` & `PATCH ...`
+Allows customer support and operations staff to inspect and provide assisted schedule modifications.
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Availability module provides schedule filters to discovery and onboarding services:
+
+```
+┌─────────────────────────┐
+│     Workers Module      │──┐
+│ (Submission Checklist)  │  │
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│      Search Module      │──┼──► [ Availability Module ] ◄──► [ PostgreSQL GiST ]
+│ (Shift & Area Filters)  │  │    (Schedules & Coverage)       (Zero Overlaps)
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│     Matching Module     │──┘
+│ (Candidate Eligibility) │
+└─────────────────────────┘
+```
+
+* **Search & Matching Integration:** Search queries filter candidates by intersecting requested time ranges with `worker_time_windows` and service areas.
+* **Submission Enabler:** Worker profile completion requires at least one preferred area, time window, and engagement preference.
+

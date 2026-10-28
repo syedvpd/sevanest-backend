@@ -1,31 +1,111 @@
-# Attendance
+# Attendance & Daily Service Logging Module
 
-Status-based attendance per booking and date. V1 has **no GPS, geofence or facial attendance** (FR-ATT-003) and no payroll.
+## 1. Executive Summary
 
-## Requirements covered
+The **Attendance Module** tracks daily service fulfillment across active customer-worker household engagements in SevaNest. It provides transparency into worker presence (`PRESENT`, `ABSENT`, `EXCEPTION`), maintaining a verified, tamper-evident log of domestic service delivery.
 
-FR-ATT-001..003, FR-ON-001, FRD FM-09.
+Engineered around **Auditability** and **Mutual Transparency**:
+1. **Active Engagement Gating:** Attendance can only be recorded for confirmed bookings in an `ACTIVE` lifecycle state.
+2. **Same-Day Worker Stamping:** Workers record presence strictly on the current calendar day, preventing retroactive backfilling without administrative review.
+3. **Dispute & Exception Tracking:** Customers and staff can record exception notes when discrepancies arise, preserving full historical correction records.
 
-## Model
+---
 
-`attendance_records` (one row per booking and date: PRESENT, ABSENT or EXCEPTION with a note; recorder and kind), `attendance_events` (append-only first entry and every
-correction with actor and reason). A unique index on (booking, date) and a CHECK that an exception carries a note.
+## 2. Core Features & Capabilities
 
-## APIs (`/api/v1`)
+* **Daily Presence Logging:** Captures worker service status (`PRESENT`, `ABSENT`, `EXCEPTION`) per booking and calendar date.
+* **Mutual Visibility:** Synchronized attendance timeline visible to both the employing household and the domestic worker.
+* **Customer Exception Filing:** Allows households to report absent days or service anomalies with mandatory notes.
+* **Administrative Corrections:** Operations staff can correct attendance records with audit logging that preserves original values and amendment reasons.
+* **Duplicate Prevention:** Unique constraint on `(booking_id, service_date)` guarantees exactly one record per day per engagement.
 
-| Who      | Path                                                         | Purpose                                                       |
-| -------- | ------------------------------------------------------------ | ------------------------------------------------------------- |
-| WORKER   | `POST /workers/me/attendance/bookings/{id}`                  | Record **today** for my active booking                        |
-| WORKER   | `GET /workers/me/attendance/bookings/{id}`                   | My history for that booking                                   |
-| CUSTOMER | `GET /attendance/bookings/{id}`                              | The same records the worker sees                              |
-| CUSTOMER | `POST /attendance/bookings/{id}/exceptions`                  | Raise an exception for a day nobody recorded                  |
-| ADMIN    | `GET /admin/attendance/bookings/{id}` (`attendance.view`)    | View with the full change history                             |
-| ADMIN    | `POST /admin/attendance/bookings/{id}` (`attendance.manage`) | Record for a date on behalf of the worker                     |
-| ADMIN    | `PATCH /admin/attendance/{id}` (`attendance.manage`)         | Correct an entry (reason required; old value kept in history) |
+---
 
-## Rules
+## 3. End-to-End Attendance Workflow
 
-- Recording needs an ACTIVE booking (409 `BOOKING_NOT_ACTIVE`); admins can still correct entries afterwards. Dates run from the booking start date to today (India).
-- A worker records only their own booking and only today; repeating the same status is a no-op, a different status for a recorded day is 409 (staff correct it).
-  Parallel duplicates leave one record and one history entry.
-- Open: configurable status list (Q-53), how far into the past a worker may record, disputes (support tickets, module not built).
+The following diagram illustrates how daily service attendance is logged:
+
+```
+Worker Mobile App (Flutter)
+           │
+           ▼
+[POST /api/v1/workers/me/attendance/bookings/:id { status: "PRESENT" }]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Booking State & Date Validation                    │
+│    - Verifies booking is ACTIVE and belongs to worker  │
+│    - Verifies date is the current calendar day        │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Atomic Entry & Event Audit                          │
+│    - Inserts attendance_record for today               │
+│    - Emits attendance_event with actor timestamp       │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+Customer Mobile App (Flutter)
+           │
+           ▼
+[GET /api/v1/attendance/bookings/:id]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Synchronized Household Transparency                 │
+│    - Customer inspects monthly attendance calendar     │
+│    - Option to raise exception if discrepancy exists   │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. API Endpoints & Contracts
+
+### 1. `POST /api/v1/workers/me/attendance/bookings/:id`
+Records the worker's presence status for the current day.
+* **Payload:** `{ status: "PRESENT" | "ABSENT" | "EXCEPTION", note?: "Arrived late due to rain" }`
+
+---
+
+### 2. `GET /api/v1/workers/me/attendance/bookings/:id`
+Retrieves historical attendance logs for a specific engagement from the worker's perspective.
+
+---
+
+### 3. `GET /api/v1/attendance/bookings/:id`
+Provides the customer with the verified attendance history for their active booking.
+
+---
+
+### 4. `POST /api/v1/attendance/bookings/:id/exceptions`
+Enables a customer to raise an attendance exception for an unrecorded or disputed date.
+* **Payload:** `{ date: "2026-10-27", note: "Worker was unavailable on this day" }`
+
+---
+
+### 5. `PATCH /api/v1/admin/attendance/:id`
+Enables operations staff to amend an attendance record upon dispute investigation.
+* **Authorization:** Administrative JWT (`attendance.manage` permission).
+* **Payload:** `{ status: "PRESENT", reason: "Customer confirmed worker arrived at rescheduled time" }`
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Attendance module connects active engagements with customer support and reporting:
+
+```
+┌─────────────────────────┐
+│     Booking Module      │──┐
+│   (ACTIVE Engagements)  │  │
+└─────────────────────────┘  │
+                             ▼
+                 [ Attendance Module ] ──► [ Support Module ]
+                 (Daily Service Logs)      (Dispute Resolution)
+```
+
+* **Booking Status Dependency:** The Attendance module queries the Booking module to verify that an engagement is in `ACTIVE` state before accepting presence entries.
+* **Dispute Escalation:** Customer-flagged exceptions can automatically feed into the Support module when customer mediation is required.
+

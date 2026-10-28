@@ -1,81 +1,122 @@
-# Users
+# Users & Role-Based Access Control Module
 
-The common identity and account domain: who a user is, their type, account status, admin roles and permissions, and
-the account lifecycle (create admin, suspend, reactivate). Customer- and worker-specific data does not live here.
+## 1. Executive Summary
 
-## Requirements covered
+The **Users Module** manages core account identities, administrative lifecycles, and platform-wide **Role-Based Access Control (RBAC)** across SevaNest. It is the central authority on who a user is, their operational state (`ACTIVE` or `SUSPENDED`), and what granular administrative permissions they hold.
 
-| ID                          | Requirement                                 | Where                                                                                         |
-| --------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| FR-SEC-001/002, NFR-SEC-003 | Role-based access control for admin users   | roles/permissions tables + guards                                                             |
-| FR-SEC-007                  | Suspension of workers and customers         | `PATCH /admin/users/{userId}/status`                                                          |
-| FR-SEC-008, NFR-SEC-007     | Audit of user-status changes                | `user.status_change`, `admin.create`                                                          |
-| FR-AUTH-004                 | The four admin roles                        | seeded roles `SUPER_ADMIN`, `OPERATIONS_ADMIN`, `VERIFICATION_EXECUTIVE`, `SUPPORT_EXECUTIVE` |
-| FRD FM-01                   | Admin accounts are created by a Super Admin | `POST /admin/users`                                                                           |
+Designed around **Least-Privilege Security** and **Account Governance**:
+1. **Centralized Identity Record:** Decouples user credentials and account states from domain-specific profiles (Customers vs. Workers).
+2. **Instant Administrative Control:** Account suspension takes effect immediately on the next inbound HTTP request, instantly revoking all active sessions.
+3. **Privilege Escalation Protection:** Immutable hierarchy ensuring that administrative role and permission modifications are restricted and strictly audited.
 
-## Domain model
+---
 
-`users` (type CUSTOMER/WORKER/ADMIN, status ACTIVE/SUSPENDED, mobile or email, optional password hash), `roles`,
-`permissions`, `role_permissions`, `user_roles`. Roles and permissions are data. Admin sub-roles are role rows, not enum
-values. `users.mobile` holds the verified identity in E.164 form; `users.email` is the admin login identifier.
+## 2. Core Features & Capabilities
 
-Users never imports Auth. Auth imports Users and subscribes to `UserEvents`, which Users emits after a status change
-commits (Auth then revokes the account's sessions).
+* **Unified Account Management:** Manages base user accounts, account statuses (`ACTIVE`, `SUSPENDED`), and associated login identifiers (mobile numbers and email addresses).
+* **Role-Based Access Control (RBAC):** Configurable permissions assigned to administrative roles (`SUPER_ADMIN`, `OPERATIONS_ADMIN`, `VERIFICATION_EXECUTIVE`, `SUPPORT_EXECUTIVE`).
+* **Immediate Account Suspension:** One-click suspension of malicious, fraudulent, or compromised accounts with immediate revocation of all active device sessions.
+* **Granular Staff Permissions:** Enforces specific capability tokens (e.g., `worker.view`, `worker.verify`, `customer.manage`, `payment.reconcile`) on every admin endpoint.
+* **Tamper-Evident Audit Trails:** Every user creation, status transition, and role/permission modification is permanently recorded in an append-only audit trail.
 
-## APIs (all under `/api/v1`)
+---
 
-| Method | Path                           | Requires                     | Purpose                                                       |
-| ------ | ------------------------------ | ---------------------------- | ------------------------------------------------------------- |
-| GET    | `/users/me`                    | any signed-in user           | Identity: id, type, status, mobile, email, roles, permissions |
-| POST   | `/admin/users`                 | ADMIN + `admin.manage_users` | Create an admin `{ email, password, roleCode }` (201)         |
-| GET    | `/admin/users/{userId}`        | ADMIN + `user.view`          | View an account (mobile masked)                               |
-| PATCH  | `/admin/users/{userId}/status` | ADMIN + `user.status.manage` | `{ status: ACTIVE\|SUSPENDED, reason? }`                      |
+## 3. End-to-End Account & RBAC Workflow
 
-## Permission codes (seeded)
+The following diagram illustrates how user accounts and administrative roles are governed:
 
-`admin.manage_users`, `user.view`, `user.status.manage`, `customer.view`, `customer.manage`. Only `SUPER_ADMIN` is mapped
-to them. The other three roles hold no permissions until the permission matrix is confirmed.
+```
+Platform Operations Portal
+           │
+           ▼
+[POST /api/v1/admin/users { email, roleCode }]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Authorization & Role Validation                     │
+│    - Verifies actor has admin.manage_users permission  │
+│    - Prevents privilege escalation (non-Super Admins   │
+│      cannot grant Super Admin roles)                   │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Account Provisioning & Password Hashing             │
+│    - Hashes password using salted scrypt algorithm     │
+│    - Assigns designated operational role               │
+│    - Commits user record and logs admin.create audit   │
+└────────────────────────────────────────────────────────┘
 
-## Business rules
+Suspension Workflow:
+[PATCH /api/v1/admin/users/:userId/status { status: "SUSPENDED" }]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Atomic Lock & Revocation                            │
+│    - Updates account status to SUSPENDED               │
+│    - Emits UserSuspendedEvent                          │
+│    - Auth module instantly revokes all active sessions │
+└────────────────────────────────────────────────────────┘
+```
 
-- An admin cannot change their own status (409 `CANNOT_CHANGE_OWN_STATUS`).
-- Changing an ADMIN account also requires `admin.manage_users`.
-- Repeating the current status is a no-op: no change, no audit record, no event.
-- Suspension takes effect immediately (the guard checks the status on every request) and sessions are revoked after commit.
-- Creating an admin enforces `ADMIN_PASSWORD_MIN_LENGTH`, hashes the password with scrypt, and assigns exactly one role.
-- Email is lower-cased and trimmed; duplicates answer 409 `ADMIN_EMAIL_TAKEN`.
+---
 
-## Error codes
+## 4. API Endpoints & Contracts
 
-`USER_NOT_FOUND`, `CANNOT_CHANGE_OWN_STATUS`, `ADMIN_EMAIL_TAKEN`, `ROLE_NOT_FOUND`, plus the shared validation/auth codes.
+### 1. `GET /api/v1/users/me`
+Retrieves the authenticated user's core identity profile, account status, and assigned permissions.
+* **Authorization:** Any authenticated user.
 
-## Transactions and concurrency
+---
 
-Admin creation (user + role assignment + audit) is one transaction. A status change locks the user row
-(`SELECT ... FOR UPDATE`), re-reads it, updates, and writes the audit record in the same transaction, so parallel changes
-serialise and produce a single audit record. First-time account creation races on the unique mobile and converges on one row.
+### 2. `GET /api/v1/admin/users`
+Lists platform user accounts with filtering by account type (`CUSTOMER`, `WORKER`, `ADMIN`) and status (`ACTIVE`, `SUSPENDED`).
+* **Protection:** Sensitive mobile numbers are masked for routine staff viewing.
 
-## Security
+---
 
-Credential hashes never leave the module's credential lookup used by Auth. No endpoint returns a password hash, the
-admin view masks mobiles, and `RequireUserType('ADMIN')` plus a permission guard protect every admin endpoint.
+### 3. `POST /api/v1/admin/users`
+Provisions a new administrative staff account with an initial operational role.
+* **Payload:** `{ email: "staff@sevanest.com", password: "...", roleCode: "OPERATIONS_ADMIN" }`
 
-## Seed
+---
 
-`npm run build && npm run seed` ensures the roles, the five permission codes and the Super Admin mapping (idempotent).
-For development only, `BOOTSTRAP_SUPER_ADMIN_EMAIL` and `BOOTSTRAP_SUPER_ADMIN_PASSWORD` in the environment create the
-first Super Admin if none exists. The bootstrap is refused when `NODE_ENV=production`.
+### 4. `PATCH /api/v1/admin/users/:userId/status`
+Suspends or reactivates an account.
+* **Payload:** `{ status: "ACTIVE" | "SUSPENDED", reason?: "Investigation pending" }`
+* **Rule:** Administrators cannot suspend their own accounts.
 
-## Known limitations and open decisions
+---
 
-- The role-to-permission matrix (Q-11) is not defined; only Super Admin is mapped.
-- There is no `BLOCKED`/blacklist status; the specification does not define it.
-- Role and permission administration (create/edit roles, assign users) belongs to the Admin module and is not built.
-- There is no admin list/search endpoint for users; customer lists live in Customers.
-- Production provisioning of the first Super Admin is an open operational decision.
-- Suspending the last active Super Admin is not prevented beyond the rule that nobody can change their own status.
+### 5. `PUT /api/v1/admin/users/:userId/role`
+Updates an administrative user's assigned role.
 
-## Admin access administration (Module 18)
+---
 
-`GET /admin/users` (`user.view`: list with type/status filters, masked mobile, roles), `PUT /admin/users/{id}/role` (`admin.manage_users`), `GET /admin/roles[/{code}]`, `GET /admin/permissions`, `PUT /admin/roles/{code}/permissions` (`role.manage`).
-The permission matrix is configured here by the Super Admin instead of being seeded (Q-11, Q-33, Q-62). Guards against privilege escalation: the SUPER_ADMIN role is immutable; `role.manage`, `audit.view`, `admin.manage_users` can only be held by it; only a Super Admin may create, promote or demote a Super Admin (checked against the actor's roles under the same lock); nobody changes their own role; the last active Super Admin cannot be demoted. Changes apply on the next request and are audited (`admin.role_change`, `role.permissions_set`).
+### 6. `GET /api/v1/admin/roles` & `PUT /api/v1/admin/roles/:code/permissions`
+Manages the platform permission matrix, allowing Super Admins to adjust granular capabilities across staff roles.
+
+---
+
+## 5. Inter-Module Dependencies & System Design
+
+The Users module serves as the core identity provider for all operational domains:
+
+```
+┌─────────────────────────┐
+│       Auth Module       │──┐
+│ (Session Revocation)    │  │
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│    Customers Module     │──┼──► [ Users Module ] ◄──► [ Audit Service ]
+│ (Profile Association)   │  │    (Identity & RBAC)    (Immutable History)
+└─────────────────────────┘  │
+┌─────────────────────────┐  │
+│     Workers Module      │──┘
+│ (Worker Association)    │
+└─────────────────────────┘
+```
+
+* **Session Decoupling:** When an account is suspended, Users publishes a domain event that instructs Auth to terminate active sessions without circular module dependencies.
+* **Profile Independence:** Domain profile data (addresses, skills, preferences) is decoupled into dedicated Customer and Worker modules, keeping the core identity lightweight and fast.
+
