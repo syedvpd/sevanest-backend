@@ -1,16 +1,31 @@
 import { assertIfMatch } from '../../common/concurrency/if-match';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { Page, PageQueryDto, skipFor } from '../../common/pagination/pagination';
 import { changedFieldNames } from '../../common/validation/fields';
+import { MALWARE_SCANNER, type MalwareScanner } from '../../integrations/malware/malware-scanner';
+import { matchesDeclaredType, SIGNATURE_BYTES } from '../../integrations/storage/file-signature';
+import {
+  PUBLIC_KEY_PREFIX,
+  PUBLIC_MEDIA_STORAGE,
+  type PublicMediaStorage,
+} from '../../integrations/storage/public-media.storage';
+import {
+  makeRenditions,
+  RENDITION_CONTENT_TYPE,
+  renditionKeys,
+  UnreadableImageError,
+} from '../worker-photo/photo-renditions';
 import type { Actor } from '../users/users.types';
 import { CategoryRecord, ServiceCategoriesRepository } from './service-categories.repository';
 import {
   AdminCategoryListQuery,
   AdminServiceCategoryResponse,
+  CategoryImageLinks,
   CreateServiceCategoryDto,
   ServiceCategoryResponse,
   UpdateServiceCategoryDto,
@@ -21,10 +36,38 @@ export const CategoryErrorCode = {
   CATEGORY_DUPLICATE: 'CATEGORY_DUPLICATE',
   CATEGORY_NOT_AVAILABLE: 'CATEGORY_NOT_AVAILABLE',
   ENGAGEMENT_NOT_OFFERED: 'ENGAGEMENT_NOT_OFFERED',
+  IMAGE_NOT_CONFIGURED: 'IMAGE_NOT_CONFIGURED',
+  IMAGE_TYPE_NOT_ALLOWED: 'IMAGE_TYPE_NOT_ALLOWED',
+  IMAGE_CONTENT_MISMATCH: 'IMAGE_CONTENT_MISMATCH',
+  IMAGE_MALWARE_DETECTED: 'IMAGE_MALWARE_DETECTED',
 } as const;
 
-function toPublic(category: CategoryRecord, allowed: string[] = []): ServiceCategoryResponse {
+export const CATEGORY_IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png'];
+/** Technical bound (not a business rule) for an admin-uploaded category image. */
+export const CATEGORY_IMAGE_MAX_BYTES = 5_242_880;
+
+export interface UploadedImage {
+  buffer: Buffer;
+  mimetype: string;
+}
+
+function imageOf(category: CategoryRecord, media: PublicMediaStorage): CategoryImageLinks | null {
+  if (!category.imageKey || !media.enabled) return null;
+  const keys = renditionKeys(category.imageKey);
   return {
+    url: media.urlFor(keys.card),
+    largeUrl: media.urlFor(keys.large),
+    cacheKey: category.imageKey.slice(category.imageKey.lastIndexOf('/') + 1),
+  };
+}
+
+function toPublic(
+  category: CategoryRecord,
+  media: PublicMediaStorage,
+  allowed: string[] = [],
+): ServiceCategoryResponse {
+  return {
+    image: imageOf(category, media),
     allowedEngagements: allowed,
     engagements: allowed,
     id: category.id,
@@ -34,9 +77,13 @@ function toPublic(category: CategoryRecord, allowed: string[] = []): ServiceCate
   };
 }
 
-function toAdmin(category: CategoryRecord, allowed: string[] = []): AdminServiceCategoryResponse {
+function toAdmin(
+  category: CategoryRecord,
+  media: PublicMediaStorage,
+  allowed: string[] = [],
+): AdminServiceCategoryResponse {
   return {
-    ...toPublic(category, allowed),
+    ...toPublic(category, media, allowed),
     isEnabled: category.isEnabled,
     createdAt: category.createdAt,
     updatedAt: category.updatedAt,
@@ -50,9 +97,13 @@ function toAdmin(category: CategoryRecord, allowed: string[] = []): AdminService
  */
 @Injectable()
 export class ServiceCategoriesService {
+  private readonly logger = new Logger(ServiceCategoriesService.name);
+
   constructor(
     private readonly repository: ServiceCategoriesRepository,
     private readonly audit: AuditService,
+    @Inject(PUBLIC_MEDIA_STORAGE) private readonly publicMedia: PublicMediaStorage,
+    @Inject(MALWARE_SCANNER) private readonly scanner: MalwareScanner,
   ) {}
 
   // --- consumers (customers, workers) -----------------------------------------------------------------------
@@ -65,7 +116,7 @@ export class ServiceCategoriesService {
     );
     const allowed = await this.repository.engagementsOf(items.map((c) => c.id));
     return {
-      data: items.map((c) => toPublic(c, allowed.get(c.id))),
+      data: items.map((c) => toPublic(c, this.publicMedia, allowed.get(c.id))),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -75,7 +126,11 @@ export class ServiceCategoriesService {
     if (!category || !category.isEnabled) {
       throw this.notFound();
     }
-    return toPublic(category, (await this.repository.engagementsOf([id])).get(id));
+    return toPublic(
+      category,
+      this.publicMedia,
+      (await this.repository.engagementsOf([id])).get(id),
+    );
   }
 
   // --- contract for other modules ---------------------------------------------------------------------------
@@ -191,7 +246,7 @@ export class ServiceCategoriesService {
     );
     const allowed = await this.repository.engagementsOf(items.map((c) => c.id));
     return {
-      data: items.map((c) => toAdmin(c, allowed.get(c.id))),
+      data: items.map((c) => toAdmin(c, this.publicMedia, allowed.get(c.id))),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -201,7 +256,7 @@ export class ServiceCategoriesService {
     if (!category) {
       throw this.notFound();
     }
-    return toAdmin(category, (await this.repository.engagementsOf([id])).get(id));
+    return toAdmin(category, this.publicMedia, (await this.repository.engagementsOf([id])).get(id));
   }
 
   async adminCreate(
@@ -227,7 +282,7 @@ export class ServiceCategoriesService {
         );
         return category;
       });
-      return toAdmin(created);
+      return toAdmin(created, this.publicMedia);
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw this.duplicate();
@@ -281,13 +336,181 @@ export class ServiceCategoriesService {
         }
         return after;
       });
-      return toAdmin(updated);
+      return toAdmin(updated, this.publicMedia);
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw this.duplicate();
       }
       throw error;
     }
+  }
+
+  /**
+   * D-91: the admin sets (or replaces) the category image. The server checks the file signature, scans it when a scanner is
+   * configured, re-encodes it to two WebP sizes without metadata and stores them in the public bucket under new keys, so
+   * the permanent links of the previous image stay valid until it is replaced. The previous files are removed afterwards.
+   */
+  async adminSetImage(
+    id: string,
+    file: UploadedImage | undefined,
+    actor: Actor & { userId: string },
+  ): Promise<AdminServiceCategoryResponse> {
+    this.requirePublicMedia();
+    if (!file || file.buffer.length === 0) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'file', messages: ['an image file is required'] }],
+      );
+    }
+    if (!CATEGORY_IMAGE_CONTENT_TYPES.includes(file.mimetype)) {
+      throw new DomainException(
+        CategoryErrorCode.IMAGE_TYPE_NOT_ALLOWED,
+        'This image type is not accepted',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        [
+          {
+            field: 'file',
+            messages: [`accepted types: ${CATEGORY_IMAGE_CONTENT_TYPES.join(', ')}`],
+          },
+        ],
+      );
+    }
+    if (!matchesDeclaredType(file.mimetype, file.buffer.subarray(0, SIGNATURE_BYTES))) {
+      throw this.contentMismatch();
+    }
+    if (this.scanner.enabled) {
+      const verdict = await this.scanner.scan(file.buffer).catch((error: unknown) => {
+        this.logger.error(`Malware scan unavailable: ${(error as Error).message}`);
+        throw new DomainException(
+          ErrorCode.SERVICE_UNAVAILABLE,
+          'The image could not be checked right now: try again shortly',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      });
+      if (!verdict.clean) {
+        throw new DomainException(
+          CategoryErrorCode.IMAGE_MALWARE_DETECTED,
+          'The uploaded file was rejected by the security check',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+    }
+    let renditions;
+    try {
+      renditions = await makeRenditions(file.buffer);
+    } catch (error) {
+      if (error instanceof UnreadableImageError) throw this.contentMismatch();
+      throw error;
+    }
+    const imageKey = `${PUBLIC_KEY_PREFIX}categories/${id}/${randomUUID()}`;
+    const keys = renditionKeys(imageKey);
+    await this.mediaCall(() =>
+      Promise.all([
+        this.publicMedia.put(keys.card, renditions.card, RENDITION_CONTENT_TYPE),
+        this.publicMedia.put(keys.large, renditions.large, RENDITION_CONTENT_TYPE),
+      ]),
+    );
+    let previous: string | null = null;
+    try {
+      await this.repository.transaction(async (tx) => {
+        const before = await this.repository.lockById(id, tx);
+        if (!before) throw this.notFound();
+        previous = before.imageKey;
+        await this.repository.setImage(id, imageKey, tx);
+        await this.audit.record(
+          {
+            action: 'service_category.image_set',
+            entityType: 'service_category',
+            entityId: id,
+            actorId: actor.userId,
+            actorRole: actor.roles.join(',') || null,
+            metadata: {
+              code: before.code,
+              cardBytes: renditions.card.length,
+              largeBytes: renditions.large.length,
+            },
+          },
+          tx,
+        );
+      });
+    } catch (error) {
+      await this.discardImage(imageKey); // nothing points at the new files
+      throw error;
+    }
+    await this.discardImage(previous);
+    return this.adminGet(id);
+  }
+
+  /** Removes the category image (idempotent). */
+  async adminRemoveImage(
+    id: string,
+    actor: Actor & { userId: string },
+  ): Promise<AdminServiceCategoryResponse> {
+    let previous: string | null = null;
+    await this.repository.transaction(async (tx) => {
+      const before = await this.repository.lockById(id, tx);
+      if (!before) throw this.notFound();
+      previous = before.imageKey;
+      if (!before.imageKey) return;
+      await this.repository.setImage(id, null, tx);
+      await this.audit.record(
+        {
+          action: 'service_category.image_removed',
+          entityType: 'service_category',
+          entityId: id,
+          actorId: actor.userId,
+          actorRole: actor.roles.join(',') || null,
+          metadata: { code: before.code },
+        },
+        tx,
+      );
+    });
+    await this.discardImage(previous);
+    return this.adminGet(id);
+  }
+
+  /** Best effort: a file that cannot be deleted is never served again, it only costs storage. */
+  private async discardImage(imageKey: string | null): Promise<void> {
+    if (!imageKey || !this.publicMedia.enabled) return;
+    const keys = renditionKeys(imageKey);
+    await Promise.all([
+      this.publicMedia.delete(keys.card),
+      this.publicMedia.delete(keys.large),
+    ]).catch(() =>
+      this.logger.warn(`Could not remove the files of a replaced category image (${imageKey})`),
+    );
+  }
+
+  private requirePublicMedia(): void {
+    if (!this.publicMedia.enabled) {
+      throw new DomainException(
+        CategoryErrorCode.IMAGE_NOT_CONFIGURED,
+        'Public image storage is not configured',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  private async mediaCall<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch {
+      throw new DomainException(
+        CategoryErrorCode.IMAGE_NOT_CONFIGURED,
+        'Image storage is not available',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  private contentMismatch(): DomainException {
+    return new DomainException(
+      CategoryErrorCode.IMAGE_CONTENT_MISMATCH,
+      'The uploaded file is not a readable image of the declared type',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
   }
 
   private notFound(): DomainException {

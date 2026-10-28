@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { MalwareModule } from '../../integrations/malware/malware.module';
+import { StorageModule } from '../../integrations/storage/storage.module';
 import { UsersModule } from '../users/users.module';
 import {
   AdminPricingGuidanceController,
@@ -18,7 +20,7 @@ import { ServiceCategoriesService } from './service-categories.service';
  * only through the exported service.
  */
 @Module({
-  imports: [UsersModule],
+  imports: [UsersModule, StorageModule, MalwareModule],
   controllers: [
     ServiceCategoriesController,
     AdminServiceCategoriesController,
