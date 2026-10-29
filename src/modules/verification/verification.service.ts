@@ -841,6 +841,7 @@ export class VerificationService {
     return {
       url: link.url,
       signedUrl: link.url,
+      mimeType: document.contentType,
       expiresAt: link.expiresAt,
       expiresInSeconds: Math.max(0, Math.round((link.expiresAt.getTime() - Date.now()) / 1000)),
     };
@@ -1195,7 +1196,7 @@ export class VerificationService {
       if (!rule.from.includes(check.status)) {
         throw new DomainException(
           VerificationErrorCode.INVALID_TRANSITION,
-          `A check that is ${check.status} cannot move to ${rule.to}`,
+          `A check that is ${check.status} cannot move to ${rule.to} (allowed from: ${rule.from.join(', ')}). ${check.status === 'SUBMITTED' ? 'Claim it first with start-review.' : ''}`.trim(),
           HttpStatus.CONFLICT,
         );
       }
@@ -1444,10 +1445,13 @@ export class VerificationService {
     return {
       ...this.documentView(document),
       documentId: document.id,
+      checkId: document.checkId,
+      checkType: documentType,
       documentType,
       mimeType: document.contentType,
       availability,
       available: availability === 'AVAILABLE',
+      reviewable: availability === 'AVAILABLE' && document.submittedAt !== null,
     };
   }
 

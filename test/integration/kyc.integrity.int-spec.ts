@@ -233,6 +233,7 @@ describe('KYC upload integrity (integration)', () => {
       expect(Object.keys(ok.body as object).sort()).toEqual([
         'expiresAt',
         'expiresInSeconds',
+        'mimeType',
         'signedUrl',
         'url',
       ]);

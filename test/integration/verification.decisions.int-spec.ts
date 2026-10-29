@@ -196,6 +196,8 @@ describe('Verification decisions: reasons, ownership, release, notes, SLA, sign-
       const { checkId } = await submitted('IDENTITY');
       const notClaimed = await as(api, reviewerA).post(`${A}/checks/${checkId}/approve`, {});
       expect(notClaimed.status).toBe(409);
+      expect(notClaimed.body.code).toBe('INVALID_TRANSITION');
+      expect(notClaimed.body.message).toMatch(/allowed from: IN_REVIEW.*start-review/);
       await as(api, reviewerA).post(`${A}/checks/${checkId}/start-review`).expect(200);
       for (const [path, body] of [
         ['approve', {}],

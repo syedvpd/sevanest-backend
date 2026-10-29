@@ -250,6 +250,7 @@ describe('Verification assignment and queue contract (integration)', () => {
       expect(Object.keys(res.body as object).sort()).toEqual([
         'expiresAt',
         'expiresInSeconds',
+        'mimeType',
         'signedUrl',
         'url',
       ]);
@@ -291,12 +292,35 @@ describe('Verification assignment and queue contract (integration)', () => {
       expect(ok).toMatchObject({
         documentId: confirmedId,
         documentType: 'IDENTITY',
+        checkType: 'IDENTITY',
         mimeType: 'application/pdf',
         availability: 'AVAILABLE',
         available: true,
+        // Confirmed but not part of a submission yet: a draft is not something to review.
+        reviewable: false,
+        submitted: false,
+      });
+      const identityCheckId = await checkIdOf(api, admin, worker.workerId, 'IDENTITY');
+      expect(ok.checkId).toBe(identityCheckId);
+      await as(api, worker).post(`${V}/checks/IDENTITY/submit`).expect(200);
+      const submitted = (
+        await as(api, reviewerA)
+          .get(`/api/v1/admin/workers/${worker.workerId}/verification`)
+          .expect(200)
+      ).body.checks
+        .flatMap((c: { documents: Array<Record<string, unknown>> }) => c.documents)
+        .find((d: Record<string, unknown>) => d.id === confirmedId);
+      expect(submitted).toMatchObject({
+        reviewable: true,
+        submitted: true,
+        checkId: identityCheckId,
       });
       const waiting = docs.find((d) => d.id === pending.body.documentId)!;
-      expect(waiting).toMatchObject({ availability: 'NOT_UPLOADED', available: false });
+      expect(waiting).toMatchObject({
+        availability: 'NOT_UPLOADED',
+        available: false,
+        reviewable: false,
+      });
       expect(JSON.stringify(dossier.body)).not.toContain('kyc/');
 
       const link = (id: string) => as(api, reviewerA).get(`${A}/documents/${id}/link`);

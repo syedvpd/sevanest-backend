@@ -402,6 +402,12 @@ export class AdminDocumentView extends DocumentView {
   })
   documentId!: string;
   @ApiProperty({
+    description: 'The check this document belongs to (the id the decision endpoints take).',
+  })
+  checkId!: string;
+  @ApiProperty({ enum: CHECK_TYPES, description: 'Type of the check this document belongs to.' })
+  checkType!: CheckType;
+  @ApiProperty({
     enum: CHECK_TYPES,
     description:
       'The check this document is evidence for (the document type is the check type: no finer type is stored).',
@@ -414,8 +420,13 @@ export class AdminDocumentView extends DocumentView {
       'AVAILABLE = uploaded and confirmed, a link can be issued. NOT_UPLOADED = the worker never confirmed the upload. DISCARDED = the server deleted the object (failed validation or abandoned).',
   })
   availability!: DocumentAvailability;
-  @ApiProperty({ description: 'availability === AVAILABLE. Only then show an attachment.' })
+  @ApiProperty({ description: 'availability === AVAILABLE. A link can be issued.' })
   available!: boolean;
+  @ApiProperty({
+    description:
+      'true = part of the worker submission and its file is available: show it to the reviewer. false for drafts that were never submitted, unconfirmed uploads and discarded files.',
+  })
+  reviewable!: boolean;
 }
 
 export class NoteView {
@@ -477,6 +488,11 @@ export class DocumentLinkResponse {
   @ApiProperty({ description: 'Short-lived signed URL. Do not log or share it.' }) url!: string;
   @ApiProperty({ description: 'Same value as url (the name the admin web app asks for).' })
   signedUrl!: string;
+  @ApiProperty({
+    example: 'application/pdf',
+    description: 'Validated content type of the stored file.',
+  })
+  mimeType!: string;
   @ApiProperty({ description: 'ISO-8601 instant at which the link stops working.' })
   expiresAt!: Date;
   @ApiProperty({

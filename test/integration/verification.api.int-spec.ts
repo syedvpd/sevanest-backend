@@ -806,6 +806,7 @@ describe('Verification API (integration)', () => {
       expect(Object.keys(res.body as object).sort()).toEqual([
         'expiresAt',
         'expiresInSeconds',
+        'mimeType',
         'signedUrl',
         'url',
       ]);
