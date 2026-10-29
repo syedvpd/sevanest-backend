@@ -78,6 +78,13 @@ export class AdminCategoryListQuery extends PageQueryDto {
   isEnabled?: boolean;
 }
 
+/** Permanent public links (D-93): safe to cache by `cacheKey`, which changes only when the image is replaced. */
+export class CategoryImageLinks {
+  @ApiProperty({ description: 'Small square WebP (320 px) for lists and cards.' }) url!: string;
+  @ApiProperty({ description: 'Larger WebP (longest side at most 1080 px).' }) largeUrl!: string;
+  @ApiProperty() cacheKey!: string;
+}
+
 /** What customers and workers see: enabled categories only, no internal state. */
 export class ServiceCategoryResponse {
   @ApiProperty() id!: string;
@@ -96,6 +103,12 @@ export class ServiceCategoryResponse {
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
   @ApiProperty({ nullable: true, type: String }) description!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: CategoryImageLinks,
+    description: 'null = no image (or public image storage is not configured).',
+  })
+  image!: CategoryImageLinks | null;
 }
 
 export class SetCategoryEngagementsDto {

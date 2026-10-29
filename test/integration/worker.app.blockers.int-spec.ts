@@ -392,7 +392,15 @@ describe('Worker app blockers (integration)', () => {
         expect(cats.status).toBe(200);
         expect(cats.body.data.length).toBeGreaterThan(0);
         expect(Object.keys(cats.body.data[0] as object).sort()).toEqual(
-          ['allowedEngagements', 'code', 'description', 'engagements', 'id', 'name'].sort(),
+          [
+            'allowedEngagements',
+            'code',
+            'description',
+            'engagements',
+            'id',
+            'image',
+            'name',
+          ].sort(),
         );
         const areas = await as(api, who).get(A);
         expect(areas.status).toBe(200);

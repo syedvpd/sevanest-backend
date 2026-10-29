@@ -2633,6 +2633,96 @@
         ]
       }
     },
+    "/api/v1/admin/service-categories/{categoryId}/image": {
+      "put": {
+        "description": "The server re-encodes it to WebP in two sizes without metadata and returns permanent public links in `image`. 503 IMAGE_NOT_CONFIGURED until public image storage is configured; 413 above the size limit; 422 for a wrong or unreadable file.",
+        "operationId": "AdminServiceCategoriesController_setImage_v1",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminServiceCategoryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set or replace the category image (JPEG or PNG, multipart field `file`, at most 5 MB)",
+        "tags": [
+          "Admin - Service Categories"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminServiceCategoriesController_removeImage_v1",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminServiceCategoryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the category image (idempotent)",
+        "tags": [
+          "Admin - Service Categories"
+        ]
+      }
+    },
     "/api/v1/pricing/guidance": {
       "get": {
         "operationId": "PricingGuidanceController_guidance_v1",
@@ -2669,7 +2759,8 @@
                 "DAILY",
                 "HOURLY",
                 "SHIFT",
-                "ONE_TIME"
+                "ONE_TIME",
+                "MONTHLY"
               ]
             }
           }
@@ -3098,7 +3189,8 @@
                 "DAILY",
                 "HOURLY",
                 "SHIFT",
-                "ONE_TIME"
+                "ONE_TIME",
+                "MONTHLY"
               ]
             }
           },
@@ -4069,7 +4161,8 @@
                 "DAILY",
                 "HOURLY",
                 "SHIFT",
-                "ONE_TIME"
+                "ONE_TIME",
+                "MONTHLY"
               ]
             }
           },
@@ -4442,7 +4535,8 @@
                 "DAILY",
                 "HOURLY",
                 "SHIFT",
-                "ONE_TIME"
+                "ONE_TIME",
+                "MONTHLY"
               ]
             }
           },
@@ -4841,7 +4935,8 @@
                 "DAILY",
                 "HOURLY",
                 "SHIFT",
-                "ONE_TIME"
+                "ONE_TIME",
+                "MONTHLY"
               ]
             }
           },
@@ -16430,6 +16525,27 @@
           "reason"
         ]
       },
+      "CategoryImageLinks": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Small square WebP (320 px) for lists and cards."
+          },
+          "largeUrl": {
+            "type": "string",
+            "description": "Larger WebP (longest side at most 1080 px)."
+          },
+          "cacheKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "largeUrl",
+          "cacheKey"
+        ]
+      },
       "ServiceCategoryResponse": {
         "type": "object",
         "properties": {
@@ -16464,6 +16580,16 @@
           "description": {
             "type": "string",
             "nullable": true
+          },
+          "image": {
+            "nullable": true,
+            "description": "null = no image (or public image storage is not configured).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryImageLinks"
+              }
+            ]
           }
         },
         "required": [
@@ -16472,7 +16598,8 @@
           "engagements",
           "code",
           "name",
-          "description"
+          "description",
+          "image"
         ]
       },
       "AdminServiceCategoryResponse": {
@@ -16510,6 +16637,16 @@
             "type": "string",
             "nullable": true
           },
+          "image": {
+            "nullable": true,
+            "description": "null = no image (or public image storage is not configured).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryImageLinks"
+              }
+            ]
+          },
           "isEnabled": {
             "type": "boolean"
           },
@@ -16529,6 +16666,7 @@
           "code",
           "name",
           "description",
+          "image",
           "isEnabled",
           "createdAt",
           "updatedAt"
@@ -16572,7 +16710,8 @@
                 "DAILY",
                 "HOURLY",
                 "SHIFT",
-                "ONE_TIME"
+                "ONE_TIME",
+                "MONTHLY"
               ]
             }
           }
@@ -16672,7 +16811,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "updatedAt": {
@@ -16712,7 +16852,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "minMinor": {
@@ -16899,7 +17040,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ],
             "nullable": true
           },
@@ -17245,7 +17387,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ],
             "nullable": true
           },
@@ -17300,7 +17443,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ],
             "description": "Full-time, part-time or live-in preference (FR-WP-006)."
           },
@@ -17427,7 +17571,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -17939,7 +18084,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -18108,7 +18254,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -18201,7 +18348,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -18533,7 +18681,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -18672,7 +18821,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -18770,7 +18920,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -18947,7 +19098,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -20212,7 +20364,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -22043,6 +22196,23 @@
             "type": "string",
             "description": "Same value as id: the id for GET /admin/verification/documents/{documentId}/link."
           },
+          "checkId": {
+            "type": "string",
+            "description": "The check this document belongs to (the id the decision endpoints take)."
+          },
+          "checkType": {
+            "type": "string",
+            "enum": [
+              "IDENTITY",
+              "ADDRESS",
+              "EMERGENCY_CONTACT",
+              "PREVIOUS_EMPLOYMENT",
+              "POLICE_VERIFICATION",
+              "SKILL_CERTIFICATE",
+              "LICENSE"
+            ],
+            "description": "Type of the check this document belongs to."
+          },
           "documentType": {
             "type": "string",
             "enum": [
@@ -22071,7 +22241,11 @@
           },
           "available": {
             "type": "boolean",
-            "description": "availability === AVAILABLE. Only then show an attachment."
+            "description": "availability === AVAILABLE. A link can be issued."
+          },
+          "reviewable": {
+            "type": "boolean",
+            "description": "true = part of the worker submission and its file is available: show it to the reviewer. false for drafts that were never submitted, unconfirmed uploads and discarded files."
           }
         },
         "required": [
@@ -22082,10 +22256,13 @@
           "submitted",
           "createdAt",
           "documentId",
+          "checkId",
+          "checkType",
           "documentType",
           "mimeType",
           "availability",
-          "available"
+          "available",
+          "reviewable"
         ]
       },
       "NoteView": {
@@ -22470,6 +22647,11 @@
             "type": "string",
             "description": "Same value as url (the name the admin web app asks for)."
           },
+          "mimeType": {
+            "type": "string",
+            "example": "application/pdf",
+            "description": "Validated content type of the stored file."
+          },
           "expiresAt": {
             "format": "date-time",
             "type": "string",
@@ -22483,6 +22665,7 @@
         "required": [
           "url",
           "signedUrl",
+          "mimeType",
           "expiresAt",
           "expiresInSeconds"
         ]
@@ -22923,7 +23106,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ]
           },
           "availableFrom": {
@@ -23000,7 +23184,8 @@
               "DAILY",
               "HOURLY",
               "SHIFT",
-              "ONE_TIME"
+              "ONE_TIME",
+              "MONTHLY"
             ],
             "nullable": true
           },

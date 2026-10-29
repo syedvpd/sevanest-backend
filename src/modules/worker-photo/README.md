@@ -85,3 +85,9 @@ The Worker Photo module facilitates verified profile picture onboarding for dome
 
 * **Integration with Discovery & Verification:** Verified worker photos automatically populate search cards, shortlist previews, and customer booking management views.
 * **Separation of Image Processing:** Image transformation pipelines convert uploaded raw bytes into cached WebP renditions asynchronously or upon confirmation, safeguarding cluster CPU availability.
+
+---
+
+## 6. Public links (D-93)
+
+When `STORAGE_S3_PUBLIC_BUCKET` and `STORAGE_PUBLIC_BASE_URL` are set, new photo renditions are written to the public bucket (keys start `pub/`) and `url` / `largeUrl` are permanent links that never change until the photo is replaced; `cacheKey` is the image cache key. The original upload and every KYC document stay private. Photos confirmed before the switch keep signed links.

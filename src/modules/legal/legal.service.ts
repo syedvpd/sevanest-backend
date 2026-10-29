@@ -4,6 +4,11 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { RetentionRegistry } from '../../common/retention/retention.registry';
 import {
+  isPublicKey,
+  PUBLIC_MEDIA_STORAGE,
+  type PublicMediaStorage,
+} from '../../integrations/storage/public-media.storage';
+import {
   STORAGE_PROVIDER,
   type StorageProvider,
 } from '../../integrations/storage/storage-provider.interface';
@@ -57,6 +62,7 @@ export class LegalService {
     private readonly alerts: AlertsService,
     private readonly retention: RetentionRegistry,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    @Inject(PUBLIC_MEDIA_STORAGE) private readonly publicMedia: PublicMediaStorage,
   ) {}
 
   current(): LegalCurrentView {
@@ -332,7 +338,10 @@ export class LegalService {
         if (keys === null) continue;
         result.anonymised++;
         for (const key of keys) {
-          await this.storage.deleteObject(key).catch((error: unknown) => {
+          // D-93: public image renditions live in the public bucket.
+          await (
+            isPublicKey(key) ? this.publicMedia.delete(key) : this.storage.deleteObject(key)
+          ).catch((error: unknown) => {
             this.logger.warn(
               `A file of an erased account could not be deleted: ${(error as Error).message}`,
             );

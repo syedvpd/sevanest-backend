@@ -294,6 +294,39 @@ describe('validateEnvironment', () => {
       ).not.toThrow();
     });
 
+    it('takes the public image bucket and its base URL together or not at all (D-93)', () => {
+      const s3 = {
+        ...production,
+        STORAGE_PROVIDER: 's3',
+        STORAGE_S3_ENDPOINT: 'https://example.storage.supabase.co/storage/v1/s3',
+        STORAGE_S3_REGION: 'ap-southeast-1',
+        STORAGE_S3_BUCKET: 'kyc-documents',
+        STORAGE_S3_ACCESS_KEY_ID: 'id',
+        STORAGE_S3_SECRET_ACCESS_KEY: 'key',
+      };
+      expect(() => validateEnvironment({ ...s3, STORAGE_S3_PUBLIC_BUCKET: 'seva-public' })).toThrow(
+        'must be set together',
+      );
+      expect(() =>
+        validateEnvironment({
+          ...s3,
+          STORAGE_PUBLIC_BASE_URL:
+            'https://example.supabase.co/storage/v1/object/public/seva-public',
+        }),
+      ).toThrow('must be set together');
+      expect(() =>
+        validateEnvironment({
+          ...s3,
+          STORAGE_S3_PUBLIC_BUCKET: 'seva-public',
+          STORAGE_PUBLIC_BASE_URL:
+            'https://example.supabase.co/storage/v1/object/public/seva-public',
+        }),
+      ).not.toThrow();
+      expect(() => validateEnvironment({ ...s3, STORAGE_PUBLIC_BASE_URL: 'not a url' })).toThrow(
+        'STORAGE_PUBLIC_BASE_URL',
+      );
+    });
+
     it('accepts only known document content types', () => {
       expect(() =>
         validateEnvironment({ ...production, VERIFICATION_DOCUMENT_CONTENT_TYPES: 'text/html' }),

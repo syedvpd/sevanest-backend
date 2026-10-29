@@ -71,6 +71,7 @@ describe('Six service categories (integration)', () => {
       'description',
       'engagements',
       'id',
+      'image',
       'name',
     ]);
   });

@@ -11,6 +11,12 @@ import {
   type StorageProvider,
 } from '../../integrations/storage/storage-provider.interface';
 import { matchesDeclaredType, SIGNATURE_BYTES } from '../../integrations/storage/file-signature';
+import {
+  isPublicKey,
+  PUBLIC_KEY_PREFIX,
+  PUBLIC_MEDIA_STORAGE,
+  type PublicMediaStorage,
+} from '../../integrations/storage/public-media.storage';
 import { WorkersService } from '../workers/workers.service';
 import type { PhotoLink, PhotoUploadResponse, RequestPhotoUploadDto } from './dto/worker-photo.dto';
 import {
@@ -20,7 +26,7 @@ import {
   renditionKeys,
   UnreadableImageError,
   type Renditions,
-} from './photo-renditions';
+} from '../../common/media/photo-renditions';
 import { WorkerPhotoRepository } from './worker-photo.repository';
 
 export const PhotoErrorCode = {
@@ -37,6 +43,8 @@ export const PhotoErrorCode = {
 export const PHOTO_CONTENT_TYPES = ['image/jpeg', 'image/png'];
 /** Technical abuse guard (not a business rule): unconfirmed uploads one worker may hold at a time. */
 const MAX_PENDING = 5;
+/** A public link never expires; `expiresAt` stays in the response for compatibility and is one year ahead, so apps that refresh at expiry just refresh early. */
+const PERMANENT_LINK_MS = 365 * 24 * 60 * 60 * 1000;
 
 /**
  * Worker profile photo (FR-WON-002, FRD FM-04). Private object storage only; the client uploads to a short-lived signed URL, then
@@ -55,6 +63,7 @@ export class WorkerPhotoService {
     private readonly config: AppConfigService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(MALWARE_SCANNER) private readonly scanner: MalwareScanner,
+    @Inject(PUBLIC_MEDIA_STORAGE) private readonly publicMedia: PublicMediaStorage,
   ) {}
 
   async requestUpload(userId: string, dto: RequestPhotoUploadDto): Promise<PhotoUploadResponse> {
@@ -162,22 +171,30 @@ export class WorkerPhotoService {
       }
       throw error;
     }
-    const keys = renditionKeys(photo.objectKey);
+    // D-93: with a public bucket configured the renditions get permanent links; otherwise they stay private with signed links.
+    const keys = renditionKeys(
+      this.publicMedia.enabled ? `${PUBLIC_KEY_PREFIX}${photo.objectKey}` : photo.objectKey,
+    );
     await this.storageCall(() =>
-      Promise.all([
-        this.storage.putObject({
-          objectKey: keys.card,
-          body: renditions.card,
-          contentType: RENDITION_CONTENT_TYPE,
-          cacheControl: RENDITION_CACHE_CONTROL,
-        }),
-        this.storage.putObject({
-          objectKey: keys.large,
-          body: renditions.large,
-          contentType: RENDITION_CONTENT_TYPE,
-          cacheControl: RENDITION_CACHE_CONTROL,
-        }),
-      ]),
+      this.publicMedia.enabled
+        ? Promise.all([
+            this.publicMedia.put(keys.card, renditions.card, RENDITION_CONTENT_TYPE),
+            this.publicMedia.put(keys.large, renditions.large, RENDITION_CONTENT_TYPE),
+          ])
+        : Promise.all([
+            this.storage.putObject({
+              objectKey: keys.card,
+              body: renditions.card,
+              contentType: RENDITION_CONTENT_TYPE,
+              cacheControl: RENDITION_CACHE_CONTROL,
+            }),
+            this.storage.putObject({
+              objectKey: keys.large,
+              body: renditions.large,
+              contentType: RENDITION_CONTENT_TYPE,
+              cacheControl: RENDITION_CACHE_CONTROL,
+            }),
+          ]),
     );
 
     let confirmedNow = false;
@@ -292,6 +309,15 @@ export class WorkerPhotoService {
     await Promise.all(
       [...keys].map(async ([workerId, photo]) => {
         try {
+          if (isPublicKey(photo.cardKey) && isPublicKey(photo.largeKey)) {
+            links.set(workerId, {
+              url: this.publicMedia.urlFor(photo.cardKey),
+              largeUrl: this.publicMedia.urlFor(photo.largeKey),
+              expiresAt: new Date(Date.now() + PERMANENT_LINK_MS),
+              cacheKey: photo.photoId,
+            });
+            return;
+          }
           const [card, large] = await Promise.all([
             this.storage.createDownloadUrl({ objectKey: photo.cardKey, ttlSeconds }),
             this.storage.createDownloadUrl({ objectKey: photo.largeKey, ttlSeconds }),

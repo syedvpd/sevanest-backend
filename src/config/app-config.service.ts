@@ -356,6 +356,12 @@ export class AppConfigService {
       secretAccessKey: required('STORAGE_S3_SECRET_ACCESS_KEY'),
     };
   }
+  /** Public image bucket (D-93). undefined = not configured: every image stays on signed links. */
+  get publicMedia(): { bucket?: string; baseUrl: string } | undefined {
+    const baseUrl = this.get('STORAGE_PUBLIC_BASE_URL');
+    if (!baseUrl) return undefined;
+    return { bucket: this.get('STORAGE_S3_PUBLIC_BUCKET'), baseUrl: baseUrl.replace(/\/+$/, '') };
+  }
   get verificationDocuments(): {
     maxBytes: number;
     contentTypes: string[];

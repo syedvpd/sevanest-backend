@@ -300,6 +300,8 @@ model ServiceCategory {
   name        String
   description String?
   isEnabled   Boolean  @default(true) @map("is_enabled")
+  /// Public image (D-93): the key without the rendition suffix, e.g. pub/categories/<id>/<uuid>; null = no image.
+  imageKey    String?  @map("image_key")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

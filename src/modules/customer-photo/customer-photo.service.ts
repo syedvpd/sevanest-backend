@@ -23,7 +23,7 @@ import {
   renditionKeys,
   UnreadableImageError,
   type Renditions,
-} from '../worker-photo/photo-renditions';
+} from '../../common/media/photo-renditions';
 import { PHOTO_CONTENT_TYPES, PhotoErrorCode } from '../worker-photo/worker-photo.service';
 import { CustomerPhotoRepository } from './customer-photo.repository';
 

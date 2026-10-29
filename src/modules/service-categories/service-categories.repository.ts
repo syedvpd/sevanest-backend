@@ -10,6 +10,7 @@ export interface CategoryRecord {
   name: string;
   description: string | null;
   isEnabled: boolean;
+  imageKey: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -20,6 +21,7 @@ const SELECT = {
   name: true,
   description: true,
   isEnabled: true,
+  imageKey: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ServiceCategorySelect;
@@ -98,6 +100,14 @@ export class ServiceCategoriesRepository {
         })),
       });
     }
+  }
+
+  setImage(
+    id: string,
+    imageKey: string | null,
+    tx: Prisma.TransactionClient,
+  ): Promise<CategoryRecord> {
+    return tx.serviceCategory.update({ where: { id }, data: { imageKey }, select: SELECT });
   }
 
   /** Locks the row for the rest of the transaction so concurrent admin edits serialise. */

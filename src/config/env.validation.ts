@@ -331,6 +331,21 @@ export class EnvironmentVariables {
   @MinLength(1)
   STORAGE_S3_SECRET_ACCESS_KEY?: string;
 
+  /**
+   * Public image storage (D-93): a SECOND bucket, marked public, for worker photos and category images that have permanent links.
+   * Both values or neither; unset keeps every image on signed links in the private bucket. KYC documents never go here.
+   * The base URL is the public path of that bucket, e.g. https://<ref>.supabase.co/storage/v1/object/public/<bucket>.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  STORAGE_S3_PUBLIC_BUCKET?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^https?:\/\/\S+$/, { message: 'STORAGE_PUBLIC_BASE_URL must be an http(s) URL' })
+  STORAGE_PUBLIC_BASE_URL?: string;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -929,6 +944,14 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
         cause: error,
       });
     }
+  }
+  if (
+    config.STORAGE_PROVIDER === StorageProviderKind.S3 &&
+    !config.STORAGE_S3_PUBLIC_BUCKET !== !config.STORAGE_PUBLIC_BASE_URL
+  ) {
+    throw new Error(
+      'Invalid environment configuration: STORAGE_S3_PUBLIC_BUCKET and STORAGE_PUBLIC_BASE_URL must be set together',
+    );
   }
   if (config.JWT_LEGACY_HS256_UNTIL && !config.JWT_ACCESS_SECRET) {
     throw new Error(

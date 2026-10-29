@@ -10,11 +10,15 @@ import {
   Put,
   Query,
   Res,
+  Delete,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import type { Response } from 'express';
 import { etagOf } from '../../common/concurrency/if-match';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -30,7 +34,11 @@ import {
   SetCategoryEngagementsDto,
   UpdateServiceCategoryDto,
 } from './dto/categories.dto';
-import { ServiceCategoriesService } from './service-categories.service';
+import {
+  CATEGORY_IMAGE_MAX_BYTES,
+  ServiceCategoriesService,
+  type UploadedImage,
+} from './service-categories.service';
 import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
 
 /** Read-only for every signed-in user (customers choose a category; workers choose roles). Enabled categories only. */
@@ -114,6 +122,51 @@ export class AdminServiceCategoriesController {
   ): Promise<AdminServiceCategoryResponse> {
     const access = await this.users.getAccess(admin.userId);
     return this.categories.adminSetEngagements(categoryId, dto.engagements, {
+      userId: admin.userId,
+      roles: access.roles,
+    });
+  }
+
+  @Put(':categoryId/image')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: CATEGORY_IMAGE_MAX_BYTES, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiModelResponse(AdminServiceCategoryResponse)
+  @ApiOperation({
+    summary:
+      'Set or replace the category image (JPEG or PNG, multipart field `file`, at most 5 MB)',
+    description:
+      'The server re-encodes it to WebP in two sizes without metadata and returns permanent public links in `image`. 503 IMAGE_NOT_CONFIGURED until public image storage is configured; 413 above the size limit; 422 for a wrong or unreadable file.',
+  })
+  async setImage(
+    @Param('categoryId', ParseUUIDPipe) categoryId: string,
+    @UploadedFile() file: UploadedImage | undefined,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminServiceCategoryResponse> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.categories.adminSetImage(categoryId, file, {
+      userId: admin.userId,
+      roles: access.roles,
+    });
+  }
+
+  @Delete(':categoryId/image')
+  @ApiModelResponse(AdminServiceCategoryResponse)
+  @ApiOperation({ summary: 'Remove the category image (idempotent)' })
+  async removeImage(
+    @Param('categoryId', ParseUUIDPipe) categoryId: string,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminServiceCategoryResponse> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.categories.adminRemoveImage(categoryId, {
       userId: admin.userId,
       roles: access.roles,
     });

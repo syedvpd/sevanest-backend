@@ -106,3 +106,7 @@ The Service Categories module serves as the functional foundation for worker pro
 * **Skill Assignment:** The Workers module validates that any skill a worker registers references an active, enabled category.
 * **Booking Validation:** Booking creation ensures the requested service matches an active platform category.
 
+
+## Category image (D-93)
+
+`PUT /admin/service-categories/{id}/image` (multipart field `file`, JPEG or PNG, at most 5 MB) and `DELETE` on the same path. The server re-encodes to two WebP sizes (320 px square, 1080 px) without metadata into the public bucket; categories then carry `image {url, largeUrl, cacheKey}` (`null` when none). 503 `IMAGE_NOT_CONFIGURED` until the public bucket variables are set.
