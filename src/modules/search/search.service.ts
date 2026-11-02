@@ -15,6 +15,7 @@ import {
   SlotsQuery,
   WorkerCard,
   TopRatedWorkerView,
+  ReviewSummaryView,
   WorkerReviewView,
   WorkerSlotsView,
 } from './dto/search.dto';
@@ -139,6 +140,14 @@ export class SearchService {
     return new Map(cards.map((c) => [c.workerId, c]));
   }
 
+  /** Contract for the shortlist: enabled categories of the workers visible to this customer (invisible workers are absent). */
+  visibleCategories(
+    ids: string[],
+    customerUserId: string,
+  ): Promise<Map<string, Array<{ code: string; name: string }>>> {
+    return this.repository.visibleCategories(ids, customerUserId);
+  }
+
   /** Contract for Booking: which of these workers are fully verified (and active, submitted) right now. */
   verifiedIds(ids: string[]): Promise<Set<string>> {
     return this.repository.verifiedIds(ids);
@@ -212,14 +221,43 @@ export class SearchService {
    * Reviews a customer may read about a visible worker (FR-WD-003): score, text, date and the reviewer's first name only.
    * Same visibility rule as the profile: an unknown or invisible worker answers 404 exactly like any other.
    */
-  async listReviews(workerId: string, query: PageQueryDto): Promise<Page<WorkerReviewView>> {
+  async listReviews(
+    workerId: string,
+    query: PageQueryDto,
+  ): Promise<Page<WorkerReviewView> & { summary: ReviewSummaryView }> {
     await this.getProfile(workerId);
-    const { items, total } = await this.repository.listVisibleReviews(
-      workerId,
-      skipFor(query),
-      query.limit,
-    );
-    return { data: items, meta: { page: query.page, limit: query.limit, total } };
+    const [{ items, total }, counts] = await Promise.all([
+      this.repository.listVisibleReviews(workerId, skipFor(query), query.limit),
+      this.repository.reviewDistribution(workerId),
+    ]);
+    const distribution: Record<string, number> = {};
+    let sum = 0;
+    let count = 0;
+    for (let score = this.config.ratingScaleMax; score >= 1; score--) {
+      const n = counts.get(score) ?? 0;
+      distribution[String(score)] = n;
+      sum += score * n;
+      count += n;
+    }
+    return {
+      data: items,
+      meta: { page: query.page, limit: query.limit, total },
+      summary: {
+        average: count ? Math.round((sum / count) * 100) / 100 : null,
+        count,
+        distribution,
+      },
+    };
+  }
+
+  /** How many workers match these filters (same eligibility and filters as the search; page and limit are ignored). */
+  async countForCustomer(
+    query: SearchWorkersQuery,
+    customerUserId?: string,
+  ): Promise<{ total: number }> {
+    const resolved = await this.resolve(query);
+    const { total } = await this.eligiblePage(resolved, 'EXPERIENCE_DESC', 0, 1, customerUserId);
+    return { total };
   }
 
   /** Adds the rating aggregate and a short-lived photo link in two batched look-ups (no per-worker queries). */
@@ -387,5 +425,7 @@ export function toCard(worker: EligibleWorker): Omit<WorkerCard, 'rating' | 'pho
     })),
     verification: 'VERIFIED',
     verified: true,
+    canRequestInterview: true,
+    cannotRequestReason: null,
   };
 }

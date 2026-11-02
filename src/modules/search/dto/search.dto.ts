@@ -117,6 +117,8 @@ export class SearchWorkersQuery extends PageQueryDto {
   longitude?: number;
 }
 
+export const INTERVIEW_BLOCK_REASONS = ['VERIFICATION_PENDING'] as const;
+
 export class CategoryRefView {
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
@@ -199,6 +201,19 @@ export class WorkerCard {
       'Always true on a card: customers only ever see fully verified workers (same rule as `verification`). A worker who stops being verified is no longer returned as a card at all.',
   })
   verified!: boolean;
+  @ApiProperty({
+    example: true,
+    description:
+      'Informational, not authorization (POST /interviews checks again). A card only exists for a fully verified, active worker, so this is true on every card today.',
+  })
+  canRequestInterview!: boolean;
+  @ApiProperty({
+    enum: INTERVIEW_BLOCK_REASONS,
+    nullable: true,
+    description:
+      'Why an interview cannot be requested; null when canRequestInterview is true. Only VERIFICATION_PENDING exists so far: treat any other value as a generic "cannot request right now".',
+  })
+  cannotRequestReason!: (typeof INTERVIEW_BLOCK_REASONS)[number] | null;
   @ApiProperty({ type: RatingSummaryView, nullable: true }) rating!: RatingSummaryView | null;
   @ApiProperty({ type: PhotoLinkView, nullable: true }) photo!: PhotoLinkView | null;
   @ApiProperty({
@@ -264,6 +279,24 @@ export class WorkerReviewView {
     type: String,
   })
   reviewerFirstName!: string | null;
+}
+
+export class ReviewSummaryView {
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Mean score of the visible reviews, two decimals; null when there are none.',
+  })
+  average!: number | null;
+  @ApiProperty({ description: 'Number of visible reviews (equals meta.total).' }) count!: number;
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: { type: 'number' },
+    example: { '5': 29, '4': 6, '3': 1, '2': 0, '1': 0 },
+    description:
+      'Reviews per score, every score from the rating scale maximum (GET /reference-data ratingScaleMax) down to 1, zeros included.',
+  })
+  distribution!: Record<string, number>;
 }
 
 export class SlotsQuery {

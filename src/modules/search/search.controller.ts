@@ -11,9 +11,10 @@ import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import type { Page } from '../../common/pagination/pagination';
-import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
+import { ApiModelResponse } from '../../common/swagger/api-responses';
 import { PageQueryDto } from '../../common/pagination/pagination';
 import {
+  ReviewSummaryView,
   SearchWorkersQuery,
   SlotsQuery,
   WorkerCard,
@@ -25,7 +26,7 @@ import { SearchService } from './search.service';
 /** Worker discovery for customers (FRD FM-03). Read-only. */
 @ApiTags('Search')
 @ApiBearerAuth()
-@ApiExtraModels(WorkerCard)
+@ApiExtraModels(WorkerCard, WorkerReviewView, ReviewSummaryView)
 @RequireUserType('CUSTOMER')
 @Controller({ path: 'search/workers', version: '1' })
 export class SearchController {
@@ -64,17 +65,48 @@ export class SearchController {
     return this.search.searchForCustomer(query, user.userId);
   }
 
+  @Get('count')
+  @ApiOkResponse({ schema: { type: 'object', properties: { total: { type: 'number' } } } })
+  @ApiOperation({
+    summary: 'How many workers match the filters (for "Show N workers")',
+    description:
+      'Takes the same query as GET /search/workers (page, limit and sort are accepted and ignored) and returns { total } using the same eligibility and filters, so it equals meta.total of the search.',
+  })
+  count(
+    @Query() query: SearchWorkersQuery,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ total: number }> {
+    return this.search.countForCustomer(query, user.userId);
+  }
+
   @Get(':workerId/ratings')
-  @ApiPageResponse(WorkerReviewView)
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      required: ['data', 'meta', 'summary'],
+      properties: {
+        data: { type: 'array', items: { $ref: getSchemaPath(WorkerReviewView) } },
+        meta: {
+          type: 'object',
+          properties: {
+            page: { type: 'number' },
+            limit: { type: 'number' },
+            total: { type: 'number' },
+          },
+        },
+        summary: { $ref: getSchemaPath(ReviewSummaryView) },
+      },
+    },
+  })
   @ApiOperation({
     summary: "A worker's reviews (paginated, newest first)",
     description:
-      'Score, comment, createdAt and the reviewer first name only. Reviews hidden by moderation are not listed. 404 WORKER_NOT_FOUND exactly as for the profile (unknown or not visible to customers). `meta.total` is the number of visible reviews.',
+      'Score, comment, createdAt and the reviewer first name only. Reviews hidden by moderation are not listed. 404 WORKER_NOT_FOUND exactly as for the profile (unknown or not visible to customers). `meta.total` is the number of visible reviews. `summary` ({ average, count, distribution }) is returned on every page. Paging: `?page=N&limit=M` (page starts at 1); the next page exists while `page * limit < meta.total`, and the list has ended when that is false or `data` is empty.',
   })
   reviews(
     @Param('workerId', ParseUUIDPipe) workerId: string,
     @Query() query: PageQueryDto,
-  ): Promise<Page<WorkerReviewView>> {
+  ): Promise<Page<WorkerReviewView> & { summary: ReviewSummaryView }> {
     return this.search.listReviews(workerId, query);
   }
 

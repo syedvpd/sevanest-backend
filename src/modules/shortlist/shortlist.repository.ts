@@ -40,22 +40,12 @@ export class ShortlistRepository {
     return result.count;
   }
 
-  async list(
-    customerUserId: string,
-    skip: number,
-    take: number,
-  ): Promise<{ items: Array<{ workerId: string; createdAt: Date }>; total: number }> {
-    const where = { customerUserId };
-    const [items, total] = await Promise.all([
-      this.prisma.customerShortlistItem.findMany({
-        where,
-        select: { workerId: true, createdAt: true },
-        orderBy: [{ createdAt: 'desc' }, { workerId: 'desc' }],
-        skip,
-        take,
-      }),
-      this.prisma.customerShortlistItem.count({ where }),
-    ]);
-    return { items, total };
+  /** Every entry of the customer, newest first (the size is capped by MAX_SHORTLIST_ENTRIES, so no paging in SQL is needed). */
+  list(customerUserId: string): Promise<Array<{ workerId: string; createdAt: Date }>> {
+    return this.prisma.customerShortlistItem.findMany({
+      where: { customerUserId },
+      select: { workerId: true, createdAt: true },
+      orderBy: [{ createdAt: 'desc' }, { workerId: 'desc' }],
+    });
   }
 }

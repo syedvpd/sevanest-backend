@@ -89,7 +89,11 @@ export class InterviewRepository {
 
   async listForCustomer(
     customerUserId: string,
-    filter: { status?: InterviewStatusValue; type?: InterviewTypeValue },
+    filter: {
+      status?: InterviewStatusValue;
+      type?: InterviewTypeValue;
+      scope?: 'upcoming' | 'past';
+    },
     skip: number,
     take: number,
   ): Promise<{ items: InterviewRecord[]; total: number }> {
@@ -97,8 +101,27 @@ export class InterviewRepository {
       booking: { customerUserId },
       ...(filter.status ? { status: filter.status } : {}),
       ...(filter.type ? { type: filter.type } : {}),
+      ...(filter.scope === 'upcoming' ? { status: { in: OPEN_STATUSES } } : {}),
+      ...(filter.scope === 'past' ? { status: { notIn: OPEN_STATUSES } } : {}),
     };
-    return this.page(where, skip, take);
+    // Upcoming: agreed times first (soonest), then requests still waiting by the time asked for.
+    const orderBy: Prisma.InterviewTrialOrderByWithRelationInput[] | undefined =
+      filter.scope === 'upcoming'
+        ? [{ scheduledAt: { sort: 'asc', nulls: 'last' } }, { preferredAt: 'asc' }, { id: 'asc' }]
+        : undefined;
+    return this.page(where, skip, take, orderBy);
+  }
+
+  /** All of the customer's sessions split into open (upcoming) and closed (past), whatever the page or filter. */
+  async countsForCustomer(
+    customerUserId: string,
+  ): Promise<{ upcoming: number; past: number; total: number }> {
+    const booking = { customerUserId };
+    const [upcoming, total] = await Promise.all([
+      this.prisma.interviewTrial.count({ where: { booking, status: { in: OPEN_STATUSES } } }),
+      this.prisma.interviewTrial.count({ where: { booking } }),
+    ]);
+    return { upcoming, past: total - upcoming, total };
   }
 
   /** The customer's next agreed interview or trial that has not happened yet. */
@@ -129,11 +152,15 @@ export class InterviewRepository {
     where: Prisma.InterviewTrialWhereInput,
     skip: number,
     take: number,
+    orderBy: Prisma.InterviewTrialOrderByWithRelationInput[] = [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
   ): Promise<{ items: InterviewRecord[]; total: number }> {
     const [items, total] = await Promise.all([
       this.prisma.interviewTrial.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy,
         skip,
         take,
       }),

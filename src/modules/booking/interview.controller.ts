@@ -10,7 +10,14 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -23,7 +30,10 @@ import {
   AdminInterviewListQuery,
   CancelInterviewDto,
   CompleteInterviewDto,
+  CustomerInterviewListQuery,
+  CustomerInterviewView,
   DeclineInterviewDto,
+  InterviewCountsView,
   InterviewListQuery,
   InterviewView,
   ProposeInterviewDto,
@@ -80,15 +90,35 @@ export class CustomerInterviewsController {
   }
 
   @Get()
-  @ApiPageResponse(InterviewView)
+  @ApiExtraModels(CustomerInterviewView, InterviewCountsView)
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      required: ['data', 'meta', 'counts'],
+      properties: {
+        data: { type: 'array', items: { $ref: getSchemaPath(CustomerInterviewView) } },
+        meta: {
+          type: 'object',
+          properties: {
+            page: { type: 'number' },
+            limit: { type: 'number' },
+            total: { type: 'number' },
+          },
+        },
+        counts: { $ref: getSchemaPath(InterviewCountsView) },
+      },
+    },
+  })
   @ApiOperation({
     summary:
-      'All my interviews and trials across bookings (newest first, paginated; filter by status or type)',
+      'All my interviews and trials across bookings (paginated; filter by status, type or scope)',
+    description:
+      'Each item carries the `worker` summary. `scope=upcoming|past` filters open vs closed sessions (upcoming: soonest agreed time first). `counts` ({ upcoming, past, total }) always covers all my sessions, independent of the page and filters; `meta.total` is the size of the filtered list.',
   })
   list(
-    @Query() query: InterviewListQuery,
+    @Query() query: CustomerInterviewListQuery,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Page<InterviewView>> {
+  ): Promise<Page<CustomerInterviewView> & { counts: InterviewCountsView }> {
     return this.interviews.pageForCustomer(user.userId, query);
   }
 

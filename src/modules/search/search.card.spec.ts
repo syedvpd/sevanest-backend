@@ -20,6 +20,8 @@ describe('toCard', () => {
     expect(Object.keys(card).sort()).toEqual(
       [
         'availability',
+        'canRequestInterview',
+        'cannotRequestReason',
         'categories',
         'engagementPreference',
         'experienceMonths',

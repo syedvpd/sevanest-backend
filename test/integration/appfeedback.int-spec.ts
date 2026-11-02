@@ -72,6 +72,18 @@ describe('Customer app gaps (integration)', () => {
       );
     });
 
+    it('returns a summary with the average, count and a per-score distribution', async () => {
+      const res = await list(workerId);
+      const body = res.body as {
+        summary: { average: number; count: number; distribution: Record<string, number> };
+      };
+      expect(body.summary.average).toBe(4);
+      expect(body.summary.count).toBe(1);
+      expect(body.summary.distribution['4']).toBe(1);
+      expect(Object.keys(body.summary.distribution).length).toBeGreaterThanOrEqual(5);
+      expect(Object.values(body.summary.distribution).reduce((x, y) => x + y, 0)).toBe(1);
+    });
+
     it('agrees with the aggregate on the profile and card', async () => {
       const profile = await as(api, customer).get(`${SEARCH}/${workerId}`);
       expect((profile.body as { rating: unknown }).rating).toEqual({ average: 4, count: 1 });

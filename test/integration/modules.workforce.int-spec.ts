@@ -547,6 +547,8 @@ describe('Workforce journey and contract (integration)', () => {
       expect(props('WorkerCard')).toEqual(
         [
           'availability',
+          'canRequestInterview',
+          'cannotRequestReason',
           'categories',
           'engagementPreference',
           'experienceMonths',

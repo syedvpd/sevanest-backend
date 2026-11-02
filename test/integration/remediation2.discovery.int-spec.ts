@@ -68,6 +68,8 @@ describe('Worker profile, shortlist and photo (integration)', () => {
       expect(Object.keys(res.body as object).sort()).toEqual(
         [
           'availability',
+          'canRequestInterview',
+          'cannotRequestReason',
           'categories',
           'engagementPreference',
           'experienceMonths',

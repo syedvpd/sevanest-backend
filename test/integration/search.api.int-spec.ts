@@ -281,6 +281,23 @@ describe('Search API (integration)', () => {
     });
   });
 
+  describe('count', () => {
+    it('equals meta.total of the search for the same filters, ignoring page and limit', async () => {
+      const found = await search(`${base()}&language=hi`);
+      const total = (found.body as { meta: { total: number } }).meta.total;
+      expect(total).toBeGreaterThan(0);
+      const res = await as(api, customer).get(`${S}/count?${base()}&language=hi&page=9&limit=1`);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ total });
+    });
+
+    it('answers 0 when nobody matches and validates like the search', async () => {
+      const none = await as(api, customer).get(`${S}/count?${base()}&minExperienceMonths=1200`);
+      expect(none.body).toEqual({ total: 0 });
+      expect((await as(api, customer).get(`${S}/count`)).status).toBe(400);
+    });
+  });
+
   describe('authorization and privacy', () => {
     it('is for customers only', async () => {
       const worker = await onboardWorker(api, { areaIds: [areaA.id] });
@@ -297,6 +314,8 @@ describe('Search API (integration)', () => {
       expect(Object.keys(card as object).sort()).toEqual(
         [
           'availability',
+          'canRequestInterview',
+          'cannotRequestReason',
           'categories',
           'engagementPreference',
           'experienceMonths',

@@ -9,13 +9,19 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiPageResponse } from '../../common/swagger/api-responses';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import type { Page } from '../../common/pagination/pagination';
-import { ShortlistItemView, ShortlistQuery } from './dto/shortlist.dto';
+import { ShortlistCategoryCountView, ShortlistItemView, ShortlistQuery } from './dto/shortlist.dto';
 import { ShortlistService } from './shortlist.service';
 
 /** The signed-in customer's own shortlist (FR-WD-005). */
@@ -27,16 +33,37 @@ export class ShortlistController {
   constructor(private readonly shortlist: ShortlistService) {}
 
   @Get()
-  @ApiPageResponse(ShortlistItemView)
+  @ApiExtraModels(ShortlistItemView, ShortlistCategoryCountView)
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      required: ['data', 'meta', 'categoryCounts'],
+      properties: {
+        data: { type: 'array', items: { $ref: getSchemaPath(ShortlistItemView) } },
+        meta: {
+          type: 'object',
+          properties: {
+            page: { type: 'number' },
+            limit: { type: 'number' },
+            total: { type: 'number' },
+          },
+        },
+        categoryCounts: {
+          type: 'array',
+          items: { $ref: getSchemaPath(ShortlistCategoryCountView) },
+        },
+      },
+    },
+  })
   @ApiOperation({
-    summary: 'My shortlisted workers, newest first (paginated)',
+    summary: 'My shortlisted workers, newest first (paginated; optional category filter)',
     description:
-      'Each entry carries the customer-safe card when the worker is still visible (`available: true`), otherwise only the id.',
+      'Each entry carries the customer-safe card when the worker is still visible (`available: true`), otherwise only the id. `category` keeps only workers offering that category; `meta.total` is then the size of the filtered list. `categoryCounts` ([{ code, name, count }]) covers the whole shortlist, independent of the page and the filter.',
   })
   list(
     @Query() query: ShortlistQuery,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Page<ShortlistItemView>> {
+  ): Promise<Page<ShortlistItemView> & { categoryCounts: ShortlistCategoryCountView[] }> {
     return this.shortlist.list(user.userId, query);
   }
 

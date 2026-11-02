@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { DomainException } from '../../common/errors/domain.exception';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { SearchService } from '../search/search.service';
-import { ShortlistItemView, ShortlistQuery } from './dto/shortlist.dto';
+import { ShortlistCategoryCountView, ShortlistItemView, ShortlistQuery } from './dto/shortlist.dto';
 import { ShortlistRepository } from './shortlist.repository';
 
 export const ShortlistErrorCode = {
@@ -56,12 +56,28 @@ export class ShortlistService {
     await this.repository.remove(customerUserId, workerId);
   }
 
-  async list(customerUserId: string, query: ShortlistQuery): Promise<Page<ShortlistItemView>> {
-    const { items, total } = await this.repository.list(
+  async list(
+    customerUserId: string,
+    query: ShortlistQuery,
+  ): Promise<Page<ShortlistItemView> & { categoryCounts: ShortlistCategoryCountView[] }> {
+    const all = await this.repository.list(customerUserId);
+    const categories = await this.search.visibleCategories(
+      all.map((i) => i.workerId),
       customerUserId,
-      skipFor(query),
-      query.limit,
     );
+    // Counts cover the whole shortlist (not the page or the category filter), so every chip is right from the first page.
+    const counts = new Map<string, ShortlistCategoryCountView>();
+    for (const list of categories.values()) {
+      for (const c of list) {
+        const entry = counts.get(c.code) ?? { code: c.code, name: c.name, count: 0 };
+        entry.count += 1;
+        counts.set(c.code, entry);
+      }
+    }
+    const matching = query.category
+      ? all.filter((i) => categories.get(i.workerId)?.some((c) => c.code === query.category))
+      : all;
+    const items = matching.slice(skipFor(query), skipFor(query) + query.limit);
     const cards = await this.search.getVisibleCards(
       items.map((i) => i.workerId),
       customerUserId,
@@ -76,7 +92,8 @@ export class ShortlistService {
           worker,
         };
       }),
-      meta: { page: query.page, limit: query.limit, total },
+      meta: { page: query.page, limit: query.limit, total: matching.length },
+      categoryCounts: [...counts.values()].sort((x, y) => x.name.localeCompare(y.name)),
     };
   }
 }

@@ -257,6 +257,44 @@ export class SearchRepository {
     return { items, total: totals[0]?.total ?? 0 };
   }
 
+  /** Number of visible (not moderated away) reviews of one worker per score. */
+  async reviewDistribution(workerId: string): Promise<Map<number, number>> {
+    const rows = await this.prisma.$queryRaw<Array<{ score: number; n: number }>>(Prisma.sql`
+      SELECT r.score::int AS score, count(*)::int AS n FROM ratings r
+      WHERE r.worker_id = ${workerId}::uuid AND r.status = 'VISIBLE' GROUP BY r.score`);
+    return new Map(rows.map((r) => [r.score, r.n]));
+  }
+
+  /** Enabled categories of those of these workers that are visible to the customer (others are absent). One statement. */
+  async visibleCategories(
+    ids: string[],
+    forCustomerUserId: string,
+  ): Promise<Map<string, Array<{ code: string; name: string }>>> {
+    const out = new Map<string, Array<{ code: string; name: string }>>();
+    if (ids.length === 0) return out;
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; code: string; name: string }>>(
+      Prisma.sql`
+      SELECT wp.id, sc.code, sc.name
+      FROM worker_profiles wp
+      JOIN users u ON u.id = wp.user_id
+      LEFT JOIN worker_skills ws ON ws.worker_id = wp.id
+      LEFT JOIN service_categories sc ON sc.id = ws.category_id AND sc.is_enabled
+      WHERE wp.id = ANY(${ids}::uuid[])
+        AND wp.onboarding_status = 'SUBMITTED'
+        AND u.type = 'WORKER' AND u.status = 'ACTIVE'
+        AND wp.blacklisted_at IS NULL
+        AND ${activeWorkerCondition('wp.id')}
+        AND ${this.notBlocked(forCustomerUserId)}
+      ORDER BY sc.code`,
+    );
+    for (const r of rows) {
+      const list = out.get(r.id) ?? [];
+      if (r.code) list.push({ code: r.code, name: r.name });
+      out.set(r.id, list);
+    }
+    return out;
+  }
+
   /** Aggregate rating of each given worker (workers with no rating are absent). */
   async ratingSummaries(ids: string[]): Promise<Map<string, { sum: number; count: number }>> {
     if (ids.length === 0) return new Map();

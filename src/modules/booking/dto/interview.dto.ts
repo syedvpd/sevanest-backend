@@ -129,6 +129,19 @@ export class InterviewListQuery extends PageQueryDto {
   type?: InterviewTypeValue;
 }
 
+export const INTERVIEW_SCOPES = ['upcoming', 'past'] as const;
+
+export class CustomerInterviewListQuery extends InterviewListQuery {
+  @ApiPropertyOptional({
+    enum: INTERVIEW_SCOPES,
+    description:
+      'upcoming = still open (REQUESTED, CONFIRMED, RESCHEDULE_PROPOSED), ordered by agreed time (soonest first), then requests by the time asked for. past = closed (DECLINED, CANCELLED, COMPLETED), newest first. Without it: everything, newest first.',
+  })
+  @IsOptional()
+  @IsIn(INTERVIEW_SCOPES)
+  scope?: (typeof INTERVIEW_SCOPES)[number];
+}
+
 export class AdminInterviewListQuery extends InterviewListQuery {
   @ApiPropertyOptional()
   @IsOptional()
@@ -147,7 +160,13 @@ export const CUSTOMER_INTERVIEW_ACTIONS = [
 export class InterviewTimelineEntry {
   @ApiProperty({ example: 'Requested' }) title!: string;
   @ApiProperty({ enum: ['done', 'current', 'upcoming', 'failed'] }) state!: string;
-  @ApiProperty({ nullable: true, type: Date }) at!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description:
+      'When the step happened. Always set for done and failed steps (for "Confirmed" it is the agreed interview time); null for current and upcoming steps that have not happened yet.',
+  })
+  at!: Date | null;
 }
 
 export class InterviewView {
@@ -160,6 +179,12 @@ export class InterviewView {
   @ApiProperty() preferredAt!: Date;
   @ApiProperty({ nullable: true, description: 'The agreed time.', type: Date })
   scheduledAt!: Date | null;
+  @ApiProperty({
+    example: 60,
+    description:
+      'Length of one interview or trial in minutes: the slot length also returned as `slotMinutes` by GET /search/workers/{id}/slots (always present there). Not negotiated per session.',
+  })
+  durationMinutes!: number;
   @ApiProperty({
     nullable: true,
     description: 'A different time proposed, waiting for an answer.',
@@ -187,4 +212,30 @@ export class InterviewView {
     description: 'Derived from the recorded times, oldest first.',
   })
   timeline!: InterviewTimelineEntry[];
+}
+
+export class InterviewWorkerView {
+  @ApiProperty() workerId!: string;
+  @ApiProperty({ example: 'Ramesh K.', description: 'First name and last initial.' })
+  name!: string;
+  @ApiProperty({ example: 'RK' }) initials!: string;
+  @ApiProperty({ nullable: true, type: String }) photoUrl!: string | null;
+}
+
+export class CustomerInterviewView extends InterviewView {
+  @ApiProperty({
+    type: InterviewWorkerView,
+    nullable: true,
+    description: 'The worker of the booking; null only when the worker record no longer exists.',
+  })
+  worker!: InterviewWorkerView | null;
+}
+
+export class InterviewCountsView {
+  @ApiProperty({ description: 'Open sessions: REQUESTED, CONFIRMED, RESCHEDULE_PROPOSED.' })
+  upcoming!: number;
+  @ApiProperty({ description: 'Closed sessions: DECLINED, CANCELLED, COMPLETED.' })
+  past!: number;
+  @ApiProperty({ description: 'All my sessions (upcoming + past), whatever the filters.' })
+  total!: number;
 }

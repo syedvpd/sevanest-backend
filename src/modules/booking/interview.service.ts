@@ -12,7 +12,10 @@ import {
   CancelInterviewDto,
   CompleteInterviewDto,
   DeclineInterviewDto,
+  CustomerInterviewListQuery,
+  CustomerInterviewView,
   INTERVIEW_STATUS_LABELS,
+  InterviewCountsView,
   InterviewListQuery,
   InterviewView,
   type InterviewStatusValue,
@@ -20,6 +23,7 @@ import {
   RequestInterviewDto,
   RescheduleInterviewDto,
 } from './dto/interview.dto';
+import { INTERVIEW_SLOT_MINUTES } from '../search/search.service';
 import { BookingRecord, BookingRepository } from './booking.repository';
 import { BookingActor, BookingErrorCode, BookingService } from './booking.service';
 import { InterviewRecord, InterviewRepository } from './interview.repository';
@@ -69,6 +73,7 @@ export function toInterviewView(r: InterviewRecord): InterviewView {
     requestedBy: r.requestedByKind,
     preferredAt: r.preferredAt,
     scheduledAt: r.scheduledAt,
+    durationMinutes: INTERVIEW_SLOT_MINUTES,
     proposedAt: r.proposedAt,
     proposedBy: r.proposedByKind,
     note: r.note,
@@ -120,16 +125,41 @@ export class InterviewService {
     return (await this.repo.listForBooking(bookingId)).map(toInterviewView);
   }
 
-  async pageForCustomer(userId: string, query: InterviewListQuery): Promise<Page<InterviewView>> {
-    const { items, total } = await this.repo.listForCustomer(
-      userId,
-      { status: query.status, type: query.type },
-      skipFor(query),
-      query.limit,
-    );
+  async pageForCustomer(
+    userId: string,
+    query: CustomerInterviewListQuery,
+  ): Promise<Page<CustomerInterviewView> & { counts: InterviewCountsView }> {
+    const [{ items, total }, counts] = await Promise.all([
+      this.repo.listForCustomer(
+        userId,
+        { status: query.status, type: query.type, scope: query.scope },
+        skipFor(query),
+        query.limit,
+      ),
+      this.repo.countsForCustomer(userId),
+    ]);
+    // Two batched look-ups for the whole page (bookings, then workers), never one per row.
+    const bookings = await this.bookingRepo.findManyByIds([
+      ...new Set(items.map((i) => i.bookingId)),
+    ]);
+    const workerOf = new Map(bookings.map((b) => [b.id, b.workerId]));
+    const displays = await this.bookings.workerDisplays([
+      ...new Set([...workerOf.values()].filter((id): id is string => !!id)),
+    ]);
     return {
-      data: items.map(toInterviewView),
+      data: items.map((i) => {
+        const id = workerOf.get(i.bookingId);
+        const d = id ? displays.get(id) : undefined;
+        return {
+          ...toInterviewView(i),
+          worker:
+            id && d
+              ? { workerId: id, name: d.name, initials: d.initials, photoUrl: d.photoUrl }
+              : null,
+        };
+      }),
       meta: { page: query.page, limit: query.limit, total },
+      counts,
     };
   }
 
