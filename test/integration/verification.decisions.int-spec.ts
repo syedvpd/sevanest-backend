@@ -638,6 +638,143 @@ describe('Verification decisions: reasons, ownership, release, notes, SLA, sign-
     });
   });
 
+  describe('worker list shows the authoritative verification state', () => {
+    it('returns the lifecycle state per worker, filters by activated, and pages with an accurate total', async () => {
+      const row = async (workerId: string) => {
+        const res = await as(api, admin).get(`${W}?limit=100&name=Ramesh`).expect(200);
+        // The whole directory is paged below; here a direct lookup by mobile keeps this test independent of other rows.
+        const user = await api.prisma.workerProfile.findUniqueOrThrow({
+          where: { id: workerId },
+          select: { user: { select: { mobile: true } } },
+        });
+        const one = await as(api, admin)
+          .get(`${W}?mobile=${encodeURIComponent(user.user.mobile!)}`)
+          .expect(200);
+        expect(res.status).toBe(200);
+        expect(one.body.data).toHaveLength(1);
+        return one.body.data[0] as Record<string, unknown>;
+      };
+
+      const w = await worker();
+      expect(await row(w.workerId)).toMatchObject({
+        applicationStatus: 'SUBMITTED',
+        verificationLevel: 'NOT_STARTED',
+        isFullyVerified: false,
+        signedOffAt: null,
+        activatedAt: null,
+        matchingEligible: false,
+        onboardingStatus: 'SUBMITTED',
+      });
+
+      const draft = await onboardWorker(api, { areaIds: [areaId], submit: false });
+      expect(await row(draft.workerId)).toMatchObject({
+        applicationStatus: 'DRAFT',
+        verificationLevel: 'NOT_STARTED',
+      });
+
+      const check = await submitted('IDENTITY', w);
+      expect(await row(w.workerId)).toMatchObject({
+        applicationStatus: 'UNDER_REVIEW',
+        verificationLevel: 'IN_PROGRESS',
+      });
+      await as(api, reviewerA).post(`${A}/checks/${check.checkId}/start-review`).expect(200);
+      await as(api, reviewerA).post(`${A}/checks/${check.checkId}/approve`, {}).expect(200);
+      // Every required check approved, still not signed off: verified, not live, not "pending KYC".
+      expect(await row(w.workerId)).toMatchObject({
+        applicationStatus: 'UNDER_REVIEW',
+        verificationLevel: 'VERIFIED',
+        isFullyVerified: true,
+        signedOffAt: null,
+        matchingEligible: false,
+      });
+      await as(api, supervisor).post(`${W}/${w.workerId}/verification/sign-off`, {}).expect(200);
+      const signed = await row(w.workerId);
+      expect(signed).toMatchObject({
+        applicationStatus: 'VERIFIED',
+        isFullyVerified: true,
+        activatedAt: null,
+        matchingEligible: false,
+      });
+      expect(signed.signedOffAt).not.toBeNull();
+      await as(api, w)
+        .put('/api/v1/workers/me/criminal-declaration', {
+          hasCriminalRecord: false,
+          accepted: true,
+        })
+        .expect(200);
+      await as(api, supervisor).post(`${W}/${w.workerId}/activate`, {}).expect(200);
+      const live = await row(w.workerId);
+      expect(live).toMatchObject({
+        applicationStatus: 'ACTIVE',
+        verificationLevel: 'VERIFIED',
+        isFullyVerified: true,
+        matchingEligible: true,
+        accountStatus: 'ACTIVE',
+      });
+      expect(live.activatedAt).not.toBeNull();
+
+      // The list agrees with the dossier, and a suspended account is no longer eligible.
+      expect((await dossier(w.workerId)).applicationStatus).toBe(live.applicationStatus);
+      await as(api, admin)
+        .patch(`/api/v1/admin/users/${w.userId}/status`, { status: 'SUSPENDED' })
+        .expect(200);
+      expect(await row(w.workerId)).toMatchObject({
+        accountStatus: 'SUSPENDED',
+        matchingEligible: false,
+        applicationStatus: 'ACTIVE',
+      });
+      await as(api, admin)
+        .patch(`/api/v1/admin/users/${w.userId}/status`, { status: 'ACTIVE' })
+        .expect(200);
+
+      // Filters and paging: verified and activated combine; the total counts every match, not one page.
+      const yes = await as(api, admin)
+        .get(`${W}?verified=true&activated=true&limit=1&page=1`)
+        .expect(200);
+      expect(yes.body.meta.limit).toBe(1);
+      expect(yes.body.meta.total).toBeGreaterThanOrEqual(1);
+      expect(yes.body.data).toHaveLength(1);
+      expect(yes.body.data[0]).toMatchObject({ isFullyVerified: true });
+      expect(yes.body.data[0].activatedAt).not.toBeNull();
+      const ids = new Set<string>();
+      let page = 1;
+      for (;;) {
+        const res = await as(api, admin)
+          .get(`${W}?activated=true&limit=2&page=${page}`)
+          .expect(200);
+        for (const item of res.body.data as Array<{ id: string; activatedAt: string | null }>) {
+          expect(item.activatedAt).not.toBeNull();
+          ids.add(item.id);
+        }
+        if (page * 2 >= res.body.meta.total) {
+          expect(ids.size).toBe(res.body.meta.total);
+          break;
+        }
+        page++;
+      }
+      expect(ids.has(w.workerId)).toBe(true);
+      const not = await as(api, admin).get(`${W}?activated=false&limit=100`).expect(200);
+      expect(not.body.data.some((x: { id: string }) => x.id === w.workerId)).toBe(false);
+      expect((await as(api, admin).get(`${W}?activated=maybe`)).status).toBe(400);
+    });
+
+    it('keeps final sign-off and activation away from a Verification Executive', async () => {
+      const executive = await loginAdminWithPermissions(api, [
+        'worker.view',
+        'verification.review',
+        'verification.document.view',
+        'verification.decide',
+      ]);
+      const w = await worker();
+      for (const path of ['verification/sign-off', 'activate']) {
+        const res = await as(api, executive).post(`${W}/${w.workerId}/${path}`, {});
+        expect(res.status).toBe(403);
+      }
+      const dossierRes = await as(api, executive).get(`${W}/${w.workerId}/verification`);
+      expect(dossierRes.status).toBe(200);
+    });
+  });
+
   describe('permissions and roles (D-90)', () => {
     it('registers the new permission keys and the Verification Supervisor role with its starting set', async () => {
       const codes = (await api.prisma.permission.findMany({ select: { code: true } })).map(

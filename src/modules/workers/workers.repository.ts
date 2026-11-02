@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type WorkerOnboardingStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
-import { verifiedWorkerCondition } from '../verification/verification-eligibility';
+import {
+  verificationFactColumns,
+  verifiedWorkerCondition,
+} from '../verification/verification-eligibility';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -135,6 +138,8 @@ export interface WorkerListFilter {
   areaId?: string;
   minRating?: number;
   verified?: boolean;
+  /** true = activated by operations (live), false = not yet. */
+  activated?: boolean;
 }
 
 export type ProfileScalarUpdate = Partial<
@@ -314,6 +319,35 @@ export class WorkersRepository {
       WHERE id = ${id}::uuid AND application_reference IS NULL`;
   }
 
+  /** The verification facts of a page of workers in one statement (see verificationFactColumns). */
+  async verificationFacts(ids: string[]): Promise<
+    Map<
+      string,
+      {
+        verified: boolean;
+        live: boolean;
+        started: boolean;
+        rejected: boolean;
+        disqualified: boolean;
+      }
+    >
+  > {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        verified: boolean;
+        live: boolean;
+        started: boolean;
+        rejected: boolean;
+        disqualified: boolean;
+      }>
+    >(Prisma.sql`
+      SELECT wp.id, ${verificationFactColumns('wp.id')}
+      FROM worker_profiles wp WHERE wp.id = ANY(${ids}::uuid[])`);
+    return new Map(rows.map((r) => [r.id, r]));
+  }
+
   /** Number of preferred service areas (activation needs at least one). */
   async areaCount(id: string, db: Db = this.prisma): Promise<number> {
     const rows = await db.$queryRaw<Array<{ n: number }>>(
@@ -370,6 +404,9 @@ export class WorkersRepository {
     }
     const where: Prisma.WorkerProfileWhereInput = {
       ...(ratedIds ? { id: { in: ratedIds } } : {}),
+      ...(filter.activated === undefined
+        ? {}
+        : { activatedAt: filter.activated ? { not: null } : null }),
       ...(verifiedIds
         ? { AND: [{ id: filter.verified ? { in: verifiedIds } : { notIn: verifiedIds } }] }
         : {}),

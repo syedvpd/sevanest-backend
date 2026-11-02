@@ -1,4 +1,5 @@
 import { Prisma } from '../../generated/prisma/client';
+import { TERMINAL_REJECTION_CODES } from './verification-policy';
 
 /** Today's date in India: the calendar the re-check dates (FM-05 "expiry / recheck date") are expressed in. */
 export const INDIA_TODAY_SQL = Prisma.sql`(now() AT TIME ZONE 'Asia/Kolkata')::date`;
@@ -21,6 +22,27 @@ export function activeWorkerCondition(workerIdColumn: string): Prisma.Sql {
         AND aw.verification_signed_off_at IS NOT NULL
     )
   )`;
+}
+
+/**
+ * The verification facts the admin worker list shows, as SQL columns for the worker `workerIdColumn` (a column reference, never user
+ * input): verified (the definition above), live (verified AND signed off AND activated), started (any check submitted), rejected
+ * (any check rejected) and disqualified (a check rejected with a disqualifying code). Owned here so Workers never re-implements them.
+ */
+export function verificationFactColumns(workerIdColumn: string): Prisma.Sql {
+  if (!ALIAS.test(workerIdColumn)) {
+    throw new Error('verificationFactColumns expects a column reference');
+  }
+  const worker = Prisma.raw(workerIdColumn);
+  const terminal = Prisma.join(
+    [...TERMINAL_REJECTION_CODES].map((code) => Prisma.sql`${code}::"VerificationRejectionCode"`),
+  );
+  return Prisma.sql`
+    ${verifiedWorkerCondition(workerIdColumn)} AS verified,
+    ${activeWorkerCondition(workerIdColumn)} AS live,
+    EXISTS (SELECT 1 FROM worker_verification_checks vc WHERE vc.worker_id = ${worker} AND vc.status <> 'NOT_SUBMITTED') AS started,
+    EXISTS (SELECT 1 FROM worker_verification_checks vc WHERE vc.worker_id = ${worker} AND vc.status = 'REJECTED') AS rejected,
+    EXISTS (SELECT 1 FROM worker_verification_checks vc WHERE vc.worker_id = ${worker} AND vc.status = 'REJECTED' AND vc.rejection_code IN (${terminal})) AS disqualified`;
 }
 
 const ALIAS = /^[a-z][a-z_]*(\.[a-z][a-z_]*)?$/;

@@ -635,14 +635,20 @@ describe('Workers API (integration)', () => {
       for (const row of page.body.data as Array<Record<string, unknown>>) {
         expect(Object.keys(row).sort()).toEqual([
           'accountStatus',
+          'activatedAt',
           'applicationReference',
+          'applicationStatus',
           'categories',
           'createdAt',
           'id',
+          'isFullyVerified',
+          'matchingEligible',
           'mobile',
           'name',
           'onboardingStatus',
+          'signedOffAt',
           'userId',
+          'verificationLevel',
         ]);
         expect(row.mobile).toMatch(/^\+91\*{6}\d{4}$/);
       }

@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { deriveApplicationStatus } from '../verification/verification-policy';
 import { MAPS_PROVIDER, type MapsProvider } from '../../integrations/maps/maps-provider.interface';
 import type { Prisma } from '../../generated/prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
@@ -521,30 +522,54 @@ export class WorkersService {
         areaId: query.areaId,
         minRating: query.minRating,
         verified: query.verified,
+        activated: query.activated,
         ...createdRange(query.createdFrom, query.createdTo),
       },
       skipFor(query),
       query.limit,
     );
-    const [users, categories] = await Promise.all([
+    const [users, categories, facts] = await Promise.all([
       this.users.findManyByIds(items.map((w) => w.userId)),
       this.categoryRefs(items.flatMap((w) => w.categoryIds)),
+      this.repository.verificationFacts(items.map((w) => w.id)),
     ]);
     const userById = new Map(users.map((u) => [u.id, u]));
     return {
-      data: items.map((worker) => ({
-        id: worker.id,
-        userId: worker.userId,
-        name: worker.name,
-        mobile: maskMobile(userById.get(worker.userId)?.mobile),
-        onboardingStatus: worker.onboardingStatus,
-        applicationReference: worker.applicationReference,
-        accountStatus: userById.get(worker.userId)?.status ?? 'ACTIVE',
-        categories: worker.categoryIds
-          .map((id) => categories.get(id))
-          .filter((c): c is WorkerCategoryRef => c !== undefined),
-        createdAt: worker.createdAt,
-      })),
+      data: items.map((worker) => {
+        const f = facts.get(worker.id);
+        const accountStatus = userById.get(worker.userId)?.status ?? 'ACTIVE';
+        return {
+          id: worker.id,
+          userId: worker.userId,
+          name: worker.name,
+          mobile: maskMobile(userById.get(worker.userId)?.mobile),
+          onboardingStatus: worker.onboardingStatus,
+          applicationReference: worker.applicationReference,
+          applicationStatus: deriveApplicationStatus({
+            submitted: worker.onboardingStatus === 'SUBMITTED',
+            disqualified: f?.disqualified ?? false,
+            anyRejected: f?.rejected ?? false,
+            anyStarted: f?.started ?? false,
+            fullyVerified: f?.verified ?? false,
+            signedOffAt: worker.signedOffAt,
+            activatedAt: worker.activatedAt,
+          }),
+          verificationLevel: f?.verified ? 'VERIFIED' : f?.started ? 'IN_PROGRESS' : 'NOT_STARTED',
+          isFullyVerified: f?.verified ?? false,
+          signedOffAt: worker.signedOffAt,
+          activatedAt: worker.activatedAt,
+          matchingEligible:
+            (f?.live ?? false) &&
+            worker.onboardingStatus === 'SUBMITTED' &&
+            accountStatus === 'ACTIVE' &&
+            worker.blacklist === null,
+          accountStatus,
+          categories: worker.categoryIds
+            .map((id) => categories.get(id))
+            .filter((c): c is WorkerCategoryRef => c !== undefined),
+          createdAt: worker.createdAt,
+        };
+      }),
       meta: { page: query.page, limit: query.limit, total },
     };
   }

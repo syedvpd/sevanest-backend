@@ -51,6 +51,7 @@ import {
 } from './dto/verification.dto';
 import {
   CLAIM_INACTIVITY_MINUTES,
+  deriveApplicationStatus,
   maskDocumentNumber,
   REJECTION_MESSAGES,
   slaOf,
@@ -1382,23 +1383,20 @@ export class VerificationService {
     signedOffAt: Date | null;
     activatedAt: Date | null;
   }): ApplicationStatus {
-    if (input.onboardingStatus !== 'SUBMITTED') return 'DRAFT';
-    if (
-      input.checks.some(
+    return deriveApplicationStatus({
+      submitted: input.onboardingStatus === 'SUBMITTED',
+      disqualified: input.checks.some(
         (c) =>
           c.status === 'REJECTED' &&
           c.rejectionCode !== null &&
           TERMINAL_REJECTION_CODES.has(c.rejectionCode),
-      )
-    ) {
-      return 'REJECTED';
-    }
-    if (input.level === 'VERIFIED' && input.signedOffAt) {
-      return input.activatedAt ? 'ACTIVE' : 'VERIFIED';
-    }
-    if (input.checks.some((c) => c.status === 'REJECTED')) return 'ACTION_REQUIRED';
-    if (input.checks.some((c) => c.status !== 'NOT_SUBMITTED')) return 'UNDER_REVIEW';
-    return 'SUBMITTED';
+      ),
+      anyRejected: input.checks.some((c) => c.status === 'REJECTED'),
+      anyStarted: input.checks.some((c) => c.status !== 'NOT_SUBMITTED'),
+      fullyVerified: input.level === 'VERIFIED',
+      signedOffAt: input.signedOffAt,
+      activatedAt: input.activatedAt,
+    });
   }
 
   private async requireSubmittedWorker(userId: string) {

@@ -321,6 +321,17 @@ export class AdminWorkerListQuery extends PageQueryDto {
   verified?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'true = only workers activated by operations (live in search and matching); false = the others. Works together with verified and accountStatus.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  activated?: boolean;
+
+  @ApiPropertyOptional({
     example: '2026-11-01',
     description: 'Registered on or after (India date).',
   })
@@ -414,6 +425,48 @@ export class AdminWorkerSummary {
   @ApiProperty({ enum: ['DRAFT', 'SUBMITTED'] }) onboardingStatus!: string;
   @ApiProperty({ nullable: true, type: String, example: 'SEVA00000042' })
   applicationReference!: string | null;
+  @ApiProperty({
+    enum: [
+      'DRAFT',
+      'SUBMITTED',
+      'UNDER_REVIEW',
+      'ACTION_REQUIRED',
+      'VERIFIED',
+      'ACTIVE',
+      'REJECTED',
+    ],
+    description:
+      'Overall status, the same value as applicationStatus on GET /admin/workers/{id}/verification. onboardingStatus above only says whether the profile was submitted.',
+  })
+  applicationStatus!: string;
+  @ApiProperty({
+    enum: ['VERIFIED', 'IN_PROGRESS', 'NOT_STARTED'],
+    description:
+      'Same value as level on the verification dossier: VERIFIED = every required check approved and none due for re-check.',
+  })
+  verificationLevel!: string;
+  @ApiProperty({
+    description:
+      'verificationLevel === VERIFIED (every required check approved). Not the same as being live: see activatedAt.',
+  })
+  isFullyVerified!: boolean;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description: 'Final verification sign-off time. Null = not signed off.',
+  })
+  signedOffAt!: Date | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description: 'Activation time. Null = not activated.',
+  })
+  activatedAt!: Date | null;
+  @ApiProperty({
+    description:
+      'true when the worker can appear in search and matching right now: submitted, verified, signed off, activated, active account, not blacklisted. Category and area are matched per search.',
+  })
+  matchingEligible!: boolean;
   @ApiProperty({ enum: ['ACTIVE', 'SUSPENDED'] }) accountStatus!: string;
   @ApiProperty({ type: [WorkerCategoryRef] }) categories!: WorkerCategoryRef[];
   @ApiProperty() createdAt!: Date;

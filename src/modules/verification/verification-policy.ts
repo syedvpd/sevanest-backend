@@ -100,6 +100,32 @@ export function addBusinessHours(from: Date, hours: number): Date {
 
 export type SlaFlag = 'OVERDUE' | 'STALLED_CLAIM';
 
+export type ApplicationStatusValue =
+  'DRAFT' | 'SUBMITTED' | 'UNDER_REVIEW' | 'ACTION_REQUIRED' | 'VERIFIED' | 'ACTIVE' | 'REJECTED';
+
+/**
+ * The overall worker status (D-90), derived from facts. Used by the dossier and by the admin worker list so both always agree.
+ * DRAFT before the profile is submitted; REJECTED when a check was rejected for a disqualifying reason; VERIFIED / ACTIVE need every
+ * required check approved plus the stored sign-off / activation; ACTION_REQUIRED while a non-disqualifying rejection waits for the
+ * worker; UNDER_REVIEW once any check was submitted; SUBMITTED before that.
+ */
+export function deriveApplicationStatus(input: {
+  submitted: boolean;
+  disqualified: boolean;
+  anyRejected: boolean;
+  anyStarted: boolean;
+  fullyVerified: boolean;
+  signedOffAt: Date | null;
+  activatedAt: Date | null;
+}): ApplicationStatusValue {
+  if (!input.submitted) return 'DRAFT';
+  if (input.disqualified) return 'REJECTED';
+  if (input.fullyVerified && input.signedOffAt) return input.activatedAt ? 'ACTIVE' : 'VERIFIED';
+  if (input.anyRejected) return 'ACTION_REQUIRED';
+  if (input.anyStarted) return 'UNDER_REVIEW';
+  return 'SUBMITTED';
+}
+
 /** SLA view of one check at `now`. Only checks still waiting for a decision can be flagged. */
 export function slaOf(
   check: {
