@@ -75,6 +75,7 @@ describe('Worker profile, shortlist and photo (integration)', () => {
           'languages',
           'name',
           'photo',
+          'photoUrl',
           'rating',
           'serviceAreas',
           'verification',

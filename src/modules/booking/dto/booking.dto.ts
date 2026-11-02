@@ -455,6 +455,12 @@ export class WorkerDisplayView {
       'Short-lived links to the current profile photo (small and large WebP); null when the worker has none or storage is unavailable. Cache by photo.cacheKey.',
   })
   photo!: PhotoLinkView | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Same link as photo.url as one flat field; null without a photo.',
+  })
+  photoUrl!: string | null;
 }
 
 export class BookingRatingView {

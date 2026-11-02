@@ -387,6 +387,8 @@ describe('Customer app gaps, round two (integration)', () => {
         activeBooking: null,
         activeBookingsTotal: 0,
         upcomingInterview: null,
+        todayAttendance: null,
+        topRated: expect.any(Array),
         unreadNotifications: 0,
         shortlistPreview: [],
         shortlistTotal: 0,

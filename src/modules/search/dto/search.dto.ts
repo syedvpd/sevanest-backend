@@ -90,6 +90,9 @@ export class SearchWorkersQuery extends PageQueryDto {
       'A stable ordering by the stated attribute, not a relevance ranking (none is defined). DISTANCE_ASC needs latitude and longitude (the job location) and lists the nearest workers first, using an approximate home location (about 1 km); workers without a known location come last. Unknown values are rejected (400).',
   })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
   @IsIn(['EXPERIENCE_DESC', 'EXPERIENCE_ASC', 'RATING_DESC', 'DISTANCE_ASC'])
   sort: 'EXPERIENCE_DESC' | 'EXPERIENCE_ASC' | 'RATING_DESC' | 'DISTANCE_ASC' = 'EXPERIENCE_DESC';
 
@@ -198,6 +201,43 @@ export class WorkerCard {
   verified!: boolean;
   @ApiProperty({ type: RatingSummaryView, nullable: true }) rating!: RatingSummaryView | null;
   @ApiProperty({ type: PhotoLinkView, nullable: true }) photo!: PhotoLinkView | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Same link as photo.url (small square WebP) for clients that want one flat field; null when the worker has no photo. Permanent when public image storage is configured (D-93), otherwise short-lived: cache by photo.cacheKey.',
+  })
+  photoUrl!: string | null;
+}
+
+/** One entry of Home `topRated`: a best-rated, fully verified worker the customer may see. */
+export class TopRatedWorkerView {
+  @ApiProperty() workerId!: string;
+  @ApiProperty({ nullable: true, type: String, example: 'Lakshmi D.' }) name!: string | null;
+  @ApiProperty({ nullable: true, type: String }) photoUrl!: string | null;
+  @ApiProperty({ type: PhotoLinkView, nullable: true }) photo!: PhotoLinkView | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'Cook',
+    description: 'Name of the worker first category.',
+  })
+  roleName!: string | null;
+  @ApiProperty({
+    description: 'Average score on the scale of GET /reference-data ratingScaleMax, two decimals.',
+  })
+  ratingAverage!: number;
+  @ApiProperty() ratingCount!: number;
+  @ApiProperty({ description: 'Bookings of this worker that ended COMPLETED.' })
+  completedJobs!: number;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Start (at most 120 characters) of the newest visible written review; null when none.',
+  })
+  latestReviewSnippet!: string | null;
+  @ApiProperty({ example: true }) verified!: boolean;
 }
 
 export class WorkerReviewView {

@@ -304,6 +304,7 @@ describe('Search API (integration)', () => {
           'languages',
           'name',
           'photo',
+          'photoUrl',
           'rating',
           'serviceAreas',
           'verification',

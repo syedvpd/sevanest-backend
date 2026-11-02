@@ -120,6 +120,7 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
         initials: 'AV',
         verified: true,
         photo: null,
+        photoUrl: null,
       });
     });
 
@@ -589,6 +590,7 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
         initials: 'RK',
         verified: true,
         photo: null,
+        photoUrl: null,
       });
       expect(detail.workerId).toBe(done.worker.workerId); // the opaque reference stays
       expect((await as(api, me).get(`${B}/${matched.id}`).expect(200)).body.worker).toBeNull();

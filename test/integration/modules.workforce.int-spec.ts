@@ -66,7 +66,16 @@ describe('Module boundaries (static)', () => {
       meta: ['booking', 'legal', 'platform-config', 'safety', 'support', 'search', 'replacement'],
       system: ['users'],
       // Home only composes read calls of other modules for the customer Home screen; nothing depends on it.
-      home: ['booking', 'notifications', 'shortlist', 'users'],
+      home: [
+        'attendance',
+        'availability',
+        'booking',
+        'customers',
+        'notifications',
+        'search',
+        'shortlist',
+        'users',
+      ],
       // History composes Booking (finished bookings) and Payment (money held) for the customer History screen; nothing depends on it.
       history: ['booking', 'payment', 'users'],
       // Existing modules gained leaf dependencies.
@@ -545,6 +554,7 @@ describe('Workforce journey and contract (integration)', () => {
           'languages',
           'name',
           'photo',
+          'photoUrl',
           'rating',
           'serviceAreas',
           'verification',

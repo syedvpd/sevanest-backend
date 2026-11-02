@@ -1,6 +1,7 @@
 import '../support/env-api-integration';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp } from '../support/api-app';
 import { inDays, makeBooking } from '../support/bookings';
+import { SAMPLE_JPEG } from '../support/images';
 import { ShortlistService } from '../../src/modules/shortlist/shortlist.service';
 import {
   approveCheck,
@@ -22,6 +23,8 @@ interface HomeBody {
   activeBookingsTotal: number;
   upcomingInterview: { id: string; worker: Record<string, unknown> | null } | null;
   unreadNotifications: number;
+  todayAttendance: Record<string, unknown> | null;
+  topRated: Array<Record<string, unknown>>;
   shortlistPreview: Array<{
     workerId: string;
     available: boolean;
@@ -83,6 +86,8 @@ describe('Customer home and shortlist (integration)', () => {
         activeBooking: null,
         activeBookingsTotal: 0,
         upcomingInterview: null,
+        todayAttendance: null,
+        topRated: expect.any(Array),
         unreadNotifications: 0,
         shortlistPreview: [],
         shortlistTotal: 0,
@@ -108,6 +113,7 @@ describe('Customer home and shortlist (integration)', () => {
         initials: 'RK',
         verified: true,
         photo: null,
+        photoUrl: null,
       });
       // not the service category, no private fields
       const json = JSON.stringify(body);
@@ -185,6 +191,7 @@ describe('Customer home and shortlist (integration)', () => {
         initials: 'MP',
         verified: true,
         photo: null,
+        photoUrl: null,
       });
     });
   });
@@ -307,6 +314,175 @@ describe('Customer home and shortlist (integration)', () => {
       expect((await api.http().get(`/api/v1/search/workers/${unverified.workerId}`)).status).toBe(
         401,
       );
+    });
+  });
+
+  describe('worker photos as photoUrl (new Home design)', () => {
+    it('puts the same photo link on cards, the shortlist, Home and booking workers, and null without a photo', async () => {
+      const c = await newCustomer();
+      const w = await verifiedWorker();
+      const bare = await verifiedWorker();
+      const upload = await as(api, w).post('/api/v1/workers/me/photo', {
+        contentType: 'image/jpeg',
+        sizeBytes: 5000,
+      });
+      const key = api.storage.issuedUploads.at(-1)!.objectKey;
+      api.storage.simulateUpload(key, 5000, SAMPLE_JPEG);
+      await as(api, w)
+        .post(`/api/v1/workers/me/photo/${(upload.body as { photoId: string }).photoId}/confirm`)
+        .expect(200);
+
+      const card = await as(api, c).get(`/api/v1/search/workers/${w.workerId}`);
+      const url = (card.body as { photoUrl: string; photo: { url: string } }).photoUrl;
+      expect(url).toContain(encodeURIComponent(key));
+      expect(url).toBe((card.body as { photo: { url: string } }).photo.url);
+      expect(
+        (
+          (await as(api, c).get(`/api/v1/search/workers/${bare.workerId}`)).body as {
+            photoUrl: null;
+          }
+        ).photoUrl,
+      ).toBeNull();
+
+      await as(api, c).put(`${SHORTLIST}/${w.workerId}`).expect(204);
+      const shortlisted = (await homeBody(c)).shortlistPreview[0].worker as { photoUrl: string };
+      expect(shortlisted.photoUrl).toContain(encodeURIComponent(key));
+
+      const b = await makeBooking(api, admin, c, area.id, 'ACTIVE', w);
+      const home = await homeBody(c);
+      expect((home.activeBooking?.worker as { photoUrl: string }).photoUrl).toContain(
+        encodeURIComponent(key),
+      );
+      const detail = await as(api, c).get(`/api/v1/bookings/${b.id}`);
+      expect((detail.body as { worker: { photoUrl: string } }).worker.photoUrl).toContain(
+        encodeURIComponent(key),
+      );
+      const list = await as(api, c).get('/api/v1/bookings');
+      expect(JSON.stringify(list.body)).toContain('photoUrl');
+    });
+  });
+
+  describe('Home topRated', () => {
+    it('lists the best-rated verified workers of the default address area, with the fields of the design', async () => {
+      const own = await createArea(api, admin);
+      const c = await newCustomer();
+      await as(api, c)
+        .post('/api/v1/customers/me/addresses', {
+          line: '12 Test Road',
+          area: own.name,
+          city: own.city,
+          pincode: '500081',
+          isDefault: true,
+        })
+        .expect(201);
+      // nobody rated in this area yet
+      expect((await homeBody(c)).topRated).toEqual([]);
+
+      const rate = async (score: number, review: string) => {
+        const w = await onboardWorker(api, { areaIds: [own.id], name: 'Meena Pillai' });
+        await approveCheck(api, admin, w, 'IDENTITY');
+        const b = await makeBooking(api, admin, c, own.id, 'ACTIVE', w);
+        await as(api, c).post(`/api/v1/bookings/${b.id}/complete`).expect(200);
+        await as(api, c).post('/api/v1/ratings', { bookingId: b.id, score, review }).expect(201);
+        return w;
+      };
+      const low = await rate(3, 'Fine');
+      const high = await rate(5, 'Excellent work, very punctual and careful.');
+      const top = (await homeBody(c)) as unknown as { topRated: Array<Record<string, unknown>> };
+      expect(top.topRated.map((t) => t.workerId)).toEqual([high.workerId, low.workerId]);
+      expect(top.topRated[0]).toEqual({
+        workerId: high.workerId,
+        name: 'Meena P.',
+        photoUrl: null,
+        photo: null,
+        roleName: 'House Maid',
+        ratingAverage: 5,
+        ratingCount: 1,
+        completedJobs: 1,
+        latestReviewSnippet: 'Excellent work, very punctual and careful.',
+        verified: true,
+      });
+      expect(JSON.stringify(top)).not.toMatch(/Pillai|userId|mobile|expectedSalary/);
+      // a worker the customer has blocked is not recommended
+      await as(api, c)
+        .post('/api/v1/safety/blocks', { workerId: high.workerId, reason: 'test' })
+        .expect(200);
+      expect(
+        ((await homeBody(c)) as unknown as { topRated: Array<{ workerId: string }> }).topRated.map(
+          (t) => t.workerId,
+        ),
+      ).toEqual([low.workerId]);
+    });
+
+    it('accepts sort=rating_desc in any letter case on search, ordered best average first', async () => {
+      const c = await newCustomer();
+      for (const sort of ['rating_desc', 'RATING_DESC', 'Rating_Desc']) {
+        const res = await as(api, c).get(
+          `/api/v1/search/workers?category=HOUSE_MAID&areaId=${area.id}&sort=${sort}`,
+        );
+        expect(res.status).toBe(200);
+      }
+      expect(
+        (
+          await as(api, c).get(
+            `/api/v1/search/workers?category=HOUSE_MAID&areaId=${area.id}&sort=bogus`,
+          )
+        ).status,
+      ).toBe(400);
+    });
+
+    it('is empty for a customer with no profile address when no one in the whole city is rated', async () => {
+      const c = await newCustomer();
+      const body = (await homeBody(c)) as unknown as { topRated: unknown[] };
+      expect(Array.isArray(body.topRated)).toBe(true);
+      expect(body.topRated.length).toBeLessThanOrEqual(6);
+    });
+  });
+
+  describe('Home todayAttendance', () => {
+    it('is null without a running service, NOT_ARRIVED before check-in, ARRIVED with the server time after', async () => {
+      const c = await newCustomer();
+      expect(
+        ((await homeBody(c)) as unknown as { todayAttendance: unknown }).todayAttendance,
+      ).toBeNull();
+      await makeBooking(api, admin, c, area.id, 'MATCHED');
+      expect(
+        ((await homeBody(c)) as unknown as { todayAttendance: unknown }).todayAttendance,
+      ).toBeNull();
+
+      const b = await makeBooking(api, admin, c, area.id, 'ACTIVE');
+      const before = (await homeBody(c)) as unknown as { todayAttendance: Record<string, unknown> };
+      expect(before.todayAttendance).toEqual({
+        bookingId: b.id,
+        status: 'NOT_ARRIVED',
+        attendanceStatus: null,
+        arrivedAt: null,
+        workerName: 'Ramesh K.',
+        photoUrl: null,
+        engagement: 'PART_TIME',
+      });
+      const stamp = Date.now();
+      await as(api, b.worker)
+        .post(`/api/v1/workers/me/attendance/bookings/${b.id}/check-in`)
+        .expect(201);
+      const after = (await homeBody(c)) as unknown as { todayAttendance: Record<string, unknown> };
+      expect(after.todayAttendance).toMatchObject({
+        bookingId: b.id,
+        status: 'ARRIVED',
+        attendanceStatus: 'PRESENT',
+      });
+      expect(
+        Math.abs(new Date(after.todayAttendance.arrivedAt as string).getTime() - stamp),
+      ).toBeLessThan(15000);
+    });
+
+    it("never shows another customer's service", async () => {
+      const a = await newCustomer();
+      const other = await newCustomer();
+      await makeBooking(api, admin, a, area.id, 'ACTIVE');
+      expect(
+        ((await homeBody(other)) as unknown as { todayAttendance: unknown }).todayAttendance,
+      ).toBeNull();
     });
   });
 

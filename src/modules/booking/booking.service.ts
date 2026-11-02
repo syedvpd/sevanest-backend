@@ -452,6 +452,12 @@ export class BookingService {
     return { booking: (await this.customerViews(items))[0] ?? null, total };
   }
 
+  /** The newest ACTIVE (service running) booking of the customer, or null; for the Home attendance card. */
+  async runningServiceForCustomer(customerUserId: string): Promise<CustomerBookingView | null> {
+    const { items } = await this.repository.list({ customerUserId, status: 'ACTIVE' }, 0, 1);
+    return (await this.customerViews(items))[0] ?? null;
+  }
+
   /** The worker of one booking as its customer may see them (D-81 rules), or null; for the Home upcoming interview. */
   async workerDisplayForBooking(bookingId: string): Promise<WorkerDisplayView | null> {
     const booking = await this.repository.findById(bookingId);
@@ -1589,6 +1595,7 @@ export class BookingService {
         verified: verified.has(id),
         initials,
         photo: photos.get(id) ?? null,
+        photoUrl: photos.get(id)?.url ?? null,
       });
     }
     return out;

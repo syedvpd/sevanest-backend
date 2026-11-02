@@ -129,6 +129,7 @@ describe('Customer active service and attendance (integration)', () => {
         initials: 'AV',
         verified: true,
         photo: null,
+        photoUrl: null,
       });
       expect(JSON.stringify(summary)).not.toMatch(
         /mobile|phone|address|objectKey|passport|aadhaar/i,

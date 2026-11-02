@@ -12,10 +12,53 @@ import { InterviewView } from '../booking/dto/interview.dto';
 import { BookingService } from '../booking/booking.service';
 import { InterviewService } from '../booking/interview.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ResolveAreaQuery } from '../availability/dto/availability.dto';
+import { AttendanceService } from '../attendance/attendance.service';
+import { CustomersService } from '../customers/customers.service';
+import { ServiceAreasService } from '../availability/service-areas.service';
+import { SearchService } from '../search/search.service';
+import { TopRatedWorkerView } from '../search/dto/search.dto';
 import { ShortlistItemView, ShortlistQuery } from '../shortlist/dto/shortlist.dto';
 import { ShortlistService } from '../shortlist/shortlist.service';
 
 const PREVIEW_SIZE = 5;
+const TOP_RATED_SIZE = 6;
+
+export const TODAY_ATTENDANCE_STATUSES = [
+  'ARRIVED',
+  'NOT_ARRIVED',
+  'ABSENT',
+  'LEAVE',
+  'EXCEPTION',
+] as const;
+
+/** Today's attendance of the customer's running service (the newest ACTIVE booking). */
+export class TodayAttendanceView {
+  @ApiProperty() bookingId!: string;
+  @ApiProperty({
+    enum: TODAY_ATTENDANCE_STATUSES,
+    description:
+      'ARRIVED = present or late; NOT_ARRIVED = nothing recorded for today yet; ABSENT, LEAVE and EXCEPTION as recorded. LEAVE is not in the app design list.',
+  })
+  status!: (typeof TODAY_ATTENDANCE_STATUSES)[number];
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'The backend attendance status (PRESENT, LATE, ABSENT, LEAVE, EXCEPTION); null when nothing is recorded.',
+  })
+  attendanceStatus!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: Date,
+    description:
+      'Server-stamped check-in time; null when the worker has not checked in (never inferred from the status).',
+  })
+  arrivedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String }) workerName!: string | null;
+  @ApiProperty({ nullable: true, type: String }) photoUrl!: string | null;
+  @ApiProperty() engagement!: string;
+}
 
 /** The interview as on the interviews endpoints, plus who it is with (name rules of D-81: first name and last initial). */
 export class HomeInterviewView extends InterviewView {
@@ -47,6 +90,18 @@ export class HomeView {
     description: 'Next confirmed interview or trial, with the worker.',
   })
   upcomingInterview!: HomeInterviewView | null;
+  @ApiProperty({
+    type: TodayAttendanceView,
+    nullable: true,
+    description: 'Null when the customer has no ACTIVE booking.',
+  })
+  todayAttendance!: TodayAttendanceView | null;
+  @ApiProperty({
+    type: [TopRatedWorkerView],
+    description:
+      'Up to 6 best-rated verified workers, in the area of the customer default address when it can be resolved, else anywhere. Empty when nobody has a rating yet.',
+  })
+  topRated!: TopRatedWorkerView[];
   @ApiProperty() unreadNotifications!: number;
   @ApiProperty({
     type: [ShortlistItemView],
@@ -94,7 +149,41 @@ export class HomeController {
     private readonly notifications: NotificationsService,
     private readonly shortlist: ShortlistService,
     private readonly config: AppConfigService,
+    private readonly attendance: AttendanceService,
+    private readonly search: SearchService,
+    private readonly customers: CustomersService,
+    private readonly areas: ServiceAreasService,
   ) {}
+
+  private async todayAttendance(userId: string): Promise<TodayAttendanceView | null> {
+    const running = await this.bookings.runningServiceForCustomer(userId);
+    if (!running) return null;
+    const today = await this.attendance.todayOf(running.id);
+    const status = !today
+      ? 'NOT_ARRIVED'
+      : today.status === 'PRESENT' || today.status === 'LATE'
+        ? 'ARRIVED'
+        : today.status;
+    return {
+      bookingId: running.id,
+      status,
+      attendanceStatus: today?.status ?? null,
+      arrivedAt: today?.checkInAt ?? null,
+      workerName: running.worker?.name ?? null,
+      photoUrl: running.worker?.photoUrl ?? null,
+      engagement: running.engagement,
+    };
+  }
+
+  private async topRated(userId: string): Promise<TopRatedWorkerView[]> {
+    const where = await this.customers.defaultAreaOf(userId);
+    const area = where
+      ? await this.areas
+          .resolve(Object.assign(new ResolveAreaQuery(), { name: where.area, city: where.city }))
+          .catch(() => null)
+      : null;
+    return this.search.topRated(userId, area?.id, TOP_RATED_SIZE);
+  }
 
   @Get()
   @ApiModelResponse(HomeView)
@@ -108,7 +197,7 @@ export class HomeController {
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) res: Response,
   ): Promise<HomeView> {
-    const [active, interview, unread, shortlist] = await Promise.all([
+    const [active, interview, unread, shortlist, todayAttendance, topRated] = await Promise.all([
       this.bookings.activeForCustomer(user.userId),
       this.interviews.upcomingForCustomer(user.userId),
       this.notifications.unreadCount(user.userId),
@@ -116,6 +205,8 @@ export class HomeController {
         user.userId,
         Object.assign(new ShortlistQuery(), { page: 1, limit: PREVIEW_SIZE }),
       ),
+      this.todayAttendance(user.userId),
+      this.topRated(user.userId),
     ]);
     const view: HomeView = {
       activeBooking: active.booking,
@@ -123,6 +214,8 @@ export class HomeController {
       upcomingInterview: interview
         ? { ...interview, worker: await this.bookings.workerDisplayForBooking(interview.bookingId) }
         : null,
+      todayAttendance,
+      topRated,
       unreadNotifications: unread.unread,
       shortlistPreview: shortlist.data,
       shortlistTotal: shortlist.meta.total,

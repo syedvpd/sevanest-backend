@@ -287,6 +287,14 @@ export class AttendanceService {
     return this.page(bookingId, query);
   }
 
+  /** Contract for Home: today's (India date) attendance row of a booking, or null when nobody recorded anything yet. */
+  async todayOf(
+    bookingId: string,
+  ): Promise<{ status: AttendanceStatusValue; checkInAt: Date | null } | null> {
+    const row = await this.repository.findForDay(bookingId, indiaToday());
+    return row ? { status: row.status, checkInAt: row.checkInAt } : null;
+  }
+
   async summaryForWorker(
     workerId: string,
     bookingId: string,

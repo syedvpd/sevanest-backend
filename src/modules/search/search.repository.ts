@@ -169,6 +169,52 @@ export class SearchRepository {
     return new Set(rows.map((r) => r.id));
   }
 
+  /** Ids of the best-rated visible workers (see SearchService.topRated), optionally only those serving one area. */
+  async topRatedIds(
+    customerUserId: string,
+    areaId: string | undefined,
+    limit: number,
+  ): Promise<Array<{ id: string }>> {
+    const area = areaId
+      ? Prisma.sql`AND EXISTS (SELECT 1 FROM worker_preferred_areas wpa WHERE wpa.worker_id = wp.id AND wpa.area_id = ${areaId}::uuid)`
+      : Prisma.empty;
+    return this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT wp.id
+      FROM worker_profiles wp
+      JOIN users u ON u.id = wp.user_id
+      JOIN worker_rating_summaries rs ON rs.worker_id = wp.id AND rs.rating_count > 0
+      WHERE wp.onboarding_status = 'SUBMITTED'
+        AND u.type = 'WORKER' AND u.status = 'ACTIVE'
+        AND wp.blacklisted_at IS NULL
+        AND ${activeWorkerCondition('wp.id')}
+        AND ${this.notBlocked(customerUserId)}
+        ${area}
+      ORDER BY rs.rating_sum::float8 / rs.rating_count DESC, rs.rating_count DESC, wp.id
+      LIMIT ${limit}`);
+  }
+
+  /** Completed-job count and the newest visible written review (first 120 characters) of each worker, two statements in total. */
+  async topRatedExtras(
+    ids: string[],
+  ): Promise<Map<string, { completedJobs: number; snippet: string | null }>> {
+    const out = new Map<string, { completedJobs: number; snippet: string | null }>();
+    if (ids.length === 0) return out;
+    const [jobs, reviews] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ id: string; n: number }>>(Prisma.sql`
+        SELECT worker_id AS id, count(*)::int AS n FROM bookings
+        WHERE worker_id = ANY(${ids}::uuid[]) AND status = 'COMPLETED' GROUP BY worker_id`),
+      this.prisma.$queryRaw<Array<{ id: string; snippet: string }>>(Prisma.sql`
+        SELECT DISTINCT ON (r.worker_id) r.worker_id AS id, left(btrim(r.review_text), 120) AS snippet
+        FROM ratings r
+        WHERE r.worker_id = ANY(${ids}::uuid[]) AND r.status = 'VISIBLE' AND btrim(coalesce(r.review_text, '')) <> ''
+        ORDER BY r.worker_id, r.created_at DESC, r.id DESC`),
+    ]);
+    for (const id of ids) out.set(id, { completedJobs: 0, snippet: null });
+    for (const j of jobs) out.get(j.id)!.completedJobs = j.n;
+    for (const v of reviews) out.get(v.id)!.snippet = v.snippet;
+    return out;
+  }
+
   /**
    * Visible (not moderated away) reviews of one worker, newest first, with the reviewer's FIRST NAME only. Callers have already
    * checked the worker is visible to customers.

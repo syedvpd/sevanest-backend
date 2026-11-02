@@ -110,6 +110,14 @@ export class CustomersService {
     return address ? { id: address.id, city: address.city } : null;
   }
 
+  /** Contract for Home: area name and city of the customer's default (else newest) active address, or null. */
+  async defaultAreaOf(userId: string): Promise<{ area: string; city: string } | null> {
+    const profile = await this.repository.findProfileByUserId(userId);
+    if (!profile) return null;
+    const [first] = await this.repository.listActiveAddresses(profile.id);
+    return first ? { area: first.area, city: first.city } : null;
+  }
+
   /**
    * Contract for Booking (staff creating a booking for a customer): the user id behind a customer id. 404 when there is no such customer,
    * 409 CUSTOMER_NOT_ACTIVE for a suspended account.

@@ -14,6 +14,7 @@ import {
   SearchWorkersQuery,
   SlotsQuery,
   WorkerCard,
+  TopRatedWorkerView,
   WorkerReviewView,
   WorkerSlotsView,
 } from './dto/search.dto';
@@ -237,8 +238,48 @@ export class SearchService {
           ? { average: Math.round((rating.sum / rating.count) * 100) / 100, count: rating.count }
           : null,
         photo: photo ?? null,
+        photoUrl: photo?.url ?? null,
       };
     });
+  }
+
+  /**
+   * Best-rated verified workers visible to this customer (Home "top rated"): average score desc, then number of ratings desc, then id;
+   * only workers with at least one visible rating. `areaId` limits it to workers who serve that area. No minimum count is applied
+   * (none is specified), so a single 5-star rating can rank first: the count is returned for the client to show.
+   */
+  async topRated(
+    customerUserId: string,
+    areaId: string | undefined,
+    limit = 6,
+  ): Promise<TopRatedWorkerView[]> {
+    const ranked = await this.repository.topRatedIds(customerUserId, areaId, limit);
+    if (ranked.length === 0) return [];
+    const ids = ranked.map((r) => r.id);
+    const [cards, extras] = await Promise.all([
+      this.getVisibleCards(ids, customerUserId),
+      this.repository.topRatedExtras(ids),
+    ]);
+    const out: TopRatedWorkerView[] = [];
+    for (const r of ranked) {
+      const card = cards.get(r.id);
+      const summary = card?.rating;
+      if (!card || !summary) continue;
+      const extra = extras.get(r.id);
+      out.push({
+        workerId: card.workerId,
+        name: card.name,
+        photoUrl: card.photoUrl,
+        photo: card.photo,
+        roleName: card.categories[0]?.name ?? null,
+        ratingAverage: summary.average ?? 0,
+        ratingCount: summary.count,
+        completedJobs: extra?.completedJobs ?? 0,
+        latestReviewSnippet: extra?.snippet ?? null,
+        verified: card.verified,
+      });
+    }
+    return out;
   }
 
   /**
@@ -331,7 +372,7 @@ function nameFields(fullName: string | null | undefined): {
   return { name: displayName || null, initials: initials || null };
 }
 
-export function toCard(worker: EligibleWorker): Omit<WorkerCard, 'rating' | 'photo'> {
+export function toCard(worker: EligibleWorker): Omit<WorkerCard, 'rating' | 'photo' | 'photoUrl'> {
   return {
     workerId: worker.id,
     ...nameFields(worker.name),
