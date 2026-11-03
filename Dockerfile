@@ -2,7 +2,7 @@
 # One image for both processes. API:    node dist/main      Worker: node dist/worker
 # Targets: runtime (default, production) | migrate (applies Prisma migrations: `prisma migrate deploy`, never `reset`).
 
-FROM node:24-slim AS deps
+FROM node:26-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
@@ -20,13 +20,13 @@ FROM deps AS migrate
 ENV NODE_ENV=production
 CMD ["npx", "prisma", "migrate", "deploy"]
 
-FROM node:24-slim AS prod-deps
+FROM node:26-slim AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 # The generated Prisma client is compiled into dist/, so no install scripts are needed here.
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
-FROM node:24-slim AS runtime
+FROM node:26-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
