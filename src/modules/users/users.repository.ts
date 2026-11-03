@@ -217,13 +217,20 @@ export class UsersRepository {
     return rows.map((r) => r.role.code).sort();
   }
 
+  /** Returns the account's new `updatedAt`: a role change is a change of the record, so it moves the ETag. */
   async replaceUserRole(
     userId: string,
     roleId: string,
     tx: Prisma.TransactionClient,
-  ): Promise<void> {
+  ): Promise<Date> {
     await tx.userRole.deleteMany({ where: { userId } });
     await tx.userRole.create({ data: { userId, roleId }, select: { userId: true } });
+    const { updatedAt } = await tx.user.update({
+      where: { id: userId },
+      data: { updatedAt: new Date() },
+      select: { updatedAt: true },
+    });
+    return updatedAt;
   }
 
   async listRoles(): Promise<

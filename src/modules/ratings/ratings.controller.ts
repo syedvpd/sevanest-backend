@@ -140,6 +140,7 @@ export class AdminRatingsController {
   constructor(
     private readonly ratings: RatingsService,
     private readonly users: UsersService,
+    private readonly workers: WorkersService,
   ) {}
 
   @Get()
@@ -154,7 +155,8 @@ export class AdminRatingsController {
   @ApiModelResponse(RatingSummaryView)
   @Permissions(PermissionCode.RATING_VIEW)
   @ApiOperation({ summary: 'A worker rating count and average' })
-  summary(@Param('workerId', ParseUUIDPipe) workerId: string): Promise<RatingSummaryView> {
+  async summary(@Param('workerId', ParseUUIDPipe) workerId: string): Promise<RatingSummaryView> {
+    await this.workers.requireRefById(workerId);
     return this.ratings.summaryFor(workerId);
   }
 

@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ApiHeader, ApiResponse } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AppConfigService } from '../../config/app-config.service';
 import { DomainException } from '../errors/domain.exception';
@@ -42,4 +43,18 @@ export class IfMatchGuard implements CanActivate {
 }
 
 export const RequireIfMatch = (): MethodDecorator =>
-  applyDecorators(SetMetadata(REQUIRE_IF_MATCH, true), UseGuards(IfMatchGuard));
+  applyDecorators(
+    SetMetadata(REQUIRE_IF_MATCH, true),
+    UseGuards(IfMatchGuard),
+    ApiHeader({
+      name: 'If-Match',
+      required: true,
+      description:
+        'ETag from the GET of this record (or * to overwrite). Missing: 428 PRECONDITION_REQUIRED.',
+    }),
+    ApiResponse({
+      status: 412,
+      description: 'STALE_VERSION: the record changed since it was loaded.',
+    }),
+    ApiResponse({ status: 428, description: 'PRECONDITION_REQUIRED: If-Match header missing.' }),
+  );

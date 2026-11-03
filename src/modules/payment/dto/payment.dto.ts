@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
@@ -106,7 +106,6 @@ export class CreateFeeDto {
   kind!: FeeKindValue;
 
   @ApiProperty({ minimum: 0, description: 'Paise. 0 only for the CANCELLATION kind.' })
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   @Max(100_000_000)
@@ -126,7 +125,6 @@ export class CreateFeeDto {
 export class UpdateFeeDto {
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   @Max(100_000_000)
@@ -144,7 +142,6 @@ export class SetFeeDto {
     description:
       'Amount in the smallest currency unit (paise). 0 is allowed only for CANCELLATION_FEE (no fee).',
   })
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   @Max(100_000_000)

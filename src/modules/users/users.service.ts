@@ -65,9 +65,17 @@ export class UsersService {
     return this.repository.findCredentialsById(id);
   }
 
-  /** Minimum length is configuration (ADMIN_PASSWORD_MIN_LENGTH); throws 400 when the candidate is shorter. */
+  /** Minimum length is configuration (ADMIN_PASSWORD_MIN_LENGTH); throws 400 when the candidate is shorter or blank. */
   assertPasswordMeetsPolicy(password: string, field = 'password'): void {
     const minLength = this.config.adminLogin.passwordMinLength;
+    if (password.trim() === '') {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Request validation failed',
+        HttpStatus.BAD_REQUEST,
+        [{ field, messages: [`${field} must not be blank`] }],
+      );
+    }
     if (password.length < minLength) {
       throw new DomainException(
         ErrorCode.VALIDATION_FAILED,
@@ -235,15 +243,7 @@ export class UsersService {
         HttpStatus.FORBIDDEN,
       );
     }
-    const minLength = this.config.adminLogin.passwordMinLength;
-    if (input.password.length < minLength) {
-      throw new DomainException(
-        ErrorCode.VALIDATION_FAILED,
-        'Request validation failed',
-        HttpStatus.BAD_REQUEST,
-        [{ field: 'password', messages: [`password must be at least ${minLength} characters`] }],
-      );
-    }
+    this.assertPasswordMeetsPolicy(input.password);
     const passwordHash = await this.hasher.hash(input.password);
     return this.createAdmin({ email: input.email, passwordHash, roleCode: input.roleCode }, actor);
   }

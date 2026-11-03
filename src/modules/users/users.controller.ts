@@ -148,16 +148,16 @@ export class AdminUsersController {
   }
 
   @Get(':userId')
-  @ApiModelResponse(AdminUserResponse)
+  @ApiModelResponse(AdminUserListItem)
   @Permissions(PermissionCode.USER_VIEW)
-  @ApiOperation({ summary: 'View an account (mobile masked)' })
+  @ApiOperation({ summary: 'View an account (mobile masked; roles for admins)' })
   async getUser(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<AdminUserResponse> {
+  ): Promise<AdminUserListItem> {
     const user = await this.users.getByIdOrThrow(userId);
     res.setHeader('ETag', etagOf(user.updatedAt));
-    return toAdminView(user);
+    return this.access.adminView(user);
   }
 
   @Put(':userId/role')

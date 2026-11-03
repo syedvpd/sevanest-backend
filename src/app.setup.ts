@@ -1,6 +1,7 @@
 import { VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { createValidationPipe } from './common/pipes/validation.pipe';
 import {
@@ -22,6 +23,11 @@ export function configureApp(app: NestExpressApplication, config: AppConfigServi
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(requestContextMiddleware);
+  // Token-bearing responses must not be stored by any cache (ASVS V3).
+  app.use('/api/v1/auth', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   if (config.requestTimingLog) {
     app.use(requestTimingMiddleware());
   }

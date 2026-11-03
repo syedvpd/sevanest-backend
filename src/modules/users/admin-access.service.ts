@@ -86,6 +86,10 @@ export class AdminAccessService {
     };
   }
 
+  async adminView(user: UserRecord): Promise<AdminUserListItem> {
+    return maskedAdminView(user, await this.repository.roleCodesOf(user.id));
+  }
+
   async listRoles(): Promise<RoleView[]> {
     const roles = await this.repository.listRoles();
     return roles.map(({ code, name, permissionCodes, userCount }) => ({
@@ -234,7 +238,7 @@ export class AdminAccessService {
           HttpStatus.CONFLICT,
         );
       }
-      await this.repository.replaceUserRole(targetUserId, role.id, tx);
+      const updatedAt = await this.repository.replaceUserRole(targetUserId, role.id, tx);
       await this.audit.record(
         {
           action: 'admin.role_change',
@@ -246,7 +250,7 @@ export class AdminAccessService {
         },
         tx,
       );
-      return { user: target, roles: [roleCode], changed: true };
+      return { user: { ...target, updatedAt }, roles: [roleCode], changed: true };
     });
     return maskedAdminView(result.user, result.roles);
   }
