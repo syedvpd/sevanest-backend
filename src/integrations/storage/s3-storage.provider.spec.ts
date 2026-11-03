@@ -49,6 +49,17 @@ describe('S3StorageProvider', () => {
     expect(a.url).toContain('kyc/w/one');
   });
 
+  it('pins the response content type of a download URL when one is given', async () => {
+    const pinned = await provider.createDownloadUrl({
+      objectKey: 'kyc/w/one',
+      ttlSeconds: 60,
+      contentType: 'application/pdf',
+    });
+    expect(new URL(pinned.url).searchParams.get('response-content-type')).toBe('application/pdf');
+    const plain = await provider.createDownloadUrl({ objectKey: 'kyc/w/one', ttlSeconds: 60 });
+    expect(new URL(plain.url).searchParams.has('response-content-type')).toBe(false);
+  });
+
   it('answers null for a missing object and the size for a present one', async () => {
     const client = (provider as unknown as { client: { send: jest.Mock } }).client;
     const send = jest.spyOn(client, 'send');

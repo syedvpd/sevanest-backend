@@ -55,9 +55,17 @@ export class S3StorageProvider implements StorageProvider {
     return { url, expiresAt: new Date(Date.now() + input.ttlSeconds * 1000) };
   }
 
-  async createDownloadUrl(input: { objectKey: string; ttlSeconds: number }): Promise<SignedUrl> {
+  async createDownloadUrl(input: {
+    objectKey: string;
+    ttlSeconds: number;
+    contentType?: string;
+  }): Promise<SignedUrl> {
     const url = await this.sign(
-      new GetObjectCommand({ Bucket: this.settings.bucket, Key: input.objectKey }),
+      new GetObjectCommand({
+        Bucket: this.settings.bucket,
+        Key: input.objectKey,
+        ...(input.contentType ? { ResponseContentType: input.contentType } : {}),
+      }),
       input.ttlSeconds,
     );
     return { url, expiresAt: new Date(Date.now() + input.ttlSeconds * 1000) };

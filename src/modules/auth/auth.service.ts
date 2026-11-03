@@ -79,7 +79,9 @@ export class AuthService {
     device: DeviceInfo,
   ): Promise<LoginResult> {
     const accountKey = AdminLoginThrottle.accountKey(input.email);
-    await this.throttle.assertNotLocked(accountKey, clientIp);
+    // The attempt slot is taken BEFORE the slow hash, so a concurrent burst cannot all pass a stale "not locked" check.
+    // It stays used unless authentication succeeds (a wrong password and a suspended account both count as attempts).
+    const { lastAllowed: lockedOut } = await this.throttle.reserve(accountKey, clientIp);
 
     const user = await this.users.findCredentialsByEmail(input.email);
     const isAdminWithPassword = user?.type === 'ADMIN' && user.passwordHash !== null;
@@ -88,7 +90,6 @@ export class AuthService {
     const passwordOk = await this.hasher.verify(input.password, stored);
 
     if (!isAdminWithPassword || !passwordOk) {
-      const lockedOut = await this.throttle.recordFailure(accountKey, clientIp);
       if (user?.type === 'ADMIN') {
         await this.audit.record({
           action: 'auth.admin_login_failed',
@@ -116,7 +117,7 @@ export class AuthService {
       throw this.suspended();
     }
 
-    await this.throttle.reset(accountKey);
+    await this.throttle.release(accountKey, clientIp);
     const [tokens, access] = await Promise.all([
       this.sessions.startSession(user.id, device),
       this.users.getAccess(user.id),
@@ -162,10 +163,10 @@ export class AuthService {
       );
     }
     const accountKey = AdminLoginThrottle.accountKey(user.email);
-    await this.throttle.assertNotLocked(accountKey, clientIp);
     this.users.assertPasswordMeetsPolicy(input.newPassword, 'newPassword');
+    // Same reserve-before-verify rule as login: wrong current passwords draw from the same attempt budget.
+    const { lastAllowed: lockedOut } = await this.throttle.reserve(accountKey, clientIp);
     if (!(await this.hasher.verify(input.currentPassword, user.passwordHash))) {
-      const lockedOut = await this.throttle.recordFailure(accountKey, clientIp);
       await this.audit.record({
         action: 'auth.admin_password_change_failed',
         entityType: 'user',
@@ -179,6 +180,7 @@ export class AuthService {
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
+    await this.throttle.release(accountKey, clientIp);
     if (input.newPassword === input.currentPassword) {
       throw new DomainException(
         AuthErrorCode.PASSWORD_UNCHANGED,
@@ -203,7 +205,6 @@ export class AuthService {
         );
       },
     );
-    await this.throttle.reset(accountKey);
     return { revokedSessions };
   }
 

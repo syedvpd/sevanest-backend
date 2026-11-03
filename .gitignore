@@ -40,3 +40,7 @@ pgdata/
 # performance run output (raw samples, throwaway local tokens)
 test/perf/out/
 test/perf/out-remote/
+
+# Local Docker stack secrets (copy docker.env.example -> docker.env)
+docker.env
+!docker.env.example

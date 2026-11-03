@@ -19,7 +19,12 @@ export interface StorageProvider {
     maxBytes: number;
     ttlSeconds: number;
   }): Promise<SignedUrl>;
-  createDownloadUrl(input: { objectKey: string; ttlSeconds: number }): Promise<SignedUrl>;
+  /** `contentType` pins the response type (ResponseContentType), so a stored header the uploader chose is never what the browser gets. */
+  createDownloadUrl(input: {
+    objectKey: string;
+    ttlSeconds: number;
+    contentType?: string;
+  }): Promise<SignedUrl>;
   /** Server-side check that an object really arrived (a client may skip the upload). null = no such object. `etag` is a change signal, not a hash guarantee. */
   getObjectInfo(objectKey: string): Promise<{ sizeBytes: number; etag?: string } | null>;
   /** The stored bytes, at most `maxBytes` of them (`truncated` = the object is larger). null = no such object. */

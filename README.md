@@ -247,7 +247,7 @@ sevanest-backend/
 │   └── worker.ts          # background worker entry point
 ├── test/                  # integration and e2e tests, shared helpers
 ├── docker-compose.yml     # local PostgreSQL, Redis, migrate, seed, API, worker
-├── docker.env             # development defaults for the local stack (not for shared use)
+├── docker.env.example     # template for the git-ignored docker.env of the local stack (copy, then set your own values)
 ├── Dockerfile             # runtime and migrate images
 ├── render.yaml            # deployment blueprint (API + worker)
 └── README.md

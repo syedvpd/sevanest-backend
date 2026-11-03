@@ -240,11 +240,11 @@ const makeEnvironment = (name, baseUrl, slowMs) => ({
     ['baseUrl', baseUrl],
     ['customerMobile', '+919999900001'],
     ['workerMobile', '+919999900002'],
-    ['testOtpCode', '123456'],
+    ['testOtpCode', ''], // never commit a fixed login code: type the staging code in Postman (secret, local only)
     ['adminEmail', ''],
     ['adminPassword', ''],
     ['slowMs', slowMs],
-  ].map(([key, value]) => ({ key, value, type: key === 'adminPassword' ? 'secret' : 'default', enabled: true })),
+  ].map(([key, value]) => ({ key, value, type: key === 'adminPassword' || key === 'testOtpCode' ? 'secret' : 'default', enabled: true })),
   _postman_variable_scope: 'environment',
 });
 

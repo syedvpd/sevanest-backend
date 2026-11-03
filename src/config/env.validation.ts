@@ -965,12 +965,15 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
         'ConfigWarning',
       );
     }
-    if (config.JWT_ACCESS_SECRET && /change-me|example|secret/i.test(config.JWT_ACCESS_SECRET)) {
+    // Template values (docker.env.example, .env.example) and local-development values must never reach a shared environment.
+    const placeholderSecret =
+      /change-?me|replace-?me|placeholder|example|secret|do-not-use|local|dev(elopment)?[-_]/i;
+    if (config.JWT_ACCESS_SECRET && placeholderSecret.test(config.JWT_ACCESS_SECRET)) {
       throw new Error(
         'Invalid environment configuration: JWT_ACCESS_SECRET looks like a placeholder',
       );
     }
-    if (/change-me|example|secret|do-not-use/i.test(config.OTP_HMAC_SECRET)) {
+    if (placeholderSecret.test(config.OTP_HMAC_SECRET)) {
       throw new Error(
         'Invalid environment configuration: OTP_HMAC_SECRET looks like a placeholder',
       );

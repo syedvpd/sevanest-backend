@@ -106,8 +106,9 @@ export class SearchController {
   reviews(
     @Param('workerId', ParseUUIDPipe) workerId: string,
     @Query() query: PageQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<Page<WorkerReviewView> & { summary: ReviewSummaryView }> {
-    return this.search.listReviews(workerId, query);
+    return this.search.listReviews(workerId, query, user.userId);
   }
 
   @Get(':workerId/slots')

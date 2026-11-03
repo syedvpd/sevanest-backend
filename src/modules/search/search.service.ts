@@ -224,8 +224,10 @@ export class SearchService {
   async listReviews(
     workerId: string,
     query: PageQueryDto,
+    customerUserId: string,
   ): Promise<Page<WorkerReviewView> & { summary: ReviewSummaryView }> {
-    await this.getProfile(workerId);
+    // The caller id applies the same block rule as the profile (a blocked pair answers 404 here too).
+    await this.getProfile(workerId, customerUserId);
     const [{ items, total }, counts] = await Promise.all([
       this.repository.listVisibleReviews(workerId, skipFor(query), query.limit),
       this.repository.reviewDistribution(workerId),

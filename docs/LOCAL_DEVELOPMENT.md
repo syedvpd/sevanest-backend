@@ -1,12 +1,16 @@
 # Local development (internal)
 
-For developers working on this repository. Everything here is **local only**: the values in `docker.env` are non-secret development defaults, the demo accounts are fake, and the fixed OTP is refused when `NODE_ENV=production`. Never reuse any of it on a shared, staging or production environment.
+For developers working on this repository. Everything here is **local only**: `docker.env` is your own git-ignored copy of `docker.env.example` with values you choose, the demo accounts are fake, and the fixed OTP is refused when `NODE_ENV=production`. Never commit `docker.env` and never reuse any of its values on a shared, staging or production environment.
 
 ## Run the whole backend in Docker
 Requires Docker. No `.env` file and no Node.js needed.
 ```bash
 git clone https://github.com/syedvpd/sevanest-backend.git
 cd sevanest-backend
+```
+Create your local settings file once (it is git-ignored) and replace every `change-me` value in it:
+```bash
+cp docker.env.example docker.env
 ```
 ```bash
 docker compose --profile app up -d --build

@@ -822,6 +822,8 @@ export class VerificationService {
       this.storage.createDownloadUrl({
         objectKey: document.objectKey,
         ttlSeconds: this.config.verificationDocuments.signedUrlTtlSeconds,
+        // The validated type, not whatever Content-Type the uploader sent with the (unsigned-header) PUT.
+        contentType: document.contentType,
       }),
     );
     // The access is recorded before the link is handed out; if the record fails, no link is returned.

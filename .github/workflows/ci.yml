@@ -89,7 +89,10 @@ jobs:
         run: npm run check:migrations
         env:
           MIGRATION_BASE_REF: origin/main
-      - run: npm test
+      - name: Unit tests (the admin-login throttle spec needs the Redis service above)
+        run: npm test
+        env:
+          THROTTLE_SPEC_REDIS_URL: redis://localhost:6379
       - run: npm run test:e2e
       - run: npm run test:integration
 

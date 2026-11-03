@@ -36,7 +36,11 @@ export class InMemoryStorageProvider implements StorageProvider {
     });
   }
 
-  createDownloadUrl(input: { objectKey: string; ttlSeconds: number }): Promise<SignedUrl> {
+  createDownloadUrl(input: {
+    objectKey: string;
+    ttlSeconds: number;
+    contentType?: string;
+  }): Promise<SignedUrl> {
     this.issuedDownloads.push(input.objectKey);
     return Promise.resolve({
       url: `memory://download/${encodeURIComponent(input.objectKey)}?sig=test`,

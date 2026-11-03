@@ -343,6 +343,19 @@ describe('validateEnvironment', () => {
     });
 
     it.each([
+      'change-me-generate-a-different-random-secret-of-32-chars', // docker.env.example
+      'local-dev-otp-hmac-key-0123456789abcdef0123456789abcdef', // local-development style value
+      'REPLACE-ME-with-a-long-random-value-0123456789abcdef',
+    ])('refuses template and local-development secrets in production (%s)', (value) => {
+      expect(() => validateEnvironment({ ...production, OTP_HMAC_SECRET: value })).toThrow(
+        'OTP_HMAC_SECRET',
+      );
+      expect(() => validateEnvironment({ ...production, JWT_ACCESS_SECRET: value })).toThrow(
+        'JWT_ACCESS_SECRET',
+      );
+    });
+
+    it.each([
       'OTP_MAX_VERIFY_ATTEMPTS',
       'OTP_RESEND_COOLDOWN_SECONDS',
       'OTP_SEND_WINDOW_SECONDS',
