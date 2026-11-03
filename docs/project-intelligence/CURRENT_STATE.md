@@ -90,3 +90,7 @@ Report: `docs/qa/prd-gap-audit-2026-10-27.md` (atomic matrix, findings F-1..F-9,
 
 ## 2026-10-29 public images (D-93)
 Built: optional public bucket for worker photos and category images with permanent links (`STORAGE_S3_PUBLIC_BUCKET` + `STORAGE_PUBLIC_BASE_URL`), admin category image upload/remove (`PUT/DELETE /admin/service-categories/{id}/image`), `image` on category responses, erasure of public renditions. Migration `20261114090000_category_image` (additive). Unset variables = old behaviour (signed links). Customer photos and KYC unchanged (private). NOT verified: a real Supabase public bucket (create it, mark it public, set the two variables on staging), CDN-free load speed. Existing worker photos keep signed links until re-uploaded.
+
+## 2026-10-30 client decisions D-94, D-95 (Q-89, Q-04, Q-51), D-94 reverted same day by D-96
+Built then reverted same day: `CLAMAV_HOST` was made required in production/staging (D-94); the client decided against running a second Render service for ClamAV, so D-96 reverted it back to optional, `WARNING`-level readiness (Q-89 reopened). Still recorded, unchanged: worker verification stays fully manual (admin reviews step by step in the Admin Portal; no automated partner, D-95) — confirms the existing built flow, no code change. Evidence: typecheck, unit 403/403 clean (both before and after the revert).
+NOT done: no malware scanning of KYC documents or photos in production/staging unless/until a reachable `clamd` is configured; documents are still validated by type/size/signature either way.

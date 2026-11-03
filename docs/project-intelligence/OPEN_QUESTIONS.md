@@ -8,7 +8,7 @@ Owner: C=client/business, U=user(tech lead), L=legal, V=vendor. "Blocks" = earli
 | Q-01 | Fee/pricing values (configurable; no hard-code) | C | payments seed data only |
 | Q-02 | Data retention/deletion policy (KYC, audit, OTP, logs) | C+L | KYC storage lifecycle, schema deletion fields |
 | Q-03 | Legal review: terms/privacy/consent; trademark | L | go-live |
-| Q-04 | Verification partner + which checks are mandatory for "Verified" badge (FRD §9 #11); police verification process | C | verification module config |
+| Q-04 (PARTLY CLOSED 2026-10-30: D-95, verification partner only) | Verification partner + which checks are mandatory for "Verified" badge (FRD §9 #11); police verification process | C | verification module config |
 | Q-05 | Final booking state list + transitions (conflict C-02) | C+U | bookings/payments/search schema |
 | Q-06 | Numeric perf/availability targets | C | perf tests/capacity |
 | Q-07 | Device/OS + browser matrix | C | QA |
@@ -71,7 +71,7 @@ Owner: C=client/business, U=user(tech lead), L=legal, V=vendor. "Blocks" = earli
 | Q-48 | May customers see verification-in-progress workers? (C-07, Q-16) | No: customers and Matching see only fully verified workers; there is no "as configured" mode |
 | Q-49 | Verification permissions: FRD section 2 matrix says Verification Executive cannot approve, FM-05 says the executive approves/rejects | Four permissions (`verification.review`, `.decide`, `.document.view`, `.configure`) plus `matching.run`; only SUPER_ADMIN is mapped (Q-11, Q-33) |
 | Q-50 | KYC document handling: file size, accepted types, number of documents, link lifetime, encryption at rest, malware scanning, retention/deletion (Q-02, Q-12) | Size, types and link lifetime are REQUIRED environment values with no default; 10 open documents per check is a technical abuse guard; no deletion is exposed; scanning and encryption are the storage vendor's concern (none selected, Q-08) |
-| Q-51 | External verification partner and worker notification of outcomes (Q-04, FM-05 step 5) | Manual review only; the provider abstraction is unused; no notification is sent (Notifications module not built) |
+| Q-51 (CLOSED 2026-10-30: D-95) | External verification partner and worker notification of outcomes (Q-04, FM-05 step 5) | Manual review only, confirmed as final by the client; no automated partner; worker notified on approval via WORKER_VERIFIED/WORKER_ACTIVATED (D-90) |
 | Q-52 | Worker card content: name or first name, photo, rating summary, salary/budget filter (FR-WD-001..004, FR-SD-004) | Card shows experience, skills, languages, areas, availability and the badge only; no name, photo (not built), rating (module not built) or salary filter (no period, Q-39) |
 
 ## Raised by Modules 10-14 (Booking, Payment, Notifications, Attendance, Replacement) - 2026-10-11
@@ -129,7 +129,7 @@ Owner: C=client/business, U=user(tech lead), L=legal, V=vendor. "Blocks" = earli
 | Q-86 | Who may see a worker's emergency contact and address, and when (extends Q-74) | C | Any admin with `worker.view`; each read audited |
 | Q-87 | Admin MFA method and forgotten-password process (extends Q-66) | C | Self-service change exists; a Super Admin can set a temporary password for another admin; no MFA |
 | Q-88 | Data erasure and retention periods for personal data, documents, audit logs (extends Q-69) | C+V | Deletion requests are recorded for staff (`/me/deletion-request`); nothing is erased automatically |
-| Q-89 | Is malware scanning of documents required, and with which scanner | C+V | Optional ClamAV via `CLAMAV_HOST`; without it documents are validated but not scanned (readiness warns) |
+| Q-89 (REOPENED 2026-10-30: D-96 reverts D-94) | Is malware scanning of documents required, and with which scanner | C+V | Optional ClamAV via `CLAMAV_HOST`; without it documents are validated but not scanned (readiness warns). Mandatory scanning was approved then reverted the same day because no second Render service was wanted to run ClamAV. |
 | Q-90 | Maps provider (geocoding, distance) and whether matching uses distance | C+U | Not integrated; addresses keep optional coordinates |
 | Q-91 | Error monitoring tool and backup/restore targets | U | Infrastructure: `docs/qa/OPERATIONS_RUNBOOK.md` |
 | Q-92 | Travel/turnaround time a worker needs between two jobs on the same day; whether an unpaid confirmed booking should hold the worker (and for how long) (extends Q-78) | C | `BOOKING_TRAVEL_BUFFER_MINUTES=0`; an unpaid PENDING_PAYMENT booking holds the worker until paid or cancelled |
