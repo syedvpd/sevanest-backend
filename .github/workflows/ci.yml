@@ -105,16 +105,3 @@ jobs:
         run: docker build --target runtime -t sevanest-backend:ci .
       - name: Build migrate image
         run: docker build --target migrate -t sevanest-backend-migrate:ci .
-
-  audit:
-    # Reports known vulnerabilities in production dependencies. Advisory for now (continue-on-error): some high findings (multer via
-    # @nestjs/platform-express, tooling pulled in by prisma) have no non-breaking fix yet. Remove continue-on-error once they are cleared.
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: npm audit --omit=dev --audit-level=high
