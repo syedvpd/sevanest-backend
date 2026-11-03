@@ -3,6 +3,9 @@ import { csvCell, reportRows, toCsv } from './csv';
 describe('csv', () => {
   it('quotes cells that need it and neutralises anything a spreadsheet could run as a formula', () => {
     expect(csvCell('plain')).toBe('plain');
+    expect(csvCell(-5)).toBe('-5'); // F-007: a negative number is not a formula
+    expect(csvCell('-5')).toBe("'-5"); // text that looks like a formula is still neutralised
+    expect(csvCell('=1+1')).toBe("'=1+1");
     expect(csvCell('a,b')).toBe('"a,b"');
     expect(csvCell('say "hi"')).toBe('"say ""hi"""');
     expect(csvCell('line\nbreak')).toBe('"line\nbreak"');

@@ -19,6 +19,7 @@ import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import { AlertListQuery, AlertView, ResolveAlertDto } from './alerts.dto';
 import { AlertsService, type AlertSeverity, type StaffActor } from './alerts.service';
+import { ApiSchemaResponse, ALERT_SUMMARY_SCHEMA } from '../../common/swagger/api-schema-responses';
 
 /** The staff alert inbox: stuck bookings, SLA breaches, money problems. Each alert is visible only to admins who hold its permission. */
 @ApiTags('Admin - Alerts')
@@ -46,6 +47,7 @@ export class AdminAlertsController {
 
   @Get('summary')
   @Permissions(PermissionCode.ALERT_VIEW)
+  @ApiSchemaResponse(ALERT_SUMMARY_SCHEMA, 'Open alerts in total and per severity')
   @ApiOperation({ summary: 'Open alert counts by severity (for the dashboard badge)' })
   async summary(
     @CurrentUser() admin: AuthenticatedUser,

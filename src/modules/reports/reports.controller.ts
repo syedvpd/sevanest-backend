@@ -17,6 +17,7 @@ import {
   TopRatedQuery,
 } from './dto/reports.dto';
 import { ReportsService } from './reports.service';
+import { ApiFileResponse } from '../../common/swagger/api-schema-responses';
 
 /**
  * Operational reports (PRD section 14, FR-RPT-001..012). GET only: reports can never change data. Every endpoint needs
@@ -34,6 +35,7 @@ export class ReportsController {
   ) {}
 
   @Get()
+  @ApiModelResponse(ReportCatalogEntry, { isArray: true })
   @ApiOperation({ summary: 'The available reports with the definition each one uses' })
   catalog(): readonly ReportCatalogEntry[] {
     return this.reports.catalog();
@@ -43,6 +45,10 @@ export class ReportsController {
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="report.csv"')
   @Header('Cache-Control', 'no-store')
+  @ApiFileResponse(
+    'text/csv',
+    'The CSV file (formula-looking cells are neutralised; at most 5000 rows)',
+  )
   @ApiOperation({
     summary: 'Any report as a CSV file',
     description:

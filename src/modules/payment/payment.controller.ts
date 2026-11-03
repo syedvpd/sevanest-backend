@@ -22,9 +22,9 @@ import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-resp
 import {
   ApiBearerAuth,
   ApiExcludeEndpoint,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -67,6 +67,12 @@ import {
   WebhookAck,
 } from './dto/payment.dto';
 import { ExceptionView, PaymentActor, PaymentService } from './payment.service';
+import {
+  ApiFileResponse,
+  ApiPageOfSchema,
+  ApiSchemaResponse,
+  PAYMENT_EXCEPTION_SCHEMA,
+} from '../../common/swagger/api-schema-responses';
 
 /** A customer's own payments (FRD FM-07). The amount is never taken from the client. */
 @ApiTags('Payments')
@@ -186,8 +192,7 @@ export class PaymentsController {
 
   @Get('payments/:paymentId/receipt/pdf')
   @Header('Cache-Control', 'private, no-store')
-  @ApiProduces('application/pdf')
-  @ApiOkResponse({ description: 'The receipt as a one-page PDF (binary).' })
+  @ApiFileResponse('application/pdf', 'The receipt as a one-page PDF (binary)')
   @ApiOperation({
     summary: 'Receipt of one of my paid payments as a PDF',
     description:
@@ -267,6 +272,10 @@ export class AdminPaymentsController {
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="payments.csv"')
   @Header('Cache-Control', 'no-store')
+  @ApiFileResponse(
+    'text/csv',
+    'The CSV file (formula-looking cells are neutralised; at most 5000 rows)',
+  )
   @ApiOperation({
     summary: 'Payments created in a date range as a CSV file (invoice/reference export)',
     description:
@@ -320,6 +329,7 @@ export class AdminPaymentsController {
 
   @Get('payment-exceptions')
   @Permissions(PermissionCode.PAYMENT_VIEW)
+  @ApiPageOfSchema(PAYMENT_EXCEPTION_SCHEMA, 'Money problems, newest first')
   @ApiOperation({
     summary:
       'Money problems that need a person (late payment for a cancelled booking, mismatch, duplicate, stuck refund)',
@@ -333,6 +343,7 @@ export class AdminPaymentsController {
   @Post('payment-exceptions/:exceptionId/resolve')
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.PAYMENT_MANAGE)
+  @ApiSchemaResponse(PAYMENT_EXCEPTION_SCHEMA, 'The exception, now resolved')
   @ApiOperation({
     summary: 'Close a money problem after a person dealt with it (note required; audited)',
     description:
@@ -428,6 +439,7 @@ export class AdminPaymentsController {
   @Delete('fees/:code')
   @RequireIfMatch()
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse({ description: 'The fee was deleted' })
   @Permissions(PermissionCode.PAYMENT_MANAGE)
   @ApiOperation({
     summary: 'Delete a fee that was never charged (If-Match required)',

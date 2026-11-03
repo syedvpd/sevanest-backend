@@ -44,6 +44,7 @@ import {
 } from './dto/admin-access.dto';
 import { UsersService } from './users.service';
 import type { UserRecord } from './users.types';
+import { ApiSchemaResponse } from '../../common/swagger/api-schema-responses';
 
 function toAdminView(user: UserRecord): AdminUserResponse {
   return {
@@ -190,6 +191,16 @@ export class AdminUsersController {
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @Permissions(PermissionCode.ADMIN_MANAGE_USERS)
+  @ApiSchemaResponse(
+    {
+      type: 'object',
+      required: ['temporaryPassword'],
+      properties: {
+        temporaryPassword: { type: 'string', description: 'Shown once; never stored in clear.' },
+      },
+    },
+    'The new temporary password',
+  )
   @ApiOperation({
     summary: 'Set a new temporary password for another admin (Super Admin; shown once)',
     description:

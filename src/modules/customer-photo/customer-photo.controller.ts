@@ -19,6 +19,10 @@ import {
   RequestPhotoUploadDto,
 } from '../worker-photo/dto/worker-photo.dto';
 import { CustomerPhotoService } from './customer-photo.service';
+import {
+  ApiSchemaResponse,
+  PHOTO_CONFIRMED_SCHEMA,
+} from '../../common/swagger/api-schema-responses';
 
 /** The signed-in customer's own profile photo. Scoped to the authenticated user; no customer id is accepted. */
 @ApiTags('Customer photo')
@@ -45,6 +49,7 @@ export class CustomerPhotoController {
 
   @Post(':photoId/confirm')
   @HttpCode(HttpStatus.OK)
+  @ApiSchemaResponse(PHOTO_CONFIRMED_SCHEMA, 'The photo is stored and ready')
   @ApiOperation({
     summary:
       'Confirm the upload; the photo becomes current once its size, file signature and content check out',

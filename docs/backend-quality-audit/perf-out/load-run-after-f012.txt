@@ -1,0 +1,23 @@
+target http://localhost:3100; 3000 customer tokens, 500 worker tokens
+
+== concurrency 100, 25s: 1416 requests, 56.6 req/s
+search        n=   552 err=    0 p50= 2366ms p95= 3253ms p99= 3489ms  statuses={"200":552}
+worker-card   n=   135 err=    0 p50= 1724ms p95= 2144ms p99= 2596ms  statuses={"200":135}
+worker-slots  n=    66 err=    0 p50= 2087ms p95= 2632ms p99= 2854ms  statuses={"200":66}
+my-bookings   n=   168 err=    0 p50= 2061ms p95= 3893ms p99= 4198ms  statuses={"200":168}
+my-profile    n=   162 err=    0 p50=  849ms p95= 1314ms p99= 1561ms  statuses={"200":162}
+unread-count  n=   141 err=    0 p50=  848ms p95= 1286ms p99= 1512ms  statuses={"200":141}
+worker-feed   n=   118 err=    0 p50= 1930ms p95= 2510ms p99= 2622ms  statuses={"200":118}
+health        n=    74 err=    0 p50=   16ms p95=  311ms p99=  364ms  statuses={"200":74}
+ALL           n=  1416 err=    0 (0.00%) p50=1907ms p95=3279ms p99=3868ms
+
+== concurrency 100, 25s: 1428 requests, 57.1 req/s
+search        n=   516 err=    0 p50= 2337ms p95= 3402ms p99= 3799ms  statuses={"200":516}
+worker-card   n=   153 err=    0 p50= 1646ms p95= 2288ms p99= 2545ms  statuses={"200":153}
+worker-slots  n=    61 err=    0 p50= 2133ms p95= 2727ms p99= 3098ms  statuses={"200":61}
+my-bookings   n=   212 err=    0 p50= 2126ms p95= 4453ms p99= 4912ms  statuses={"200":212}
+my-profile    n=   135 err=    0 p50=  823ms p95= 1400ms p99= 1511ms  statuses={"200":135}
+unread-count  n=   163 err=    0 p50=  829ms p95= 1310ms p99= 1478ms  statuses={"200":163}
+worker-feed   n=   125 err=    0 p50= 1828ms p95= 2792ms p99= 3119ms  statuses={"200":125}
+health        n=    63 err=    0 p50=   15ms p95=  114ms p99=  193ms  statuses={"200":63}
+ALL           n=  1428 err=    0 (0.00%) p50=1815ms p95=3405ms p99=4415ms

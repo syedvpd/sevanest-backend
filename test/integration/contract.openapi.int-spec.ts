@@ -107,6 +107,48 @@ describe('Published OpenAPI matches the real success responses (integration)', (
     return errors;
   };
 
+  it('documents a success response with a body schema or 204, and the standard errors, on every operation (F-008, F-009)', () => {
+    const problems: string[] = [];
+    const paths = spec.paths as Record<string, Record<string, Json>>;
+    let operations = 0;
+    for (const [path, item] of Object.entries(paths)) {
+      for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+        const op = item[method];
+        if (!op) continue;
+        operations++;
+        const label = `${method.toUpperCase()} ${path}`;
+        const responses = op.responses as Record<string, Json>;
+        const success = Object.entries(responses).filter(([code]) => code.startsWith('2'));
+        if (success.length === 0) problems.push(`${label}: no 2xx response`);
+        for (const [code, response] of success) {
+          const content = response.content as Json | undefined;
+          const hasBody = content && Object.values(content).some((c) => (c as Json).schema);
+          if (code !== '204' && !hasBody) problems.push(`${label}: ${code} has no response schema`);
+        }
+        if (path !== '/health/live' && !responses['503'])
+          problems.push(`${label}: 503 not documented`);
+        if (!path.startsWith('/health') && !responses['500'])
+          problems.push(`${label}: 500 not documented`);
+        if (((op.security as unknown[] | undefined) ?? []).length > 0) {
+          for (const code of ['401', '403']) {
+            if (!responses[code]) problems.push(`${label}: ${code} not documented`);
+          }
+        }
+        if (path.includes('{') && !responses['404']) problems.push(`${label}: 404 not documented`);
+        for (const [code, response] of Object.entries(responses)) {
+          if (Number(code) < 400) continue;
+          const schema = (
+            (response.content as Json | undefined)?.['application/json'] as Json | undefined
+          )?.schema as Json | undefined;
+          if (!schema) problems.push(`${label}: ${code} has no error schema`);
+        }
+      }
+    }
+    expect(operations).toBeGreaterThan(300);
+    expect(problems).toEqual([]);
+    expect((spec.components as Json).schemas).toHaveProperty('ApiError');
+  });
+
   it('every customer-app endpoint answers exactly what its schema promises', async () => {
     await setRequiredChecks(api, admin, ['IDENTITY']);
     await ensureFee(api, admin);

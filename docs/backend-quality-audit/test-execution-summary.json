@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-02/03",
+  "commit": "6e94a74 plus uncommitted working-tree changes (F-004, F-007, F-011)",
+  "typecheck": {"command": "npm run typecheck", "result": "exit 0"},
+  "lint": {"command": "npm run lint", "result": "exit 0, 0 errors, 3 warnings (not inspected)"},
+  "format": {"command": "npm run format:check", "result": "exit 0"},
+  "unit": {"command": "npm test", "suites": 43, "tests": 417, "passed": 417, "failed": 0, "skipped": 0, "baselineBeforeChanges": 402},
+  "integrationFullRunOnFreshDb": {
+    "command": "npm run test:integration (fresh db sevanest_bqa4_ci, Redis db 10)",
+    "suites": 71, "suitesPassed": 68, "suitesFailed": 3, "tests": 1077, "testsPassed": 1040, "testsFailed": 37,
+    "note": "The workstation was suspended during this run (one suite reported 54,219 s). The 3 failing suites were rerun separately and passed."
+  },
+  "integrationReruns": [
+    {"suites": "users.api, notifications.api", "result": "39/39 passed on fresh db sevanest_bqa2_ci, Redis db 9"},
+    {"suites": "foundation.int-spec", "result": "11/11 passed with a valid test env file (DOTENV_CONFIG_PATH)"},
+    {"suites": "gap.closing, payments.recovery, notifications.api, qa.journeys, qa.access", "result": "85/85 passed (earlier isolated rerun)"},
+    {"suites": "qa.robustness", "result": "1/1 passed (earlier isolated rerun)"},
+    {"suites": "security.api, qa.adversarial", "result": "42/42 passed after the F-004 fix"}
+  ],
+  "earlierInvalidRuns": [
+    "First full run overlapped with a second full run on the same database and Redis: 25 suites failed, discarded.",
+    "Second full run on a shared dirty database: 7 suites failed, 6 passed on rerun on a fresh database."
+  ],
+  "skipped": 0,
+  "notExecuted": ["live provider calls (Razorpay, SMS, FCM, Maps, S3)", "hosted (Render) performance and load", "npm audit", "external OpenAPI linter"]
+}

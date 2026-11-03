@@ -4,6 +4,10 @@ import { Permissions } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { PermissionCode } from '../users/rbac.constants';
 import { RetentionReport, RetentionService } from './retention.service';
+import {
+  ApiSchemaResponse,
+  RETENTION_REPORT_SCHEMA,
+} from '../../common/swagger/api-schema-responses';
 
 @ApiTags('Admin - Retention')
 @ApiBearerAuth()
@@ -14,6 +18,10 @@ export class RetentionController {
 
   @Get('preview')
   @Permissions(PermissionCode.AUDIT_VIEW)
+  @ApiSchemaResponse(
+    RETENTION_REPORT_SCHEMA,
+    'What a retention run would remove (nothing is removed)',
+  )
   @ApiOperation({
     summary: 'Dry run: how much data is past its retention period (changes nothing)',
     description:

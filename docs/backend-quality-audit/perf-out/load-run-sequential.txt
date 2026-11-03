@@ -1,0 +1,12 @@
+target http://localhost:3100; 3000 customer tokens, 500 worker tokens
+
+== concurrency 1, 40s: 834 requests, 20.9 req/s
+search        n=   303 err=    0 p50=  102ms p95=  180ms p99=  256ms  statuses={"200":303}
+worker-card   n=    77 err=    0 p50=   14ms p95=   19ms p99=   28ms  statuses={"200":77}
+worker-slots  n=    29 err=    0 p50=   18ms p95=   37ms p99=   51ms  statuses={"200":29}
+my-bookings   n=   139 err=    0 p50=   15ms p95=   34ms p99=   83ms  statuses={"200":139}
+my-profile    n=    79 err=    0 p50=    8ms p95=   11ms p99=   17ms  statuses={"200":79}
+unread-count  n=    81 err=    0 p50=    7ms p95=   12ms p99=   18ms  statuses={"200":81}
+worker-feed   n=    71 err=    0 p50=   14ms p95=   20ms p99=   30ms  statuses={"200":71}
+health        n=    55 err=    0 p50=    4ms p95=    5ms p99=    7ms  statuses={"200":55}
+ALL           n=   834 err=    0 (0.00%) p50=17ms p95=139ms p99=231ms

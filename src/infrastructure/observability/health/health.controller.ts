@@ -60,7 +60,7 @@ export class DependencyHealth {
   async database() {
     const indicator = this.indicators.check('database');
     try {
-      await withTimeout(this.prisma.$queryRaw`SELECT 1`, DEPENDENCY_TIMEOUT_MS);
+      await withTimeout(this.prisma.ping(DEPENDENCY_TIMEOUT_MS), DEPENDENCY_TIMEOUT_MS);
       return indicator.up();
     } catch {
       return indicator.down({ message: 'unreachable' });
@@ -91,7 +91,14 @@ export class HealthController {
 
   @Get('live')
   @ApiOperation({ summary: 'Liveness probe: the process is running' })
-  @ApiOkResponse({ description: 'Process is alive' })
+  @ApiOkResponse({
+    description: 'Process is alive',
+    schema: {
+      type: 'object',
+      required: ['status'],
+      properties: { status: { type: 'string', enum: ['ok'] } },
+    },
+  })
   live(): { status: 'ok' } {
     return { status: 'ok' };
   }

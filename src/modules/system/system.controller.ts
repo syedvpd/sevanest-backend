@@ -4,6 +4,7 @@ import { Permissions } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { PermissionCode } from '../users/rbac.constants';
 import { ReadinessReport, ReadinessService } from './readiness.service';
+import { ApiSchemaResponse, READINESS_SCHEMA } from '../../common/swagger/api-schema-responses';
 
 @ApiTags('Admin - System')
 @ApiBearerAuth()
@@ -14,6 +15,7 @@ export class SystemController {
 
   @Get('readiness')
   @Permissions(PermissionCode.ROLE_MANAGE)
+  @ApiSchemaResponse(READINESS_SCHEMA, 'Launch prerequisites and their state')
   @ApiOperation({
     summary:
       'Every prerequisite for real use and whether it is met (areas, fee, verification set, providers, templates, workers)',

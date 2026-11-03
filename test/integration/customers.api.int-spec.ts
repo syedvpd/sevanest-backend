@@ -394,6 +394,29 @@ describe('Customers API (integration)', () => {
       ).toBe(0);
     });
 
+    it('caps the saved addresses at 20, counts only active ones, and holds the cap under parallel creates (F-005)', async () => {
+      const customer = await newCustomer();
+      const ids: string[] = [];
+      for (let i = 0; i < 19; i++) ids.push(await addAddress(customer, { line: `Flat ${i}` }));
+      const results = await Promise.all(
+        [1, 2, 3].map((n) =>
+          as(customer).post('/api/v1/customers/me/addresses', address({ line: `Race ${n}` })),
+        ),
+      );
+      expect(results.map((r) => r.status).sort()).toEqual([201, 422, 422]);
+      const refused = results.find((r) => r.status === 422)!;
+      expect(refused.body.code).toBe('ADDRESS_LIMIT_REACHED');
+      expect(
+        await api.prisma.customerAddress.count({
+          where: { customerId: customer.customerId, isActive: true },
+        }),
+      ).toBe(20);
+      await as(customer).delete(`/api/v1/customers/me/addresses/${ids[0]}`).expect(204);
+      await as(customer).post('/api/v1/customers/me/addresses', address()).expect(201);
+      const list = await as(customer).get('/api/v1/customers/me/addresses').expect(200);
+      expect((list.body as unknown[]).length).toBe(20);
+    });
+
     it('has no default until one is chosen, then keeps exactly one default', async () => {
       const customer = await newCustomer();
       const a = await addAddress(customer);

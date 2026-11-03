@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { createValidationPipe } from './common/pipes/validation.pipe';
+import { addStandardErrorResponses } from './common/swagger/error-responses';
 import {
   REQUEST_ID_HEADER,
   requestContextMiddleware,
@@ -42,14 +43,16 @@ export function configureApp(app: NestExpressApplication, config: AppConfigServi
   app.enableShutdownHooks();
 
   if (config.swaggerEnabled) {
-    const document = SwaggerModule.createDocument(
-      app,
-      new DocumentBuilder()
-        .setTitle('SevaNest API')
-        .setDescription('Backend API for the Customer app, Worker app and Admin portal.')
-        .setVersion('1')
-        .addBearerAuth()
-        .build(),
+    const document = addStandardErrorResponses(
+      SwaggerModule.createDocument(
+        app,
+        new DocumentBuilder()
+          .setTitle('SevaNest API')
+          .setDescription('Backend API for the Customer app, Worker app and Admin portal.')
+          .setVersion('1')
+          .addBearerAuth()
+          .build(),
+      ),
     );
     SwaggerModule.setup('docs', app, document, { jsonDocumentUrl: 'docs/openapi.json' });
     // The bare service URL has no route of its own; send visitors to the interactive docs.

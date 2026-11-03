@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import { AppConfigService } from '../../config/app-config.service';
 import { recordQuery } from '../../common/request-context/request-context';
 import { PrismaClient } from '../../generated/prisma/client';
@@ -11,6 +12,8 @@ import { PrismaClient } from '../../generated/prisma/client';
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
+  private healthPool?: Pool;
+  private readonly healthUrl: string;
 
   constructor(config: AppConfigService) {
     super({
@@ -23,6 +26,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         ? { log: [{ emit: 'event' as const, level: 'query' as const }] }
         : {}),
     });
+    this.healthUrl = config.databaseUrl;
     if (config.requestTimingLog) {
       // Only the duration is read: the statement text and its parameters are deliberately never touched.
       (this as unknown as { $on(event: 'query', cb: (e: { duration: number }) => void): void }).$on(
@@ -38,7 +42,26 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     this.logger.log('PostgreSQL connection established');
   }
 
+  /**
+   * Readiness check on its own single connection, never on the shared pool: when traffic has used every pooled connection the
+   * probe would otherwise queue behind it, time out and report a busy instance as down (F-012). A dead database still fails it.
+   */
+  async ping(timeoutMs = 2000): Promise<void> {
+    if (!this.healthPool) {
+      this.healthPool = new Pool({
+        connectionString: this.healthUrl,
+        max: 1,
+        connectionTimeoutMillis: timeoutMs,
+        query_timeout: timeoutMs,
+      });
+      // An idle probe connection dropped by the server must not crash the process; the next ping reconnects.
+      this.healthPool.on('error', () => undefined);
+    }
+    await this.healthPool.query('SELECT 1');
+  }
+
   async onModuleDestroy(): Promise<void> {
+    await this.healthPool?.end().catch(() => undefined);
     await this.$disconnect();
   }
 }

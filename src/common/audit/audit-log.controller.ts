@@ -14,6 +14,7 @@ import { ErrorCode } from '../errors/error-codes';
 import { Page, PageQueryDto, skipFor } from '../pagination/pagination';
 import { isRealDate } from '../time/india';
 import { AuditService } from './audit.service';
+import { ApiPageResponse } from '../swagger/api-responses';
 
 /** Permission code of the audit viewer (Super Admin only, see SUPER_ADMIN_ONLY_PERMISSION_CODES). */
 const AUDIT_VIEW = 'audit.view';
@@ -143,6 +144,7 @@ export class AuditLogController {
 
   @Get()
   @Permissions(AUDIT_VIEW)
+  @ApiPageResponse(AuditLogView)
   @ApiOperation({
     summary: 'Search the audit log (newest first)',
     description:

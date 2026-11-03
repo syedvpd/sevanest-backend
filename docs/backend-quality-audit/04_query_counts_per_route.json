@@ -1,0 +1,1910 @@
+[
+ {
+  "k": "POST /api/v1/replacement-requests/:requestId/select",
+  "n": 10,
+  "qp50": 41,
+  "qmax": 41,
+  "qmin": 41,
+  "db": 91.2,
+  "ms": 116.1
+ },
+ {
+  "k": "POST /api/v1/admin/bookings",
+  "n": 10,
+  "qp50": 33,
+  "qmax": 33,
+  "qmin": 33,
+  "db": 106.6,
+  "ms": 125.1
+ },
+ {
+  "k": "POST /api/v1/admin/replacement-requests/:requestId/reject",
+  "n": 10,
+  "qp50": 31,
+  "qmax": 31,
+  "qmin": 31,
+  "db": 65.1,
+  "ms": 85.9
+ },
+ {
+  "k": "POST /api/v1/admin/workers/:workerId/verification/sign-off",
+  "n": 40,
+  "qp50": 30,
+  "qmax": 30,
+  "qmin": 30,
+  "db": 57.1,
+  "ms": 60.3
+ },
+ {
+  "k": "POST /api/v1/admin/bookings/:bookingId/:action",
+  "n": 10,
+  "qp50": 30,
+  "qmax": 30,
+  "qmin": 30,
+  "db": 59.5,
+  "ms": 71.6
+ },
+ {
+  "k": "POST /api/v1/admin/workers/:workerId/activate",
+  "n": 40,
+  "qp50": 28,
+  "qmax": 28,
+  "qmin": 28,
+  "db": 56.8,
+  "ms": 55
+ },
+ {
+  "k": "POST /api/v1/bookings",
+  "n": 40,
+  "qp50": 26,
+  "qmax": 26,
+  "qmin": 7,
+  "db": 58.2,
+  "ms": 69
+ },
+ {
+  "k": "GET /api/v1/admin/dashboard",
+  "n": 10,
+  "qp50": 26,
+  "qmax": 26,
+  "qmin": 26,
+  "db": 89.4,
+  "ms": 52.6
+ },
+ {
+  "k": "PUT /api/v1/admin/workers/:workerId/categories",
+  "n": 10,
+  "qp50": 25,
+  "qmax": 25,
+  "qmin": 25,
+  "db": 57.9,
+  "ms": 63.6
+ },
+ {
+  "k": "POST /api/v1/payments/:paymentId/verify",
+  "n": 20,
+  "qp50": 25,
+  "qmax": 25,
+  "qmin": 25,
+  "db": 49.6,
+  "ms": 65.3
+ },
+ {
+  "k": "POST /api/v1/workers/me/verification/checks/:checkType/submit",
+  "n": 60,
+  "qp50": 24,
+  "qmax": 24,
+  "qmin": 24,
+  "db": 45.9,
+  "ms": 48.4
+ },
+ {
+  "k": "POST /api/v1/admin/verification/checks/:checkId/approve",
+  "n": 50,
+  "qp50": 24,
+  "qmax": 24,
+  "qmin": 24,
+  "db": 46.5,
+  "ms": 49
+ },
+ {
+  "k": "POST /api/v1/admin/verification/checks/:checkId/reject",
+  "n": 10,
+  "qp50": 24,
+  "qmax": 24,
+  "qmin": 24,
+  "db": 49.8,
+  "ms": 52.4
+ },
+ {
+  "k": "POST /api/v1/admin/interviews/:interviewId/confirm",
+  "n": 10,
+  "qp50": 24,
+  "qmax": 24,
+  "qmin": 24,
+  "db": 44.7,
+  "ms": 56.8
+ },
+ {
+  "k": "POST /api/v1/admin/interviews/:interviewId/accept-proposal",
+  "n": 10,
+  "qp50": 24,
+  "qmax": 24,
+  "qmin": 24,
+  "db": 42.8,
+  "ms": 55.4
+ },
+ {
+  "k": "POST /api/v1/admin/interviews/:interviewId/complete",
+  "n": 10,
+  "qp50": 24,
+  "qmax": 24,
+  "qmin": 24,
+  "db": 40.7,
+  "ms": 52.3
+ },
+ {
+  "k": "POST /api/v1/admin/workers",
+  "n": 10,
+  "qp50": 23,
+  "qmax": 23,
+  "qmin": 23,
+  "db": 48.7,
+  "ms": 54.8
+ },
+ {
+  "k": "PATCH /api/v1/admin/workers/:workerId",
+  "n": 10,
+  "qp50": 23,
+  "qmax": 23,
+  "qmin": 23,
+  "db": 47.9,
+  "ms": 57.6
+ },
+ {
+  "k": "PATCH /api/v1/admin/workers/:workerId/availability",
+  "n": 10,
+  "qp50": 23,
+  "qmax": 23,
+  "qmin": 23,
+  "db": 41.5,
+  "ms": 51.7
+ },
+ {
+  "k": "POST /api/v1/workers/me/bookings/:bookingId/:action",
+  "n": 20,
+  "qp50": 23,
+  "qmax": 23,
+  "qmin": 22,
+  "db": 51.2,
+  "ms": 66.2
+ },
+ {
+  "k": "POST /api/v1/admin/interviews/:interviewId/reschedule",
+  "n": 10,
+  "qp50": 23,
+  "qmax": 23,
+  "qmin": 23,
+  "db": 41.5,
+  "ms": 53.9
+ },
+ {
+  "k": "POST /api/v1/bookings/:bookingId/:action",
+  "n": 90,
+  "qp50": 23,
+  "qmax": 24,
+  "qmin": 19,
+  "db": 48.6,
+  "ms": 56
+ },
+ {
+  "k": "POST /api/v1/workers/me/interviews/:interviewId/accept",
+  "n": 10,
+  "qp50": 22,
+  "qmax": 22,
+  "qmin": 22,
+  "db": 37.4,
+  "ms": 48.4
+ },
+ {
+  "k": "POST /api/v1/admin/replacement-requests/:requestId/approve",
+  "n": 20,
+  "qp50": 22,
+  "qmax": 22,
+  "qmin": 22,
+  "db": 42.9,
+  "ms": 54.8
+ },
+ {
+  "k": "POST /api/v1/admin/support/tickets/:ticketId/assign",
+  "n": 10,
+  "qp50": 22,
+  "qmax": 22,
+  "qmin": 22,
+  "db": 43.2,
+  "ms": 60.5
+ },
+ {
+  "k": "PUT /api/v1/workers/me/categories",
+  "n": 60,
+  "qp50": 20,
+  "qmax": 20,
+  "qmin": 20,
+  "db": 40.7,
+  "ms": 39.6
+ },
+ {
+  "k": "POST /api/v1/workers/me/submit",
+  "n": 60,
+  "qp50": 20,
+  "qmax": 20,
+  "qmin": 20,
+  "db": 39.7,
+  "ms": 41.5
+ },
+ {
+  "k": "POST /api/v1/admin/verification/checks/:checkId/start-review",
+  "n": 60,
+  "qp50": 20,
+  "qmax": 20,
+  "qmin": 20,
+  "db": 42.1,
+  "ms": 43.6
+ },
+ {
+  "k": "POST /api/v1/replacement-requests",
+  "n": 40,
+  "qp50": 20,
+  "qmax": 20,
+  "qmin": 20,
+  "db": 39.1,
+  "ms": 51.5
+ },
+ {
+  "k": "GET /api/v1/replacement-requests/:requestId/alternatives",
+  "n": 10,
+  "qp50": 20,
+  "qmax": 20,
+  "qmin": 20,
+  "db": 84.9,
+  "ms": 74.3
+ },
+ {
+  "k": "POST /api/v1/admin/replacement-requests/:requestId/select",
+  "n": 10,
+  "qp50": 20,
+  "qmax": 20,
+  "qmin": 20,
+  "db": 46.4,
+  "ms": 68.7
+ },
+ {
+  "k": "POST /api/v1/admin/verification/checks/:checkId/recheck",
+  "n": 10,
+  "qp50": 20,
+  "qmax": 20,
+  "qmin": 20,
+  "db": 45.1,
+  "ms": 48.1
+ },
+ {
+  "k": "PATCH /api/v1/workers/me",
+  "n": 60,
+  "qp50": 19,
+  "qmax": 19,
+  "qmin": 19,
+  "db": 37,
+  "ms": 42.3
+ },
+ {
+  "k": "PATCH /api/v1/workers/me/availability",
+  "n": 60,
+  "qp50": 19,
+  "qmax": 19,
+  "qmin": 19,
+  "db": 36.1,
+  "ms": 44.8
+ },
+ {
+  "k": "POST /api/v1/admin/interviews/:interviewId/reject-proposal",
+  "n": 10,
+  "qp50": 19,
+  "qmax": 19,
+  "qmin": 19,
+  "db": 31.6,
+  "ms": 40.5
+ },
+ {
+  "k": "POST /api/v1/admin/interviews/:interviewId/cancel",
+  "n": 10,
+  "qp50": 19,
+  "qmax": 19,
+  "qmin": 19,
+  "db": 34.7,
+  "ms": 45.2
+ },
+ {
+  "k": "GET /api/v1/admin/replacement-requests/:requestId/candidates",
+  "n": 10,
+  "qp50": 19,
+  "qmax": 19,
+  "qmin": 19,
+  "db": 90,
+  "ms": 91
+ },
+ {
+  "k": "POST /api/v1/replacement-requests/:requestId/cancel",
+  "n": 10,
+  "qp50": 19,
+  "qmax": 19,
+  "qmin": 19,
+  "db": 35.2,
+  "ms": 48.7
+ },
+ {
+  "k": "PUT /api/v1/admin/users/:userId/role",
+  "n": 10,
+  "qp50": 18,
+  "qmax": 18,
+  "qmin": 18,
+  "db": 29.2,
+  "ms": 38.3
+ },
+ {
+  "k": "POST /api/v1/workers/me/verification/documents/:documentId/confirm",
+  "n": 60,
+  "qp50": 18,
+  "qmax": 18,
+  "qmin": 18,
+  "db": 33.2,
+  "ms": 36.3
+ },
+ {
+  "k": "POST /api/v1/admin/interviews",
+  "n": 10,
+  "qp50": 18,
+  "qmax": 18,
+  "qmin": 18,
+  "db": 47.1,
+  "ms": 58.4
+ },
+ {
+  "k": "POST /api/v1/workers/me/interviews/:interviewId/cancel",
+  "n": 10,
+  "qp50": 18,
+  "qmax": 18,
+  "qmin": 18,
+  "db": 31.6,
+  "ms": 41.6
+ },
+ {
+  "k": "POST /api/v1/admin/support/tickets/:ticketId/close",
+  "n": 10,
+  "qp50": 18,
+  "qmax": 18,
+  "qmin": 18,
+  "db": 31.2,
+  "ms": 40.8
+ },
+ {
+  "k": "POST /api/v1/admin/support/tickets/:ticketId/escalate",
+  "n": 10,
+  "qp50": 17,
+  "qmax": 17,
+  "qmin": 17,
+  "db": 32.2,
+  "ms": 44.7
+ },
+ {
+  "k": "POST /api/v1/admin/support/tickets/:ticketId/priority",
+  "n": 10,
+  "qp50": 16,
+  "qmax": 16,
+  "qmin": 16,
+  "db": 29.8,
+  "ms": 40.7
+ },
+ {
+  "k": "PUT /api/v1/admin/roles/:roleCode/permissions",
+  "n": 10,
+  "qp50": 15,
+  "qmax": 15,
+  "qmin": 15,
+  "db": 27.9,
+  "ms": 36.1
+ },
+ {
+  "k": "PUT /api/v1/admin/service-categories/:categoryId/engagements",
+  "n": 10,
+  "qp50": 15,
+  "qmax": 15,
+  "qmin": 15,
+  "db": 27.5,
+  "ms": 37.5
+ },
+ {
+  "k": "POST /api/v1/admin/matching/candidates",
+  "n": 10,
+  "qp50": 15,
+  "qmax": 15,
+  "qmin": 15,
+  "db": 73,
+  "ms": 72.4
+ },
+ {
+  "k": "POST /api/v1/payments",
+  "n": 20,
+  "qp50": 15,
+  "qmax": 15,
+  "qmin": 15,
+  "db": 34.9,
+  "ms": 51
+ },
+ {
+  "k": "POST /api/v1/admin/alerts/:alertId/acknowledge",
+  "n": 10,
+  "qp50": 15,
+  "qmax": 15,
+  "qmin": 15,
+  "db": 29.8,
+  "ms": 39.3
+ },
+ {
+  "k": "POST /api/v1/admin/alerts/:alertId/resolve",
+  "n": 10,
+  "qp50": 15,
+  "qmax": 15,
+  "qmin": 15,
+  "db": 30.8,
+  "ms": 41.2
+ },
+ {
+  "k": "POST /api/v1/workers/me/interviews/:interviewId/propose",
+  "n": 20,
+  "qp50": 14,
+  "qmax": 14,
+  "qmin": 14,
+  "db": 28,
+  "ms": 35
+ },
+ {
+  "k": "POST /api/v1/workers/me/interviews/:interviewId/decline",
+  "n": 10,
+  "qp50": 14,
+  "qmax": 14,
+  "qmin": 14,
+  "db": 25.7,
+  "ms": 34.8
+ },
+ {
+  "k": "POST /api/v1/customers/me/addresses",
+  "n": 20,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 10,
+  "db": 24.7,
+  "ms": 34.8
+ },
+ {
+  "k": "GET /api/v1/customers/me/home",
+  "n": 10,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 13,
+  "db": 155.8,
+  "ms": 77.2
+ },
+ {
+  "k": "POST /api/v1/workers/me/verification/checks/:checkType/documents",
+  "n": 60,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 13,
+  "db": 24.1,
+  "ms": 30.8
+ },
+ {
+  "k": "GET /api/v1/admin/workers/:workerId/verification",
+  "n": 100,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 13,
+  "db": 26,
+  "ms": 20.4
+ },
+ {
+  "k": "PUT /api/v1/workers/me/criminal-declaration",
+  "n": 40,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 13,
+  "db": 24.3,
+  "ms": 28.7
+ },
+ {
+  "k": "POST /api/v1/interviews",
+  "n": 30,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 13,
+  "db": 25.4,
+  "ms": 33.4
+ },
+ {
+  "k": "POST /api/v1/admin/support/tickets/:ticketId/messages",
+  "n": 10,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 13,
+  "db": 25.8,
+  "ms": 34.6
+ },
+ {
+  "k": "POST /api/v1/admin/safety/blocks",
+  "n": 10,
+  "qp50": 13,
+  "qmax": 13,
+  "qmin": 13,
+  "db": 23.9,
+  "ms": 32.1
+ },
+ {
+  "k": "GET /api/v1/workers/me/onboarding",
+  "n": 10,
+  "qp50": 12,
+  "qmax": 12,
+  "qmin": 12,
+  "db": 27,
+  "ms": 19.7
+ },
+ {
+  "k": "GET /api/v1/admin/workers/:workerId",
+  "n": 10,
+  "qp50": 12,
+  "qmax": 12,
+  "qmin": 12,
+  "db": 24.6,
+  "ms": 30.2
+ },
+ {
+  "k": "GET /api/v1/admin/alerts",
+  "n": 10,
+  "qp50": 12,
+  "qmax": 12,
+  "qmin": 12,
+  "db": 30,
+  "ms": 34.4
+ },
+ {
+  "k": "POST /api/v1/admin/users",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 25.4,
+  "ms": 496.1
+ },
+ {
+  "k": "PATCH /api/v1/admin/users/:userId/status",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 22.3,
+  "ms": 30.4
+ },
+ {
+  "k": "PATCH /api/v1/admin/service-areas/:areaId",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 29.4,
+  "ms": 39.7
+ },
+ {
+  "k": "PATCH /api/v1/admin/service-categories/:categoryId",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 24.1,
+  "ms": 32.4
+ },
+ {
+  "k": "PUT /api/v1/admin/pricing-guidance",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 24.3,
+  "ms": 32.5
+ },
+ {
+  "k": "PUT /api/v1/admin/fees/booking-fee",
+  "n": 30,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 23.3,
+  "ms": 31.9
+ },
+ {
+  "k": "POST /api/v1/workers/me",
+  "n": 60,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 22.3,
+  "ms": 24.1
+ },
+ {
+  "k": "PUT /api/v1/workers/me/references",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 28.4,
+  "ms": 36
+ },
+ {
+  "k": "POST /api/v1/workers/me/photo/:photoId/confirm",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 28.8,
+  "ms": 72.6
+ },
+ {
+  "k": "GET /api/v1/admin/workers/:workerId/references",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 24.9,
+  "ms": 28.5
+ },
+ {
+  "k": "PATCH /api/v1/admin/customers/:customerId/verification-status",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 22.4,
+  "ms": 30.6
+ },
+ {
+  "k": "GET /api/v1/admin/alerts/summary",
+  "n": 10,
+  "qp50": 11,
+  "qmax": 11,
+  "qmin": 11,
+  "db": 23,
+  "ms": 29.4
+ },
+ {
+  "k": "POST /api/v1/admin/users/:userId/password-reset",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 23.8,
+  "ms": 464.2
+ },
+ {
+  "k": "DELETE /api/v1/admin/pricing-guidance/:id",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 19.2,
+  "ms": 26.5
+ },
+ {
+  "k": "PUT /api/v1/admin/verification/requirements",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 13,
+  "qmin": 10,
+  "db": 19.1,
+  "ms": 27.2
+ },
+ {
+  "k": "PATCH /api/v1/admin/support/categories/:categoryId",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 22,
+  "ms": 30.1
+ },
+ {
+  "k": "PATCH /api/v1/admin/notification-templates/:templateId",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 19,
+  "ms": 27.4
+ },
+ {
+  "k": "GET /api/v1/admin/verification/queue",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 25.8,
+  "ms": 28
+ },
+ {
+  "k": "GET /api/v1/admin/verification/documents/:documentId/link",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 23,
+  "ms": 30.1
+ },
+ {
+  "k": "PUT /api/v1/workers/me/bookings/:bookingId/slot-proposal",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 21.2,
+  "ms": 26.5
+ },
+ {
+  "k": "DELETE /api/v1/admin/safety/blocks/:blockId",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 18,
+  "ms": 25.5
+ },
+ {
+  "k": "POST /api/v1/admin/customers/:customerId/notes",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 22.7,
+  "ms": 32
+ },
+ {
+  "k": "GET /api/v1/admin/system/readiness",
+  "n": 10,
+  "qp50": 10,
+  "qmax": 10,
+  "qmin": 10,
+  "db": 76.4,
+  "ms": 39.5
+ },
+ {
+  "k": "POST /api/v1/admin/service-areas",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 17.4,
+  "ms": 24
+ },
+ {
+  "k": "POST /api/v1/admin/service-categories",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 21.2,
+  "ms": 28.7
+ },
+ {
+  "k": "PUT /api/v1/admin/fees/:code",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 18.9,
+  "ms": 26.9
+ },
+ {
+  "k": "POST /api/v1/admin/support/categories",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 21.3,
+  "ms": 28.7
+ },
+ {
+  "k": "POST /api/v1/admin/notification-templates",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 19.3,
+  "ms": 26.9
+ },
+ {
+  "k": "POST /api/v1/workers/me/photo",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 24.8,
+  "ms": 31
+ },
+ {
+  "k": "GET /api/v1/workers/me/verification",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 20,
+  "ms": 14.7
+ },
+ {
+  "k": "GET /api/v1/admin/workers",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 24.7,
+  "ms": 22.6
+ },
+ {
+  "k": "GET /api/v1/admin/workers/:workerId/availability",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 20.4,
+  "ms": 17.5
+ },
+ {
+  "k": "POST /api/v1/admin/bookings/:bookingId/slot-proposal/:answer",
+  "n": 10,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 17,
+  "ms": 24
+ },
+ {
+  "k": "POST /api/v1/support/tickets",
+  "n": 20,
+  "qp50": 9,
+  "qmax": 9,
+  "qmin": 9,
+  "db": 20.8,
+  "ms": 30.1
+ },
+ {
+  "k": "POST /api/v1/auth/admin/login",
+  "n": 10,
+  "qp50": 8,
+  "qmax": 8,
+  "qmin": 8,
+  "db": 20.2,
+  "ms": 493.6
+ },
+ {
+  "k": "PATCH /api/v1/customers/me",
+  "n": 10,
+  "qp50": 8,
+  "qmax": 8,
+  "qmin": 8,
+  "db": 17.1,
+  "ms": 25.6
+ },
+ {
+  "k": "DELETE /api/v1/customers/me/addresses/:addressId",
+  "n": 10,
+  "qp50": 8,
+  "qmax": 8,
+  "qmin": 8,
+  "db": 17.4,
+  "ms": 25.4
+ },
+ {
+  "k": "GET /api/v1/workers/me/availability",
+  "n": 10,
+  "qp50": 8,
+  "qmax": 8,
+  "qmin": 8,
+  "db": 20,
+  "ms": 16.6
+ },
+ {
+  "k": "POST /api/v1/safety/blocks",
+  "n": 10,
+  "qp50": 8,
+  "qmax": 8,
+  "qmin": 8,
+  "db": 15.3,
+  "ms": 20.4
+ },
+ {
+  "k": "POST /api/v1/admin/notifications/:notificationId/retry",
+  "n": 10,
+  "qp50": 8,
+  "qmax": 8,
+  "qmin": 8,
+  "db": 14.8,
+  "ms": 18.4
+ },
+ {
+  "k": "POST /api/v1/me/deletion-request",
+  "n": 10,
+  "qp50": 8,
+  "qmax": 8,
+  "qmin": 8,
+  "db": 21.1,
+  "ms": 29.1
+ },
+ {
+  "k": "POST /api/v1/auth/otp/verify",
+  "n": 90,
+  "qp50": 7,
+  "qmax": 8,
+  "qmin": 7,
+  "db": 16.6,
+  "ms": 28.8
+ },
+ {
+  "k": "PATCH /api/v1/customers/me/addresses/:addressId",
+  "n": 10,
+  "qp50": 7,
+  "qmax": 7,
+  "qmin": 7,
+  "db": 14.7,
+  "ms": 21.8
+ },
+ {
+  "k": "POST /api/v1/support/tickets/:ticketId/messages",
+  "n": 10,
+  "qp50": 7,
+  "qmax": 7,
+  "qmin": 7,
+  "db": 14.9,
+  "ms": 22.7
+ },
+ {
+  "k": "GET /api/v1/admin/reports/support-tickets",
+  "n": 10,
+  "qp50": 7,
+  "qmax": 7,
+  "qmin": 7,
+  "db": 16,
+  "ms": 22.1
+ },
+ {
+  "k": "GET /api/v1/users/me",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 13.5,
+  "ms": 14.7
+ },
+ {
+  "k": "GET /api/v1/admin/users",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 11.3,
+  "ms": 12.9
+ },
+ {
+  "k": "GET /api/v1/workers/me",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 13.1,
+  "ms": 15
+ },
+ {
+  "k": "POST /api/v1/interviews/:interviewId/cancel",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 9.9,
+  "ms": 15.5
+ },
+ {
+  "k": "GET /api/v1/admin/support/tickets/:ticketId/messages",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 11,
+  "ms": 13
+ },
+ {
+  "k": "DELETE /api/v1/me/deletion-request",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 13.3,
+  "ms": 18.8
+ },
+ {
+  "k": "GET /api/v1/admin/reports/demand-by-area",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 13.6,
+  "ms": 19.7
+ },
+ {
+  "k": "GET /api/v1/admin/reports/top-rated-workers",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 11.8,
+  "ms": 16.7
+ },
+ {
+  "k": "GET /api/v1/admin/reports/repeat-customers",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 11.7,
+  "ms": 16.7
+ },
+ {
+  "k": "GET /api/v1/admin/reports/export/:report",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 14.8,
+  "ms": 22.1
+ },
+ {
+  "k": "POST /api/v1/admin/account/password",
+  "n": 10,
+  "qp50": 6,
+  "qmax": 6,
+  "qmin": 6,
+  "db": 17,
+  "ms": 885.5
+ },
+ {
+  "k": "GET /api/v1/admin/roles",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 11.6,
+  "ms": 14.8
+ },
+ {
+  "k": "GET /api/v1/admin/roles/:roleCode",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 11.7,
+  "ms": 14.7
+ },
+ {
+  "k": "GET /api/v1/admin/service-categories",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 14.8,
+  "ms": 17.1
+ },
+ {
+  "k": "GET /api/v1/admin/pricing-guidance",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 14,
+  "ms": 13.5
+ },
+ {
+  "k": "POST /api/v1/customers/me",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 13.7,
+  "ms": 20.3
+ },
+ {
+  "k": "PUT /api/v1/customers/me/addresses/:addressId/default",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 11.8,
+  "ms": 19.2
+ },
+ {
+  "k": "GET /api/v1/workers/me/references",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 12.6,
+  "ms": 13.9
+ },
+ {
+  "k": "GET /api/v1/workers/me/photo",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 11.8,
+  "ms": 12.9
+ },
+ {
+  "k": "GET /api/v1/admin/payment-recovery/summary",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 14.5,
+  "ms": 17.5
+ },
+ {
+  "k": "GET /api/v1/admin/replacement-requests",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 13.7,
+  "ms": 20.4
+ },
+ {
+  "k": "GET /api/v1/support/tickets/:ticketId/messages",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 10.8,
+  "ms": 12.4
+ },
+ {
+  "k": "GET /api/v1/admin/support/tickets",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 10.5,
+  "ms": 12.9
+ },
+ {
+  "k": "GET /api/v1/admin/support/tickets/:ticketId",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 11.1,
+  "ms": 14.8
+ },
+ {
+  "k": "GET /api/v1/safety/blocks",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 9.2,
+  "ms": 10.6
+ },
+ {
+  "k": "DELETE /api/v1/safety/blocks/:blockId",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 9.2,
+  "ms": 13.9
+ },
+ {
+  "k": "GET /api/v1/admin/notifications/health",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 10.7,
+  "ms": 9.3
+ },
+ {
+  "k": "GET /api/v1/admin/customers",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 10.7,
+  "ms": 12.6
+ },
+ {
+  "k": "GET /api/v1/admin/customers/:customerId",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 12,
+  "ms": 13.6
+ },
+ {
+  "k": "GET /api/v1/admin/customers/:customerId/notes",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 12,
+  "ms": 13.5
+ },
+ {
+  "k": "GET /api/v1/admin/reports/new-customers",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 10.3,
+  "ms": 16.1
+ },
+ {
+  "k": "GET /api/v1/admin/reports/worker-registrations",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 14.1,
+  "ms": 19.8
+ },
+ {
+  "k": "GET /api/v1/admin/reports/booking-funnel",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 12.5,
+  "ms": 17.7
+ },
+ {
+  "k": "GET /api/v1/admin/reports/demand-by-category",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 11.8,
+  "ms": 17.7
+ },
+ {
+  "k": "GET /api/v1/admin/reports/worker-utilization",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 13.3,
+  "ms": 18
+ },
+ {
+  "k": "GET /api/v1/admin/reports/interview-conversion",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 10.8,
+  "ms": 16.5
+ },
+ {
+  "k": "GET /api/v1/admin/reports/cancellation-rate",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 9.8,
+  "ms": 15
+ },
+ {
+  "k": "GET /api/v1/admin/reports/replacement-rate",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 10.9,
+  "ms": 16.7
+ },
+ {
+  "k": "GET /api/v1/admin/reports/payment-collections",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 12.4,
+  "ms": 17.8
+ },
+ {
+  "k": "POST /api/v1/auth/logout",
+  "n": 10,
+  "qp50": 5,
+  "qmax": 5,
+  "qmin": 5,
+  "db": 9.9,
+  "ms": 14.2
+ },
+ {
+  "k": "GET /api/v1/admin/service-areas",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 9.3,
+  "ms": 10.1
+ },
+ {
+  "k": "GET /api/v1/admin/service-categories/:categoryId",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 9,
+  "ms": 12
+ },
+ {
+  "k": "GET /api/v1/admin/notification-templates",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 11.8,
+  "ms": 12.1
+ },
+ {
+  "k": "PUT /api/v1/auth/device-token",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 10.2,
+  "ms": 15.7
+ },
+ {
+  "k": "GET /api/v1/service-categories",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 8.2,
+  "ms": 10
+ },
+ {
+  "k": "GET /api/v1/search/workers",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 31.2,
+  "ms": 32.4
+ },
+ {
+  "k": "GET /api/v1/admin/payment-exceptions",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 13.3,
+  "ms": 12.3
+ },
+ {
+  "k": "POST /api/v1/bookings/:bookingId/slot-proposal/:answer",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 6.8,
+  "ms": 11.3
+ },
+ {
+  "k": "GET /api/v1/replacement-requests/:requestId",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 11.9,
+  "ms": 13
+ },
+ {
+  "k": "GET /api/v1/admin/replacement-requests/:requestId",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 9.4,
+  "ms": 13.1
+ },
+ {
+  "k": "GET /api/v1/support/tickets",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 10.7,
+  "ms": 10.9
+ },
+ {
+  "k": "GET /api/v1/support/tickets/:ticketId",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 8.7,
+  "ms": 12.1
+ },
+ {
+  "k": "GET /api/v1/admin/safety/reports",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 11.3,
+  "ms": 11.2
+ },
+ {
+  "k": "GET /api/v1/admin/safety/blocks",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 8.3,
+  "ms": 9.5
+ },
+ {
+  "k": "GET /api/v1/notifications",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 16.3,
+  "ms": 12
+ },
+ {
+  "k": "GET /api/v1/admin/notifications",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 9.4,
+  "ms": 11.2
+ },
+ {
+  "k": "GET /api/v1/admin/deletion-requests",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 10.5,
+  "ms": 10.9
+ },
+ {
+  "k": "GET /api/v1/admin/audit-logs",
+  "n": 10,
+  "qp50": 4,
+  "qmax": 4,
+  "qmin": 4,
+  "db": 20.7,
+  "ms": 19.3
+ },
+ {
+  "k": "GET /api/v1/admin/users/:userId",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 6.5,
+  "ms": 8.8
+ },
+ {
+  "k": "GET /api/v1/admin/permissions",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.6,
+  "ms": 10.2
+ },
+ {
+  "k": "GET /api/v1/admin/service-areas/:areaId",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 6.5,
+  "ms": 9
+ },
+ {
+  "k": "GET /api/v1/admin/fees",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.8,
+  "ms": 10.2
+ },
+ {
+  "k": "GET /api/v1/admin/verification/requirements",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.3,
+  "ms": 9.8
+ },
+ {
+  "k": "GET /api/v1/admin/support/categories",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 8.1,
+  "ms": 10.3
+ },
+ {
+  "k": "GET /api/v1/admin/notification-templates/:templateId",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.1,
+  "ms": 9.3
+ },
+ {
+  "k": "GET /api/v1/customers/me",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.5,
+  "ms": 8.5
+ },
+ {
+  "k": "GET /api/v1/customers/me/onboarding",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 8.2,
+  "ms": 10.6
+ },
+ {
+  "k": "GET /api/v1/customers/me/addresses",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 6.7,
+  "ms": 9.7
+ },
+ {
+  "k": "GET /api/v1/customers/me/addresses/:addressId",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 6,
+  "ms": 8.8
+ },
+ {
+  "k": "GET /api/v1/pricing/guidance",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.4,
+  "ms": 10.6
+ },
+ {
+  "k": "GET /api/v1/service-categories/:categoryId",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 6,
+  "ms": 8.2
+ },
+ {
+  "k": "GET /api/v1/service-areas",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 6,
+  "ms": 7.1
+ },
+ {
+  "k": "GET /api/v1/locations/service-area",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 9.1,
+  "ms": 12
+ },
+ {
+  "k": "GET /api/v1/shortlist",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.4,
+  "ms": 7.7
+ },
+ {
+  "k": "GET /api/v1/replacement-requests",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 8.4,
+  "ms": 9
+ },
+ {
+  "k": "POST /api/v1/notifications/:notificationId/read",
+  "n": 4,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.5,
+  "ms": 11.3
+ },
+ {
+  "k": "POST /api/v1/notifications/:notificationId/unread",
+  "n": 4,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 7.4,
+  "ms": 11.4
+ },
+ {
+  "k": "DELETE /api/v1/auth/sessions/:sessionId",
+  "n": 10,
+  "qp50": 3,
+  "qmax": 3,
+  "qmin": 3,
+  "db": 5.5,
+  "ms": 9.3
+ },
+ {
+  "k": "GET /api/v1/legal/status",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 5.4,
+  "ms": 8.1
+ },
+ {
+  "k": "POST /api/v1/auth/token/refresh",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 5.3,
+  "ms": 8.2
+ },
+ {
+  "k": "GET /api/v1/auth/sessions",
+  "n": 20,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 4.9,
+  "ms": 6.6
+ },
+ {
+  "k": "DELETE /api/v1/auth/device-token",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 5.3,
+  "ms": 7.3
+ },
+ {
+  "k": "GET /api/v1/service-areas/:areaId",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 4.1,
+  "ms": 6.5
+ },
+ {
+  "k": "GET /api/v1/search/workers/:workerId",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 6.3,
+  "ms": 8.1
+ },
+ {
+  "k": "GET /api/v1/search/workers/:workerId/slots",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 6.3,
+  "ms": 9.4
+ },
+ {
+  "k": "GET /api/v1/search/workers/:workerId/ratings",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 6.3,
+  "ms": 8.3
+ },
+ {
+  "k": "PUT /api/v1/shortlist/:workerId",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 5.9,
+  "ms": 8.1
+ },
+ {
+  "k": "DELETE /api/v1/shortlist/:workerId",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 3.7,
+  "ms": 6
+ },
+ {
+  "k": "GET /api/v1/support/categories",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 3.7,
+  "ms": 6
+ },
+ {
+  "k": "GET /api/v1/notifications/unread-count",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 3.6,
+  "ms": 5.5
+ },
+ {
+  "k": "POST /api/v1/notifications/read-all",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 4.3,
+  "ms": 6.3
+ },
+ {
+  "k": "GET /api/v1/admin/notification-events",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 4.6,
+  "ms": 6.7
+ },
+ {
+  "k": "GET /api/v1/me/deletion-request",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 4.5,
+  "ms": 6.6
+ },
+ {
+  "k": "GET /api/v1/admin/reports",
+  "n": 10,
+  "qp50": 2,
+  "qmax": 2,
+  "qmin": 2,
+  "db": 6.4,
+  "ms": 8.1
+ },
+ {
+  "k": "GET /health/ready",
+  "n": 10,
+  "qp50": 1,
+  "qmax": 1,
+  "qmin": 1,
+  "db": 1.6,
+  "ms": 2.9
+ },
+ {
+  "k": "GET /api/v1/app-config",
+  "n": 10,
+  "qp50": 1,
+  "qmax": 1,
+  "qmin": 1,
+  "db": 2.5,
+  "ms": 4.1
+ },
+ {
+  "k": "GET /api/v1/reference-data",
+  "n": 10,
+  "qp50": 1,
+  "qmax": 1,
+  "qmin": 1,
+  "db": 3.3,
+  "ms": 5.2
+ },
+ {
+  "k": "POST /api/v1/auth/otp/request",
+  "n": 90,
+  "qp50": 1,
+  "qmax": 1,
+  "qmin": 1,
+  "db": 1.9,
+  "ms": 9.9
+ },
+ {
+  "k": "POST /api/v1/legal/accept",
+  "n": 10,
+  "qp50": 1,
+  "qmax": 1,
+  "qmin": 1,
+  "db": 2.7,
+  "ms": 4.9
+ },
+ {
+  "k": "POST /api/v1/safety/reports",
+  "n": 10,
+  "qp50": 1,
+  "qmax": 1,
+  "qmin": 1,
+  "db": 2.3,
+  "ms": 5.2
+ },
+ {
+  "k": "GET /health/live",
+  "n": 10,
+  "qp50": 0,
+  "qmax": 0,
+  "qmin": 0,
+  "db": 0,
+  "ms": 1
+ },
+ {
+  "k": "GET /api/v1/legal/current",
+  "n": 10,
+  "qp50": 0,
+  "qmax": 0,
+  "qmin": 0,
+  "db": 0,
+  "ms": 0.9
+ },
+ {
+  "k": "GET /docs/openapi.json",
+  "n": 1,
+  "qp50": 0,
+  "qmax": 0,
+  "qmin": 0,
+  "db": 0,
+  "ms": 8.5
+ }
+]

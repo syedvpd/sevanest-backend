@@ -20,6 +20,7 @@ describe('Foundation (e2e, infrastructure stubbed)', () => {
       const res = await http().get('/health/live').expect(200);
       expect(res.body).toEqual({ status: 'ok' });
       expect(t.infra.prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(t.infra.prisma.ping).not.toHaveBeenCalled();
     });
 
     it('GET /health/ready reports database and redis up', async () => {
@@ -29,9 +30,7 @@ describe('Foundation (e2e, infrastructure stubbed)', () => {
     });
 
     it('GET /health/ready returns 503 naming the failing dependency, without leaking internals', async () => {
-      t.infra.prisma.$queryRaw.mockRejectedValueOnce(
-        new Error('ECONNREFUSED 10.9.9.9:5432 pw=secret'),
-      );
+      t.infra.prisma.ping.mockRejectedValueOnce(new Error('ECONNREFUSED 10.9.9.9:5432 pw=secret'));
       const res = await http().get('/health/ready').expect(503);
       expect(res.body.status).toBe('error');
       expect(res.body.error.database.status).toBe('down');

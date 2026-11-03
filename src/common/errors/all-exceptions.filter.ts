@@ -40,6 +40,56 @@ interface Mapped {
   body: ApiErrorBody;
 }
 
+/** Prisma codes that mean the database could not be reached or answered too late (not a bug in a query). */
+const DB_UNAVAILABLE_PRISMA_CODES = new Set(['P1001', 'P1002', 'P1008', 'P1017', 'P2024']);
+/** Exact messages the pg and ioredis drivers raise as plain Errors for a read timeout, a connect timeout or a dropped connection. */
+const DB_UNAVAILABLE_DRIVER_MESSAGES = new Set([
+  'Query read timeout',
+  'timeout exceeded when trying to connect',
+  'Connection terminated unexpectedly',
+  'Connection terminated due to connection timeout',
+  // ioredis, used with enableOfflineQueue=false, while Redis is down or reconnecting.
+  "Stream isn't writeable and enableOfflineQueue options is false",
+  'Connection is closed.',
+]);
+
+/** Node network error codes: PostgreSQL, Redis or another dependency could not be reached or dropped the connection. */
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+]);
+
+/** PostgreSQL error classes for connection failure (08), bad credentials (28), resources (53) and shutdown (57P). */
+function isUnavailablePgCode(code: unknown): boolean {
+  return (
+    typeof code === 'string' &&
+    (code === 'N/A' || /^(08|28|53)/.test(code) || /^57P0[123]$/.test(code))
+  );
+}
+
+/** True when a dependency outage, not a defect, caused the error: the client may retry later. */
+function isDatabaseUnavailable(error: Record<string, unknown>): boolean {
+  // Seen with the pg driver: a model/raw query on a dead server is a PrismaClientKnownRequestError whose code is the errno
+  // (ECONNREFUSED), a transaction is an AggregateError with that code, and ioredis raises the same AggregateError.
+  if (typeof error['code'] === 'string' && NETWORK_ERROR_CODES.has(error['code'])) return true;
+  if (error['name'] === 'PrismaClientKnownRequestError' && typeof error['code'] === 'string') {
+    if (DB_UNAVAILABLE_PRISMA_CODES.has(error['code'])) return true;
+    // A raw query (P2010) reports the PostgreSQL code in meta; no code means the connection itself failed.
+    const meta = error['meta'];
+    return error['code'] === 'P2010' && isRecord(meta) && isUnavailablePgCode(meta['code']);
+  }
+  return (
+    error['name'] === 'PrismaClientInitializationError' ||
+    (error instanceof Error && DB_UNAVAILABLE_DRIVER_MESSAGES.has(error.message))
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -62,7 +112,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, body } = this.map(exception);
     body.requestId = requestId;
 
-    if (status === 503 && exception instanceof HttpException) {
+    if (status === 503 && (exception instanceof HttpException || isRecord(exception))) {
       // A provider outage or a dependency we deliberately answer 503 for (SMS, payment gateway, storage) is an expected, handled state:
       // one warning line with the stable code, not an error with a stack trace for every affected request.
       this.logger.warn({ msg: 'Service unavailable (handled)', requestId, code: body.code });
@@ -97,6 +147,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const prisma = this.mapPrismaError(exception);
       if (prisma) {
         return prisma;
+      }
+      if (isDatabaseUnavailable(exception)) {
+        return {
+          status: HttpStatus.SERVICE_UNAVAILABLE,
+          body: {
+            code: ErrorCode.SERVICE_UNAVAILABLE,
+            message: 'Service temporarily unavailable',
+          },
+        };
       }
       // Express/body-parser errors (malformed JSON, oversized body) carry a client status.
       const status = exception['status'] ?? exception['statusCode'];

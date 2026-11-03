@@ -36,6 +36,10 @@ import {
 } from './dto/notifications.dto';
 import { HealthView, NotificationsService } from './notifications.service';
 import { RequireIfMatch } from '../../common/concurrency/if-match.guard';
+import {
+  ApiSchemaResponse,
+  NOTIFICATION_HEALTH_SCHEMA,
+} from '../../common/swagger/api-schema-responses';
 
 /** Admin-configurable wording and channels per event (FR-NOT-004) and the delivery log (FR-NOT-005). */
 @ApiTags('Admin - Notifications')
@@ -49,7 +53,7 @@ export class AdminNotificationsController {
   ) {}
 
   @Get('notification-events')
-  @ApiPageResponse(TemplateView)
+  @ApiModelResponse(EventView, { isArray: true })
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
   @ApiOperation({ summary: 'The events that can notify, with the placeholders a template may use' })
   events(): EventView[] {
@@ -120,6 +124,7 @@ export class AdminNotificationsController {
 
   @Get('notifications/health')
   @Permissions(PermissionCode.NOTIFICATION_MANAGE)
+  @ApiSchemaResponse(NOTIFICATION_HEALTH_SCHEMA, 'Delivery, outbox and queue health')
   @ApiOperation({
     summary: 'Delivery and outbox health',
     description:
@@ -198,6 +203,10 @@ export class InboxController {
 
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
+  @ApiSchemaResponse(
+    { type: 'object', required: ['updated'], properties: { updated: { type: 'integer' } } },
+    'How many notifications were marked read',
+  )
   @ApiOperation({ summary: 'Mark all my notifications read (repeating is harmless)' })
   readAll(@CurrentUser() user: AuthenticatedUser): Promise<{ updated: number }> {
     return this.notifications.markAllRead(user.userId);

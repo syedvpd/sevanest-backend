@@ -18,7 +18,14 @@ import { assertCoordinatePair } from './domain/customer.rules';
 export const AddressErrorCode = {
   ADDRESS_NOT_FOUND: 'ADDRESS_NOT_FOUND',
   PROFILE_REQUIRED: 'CUSTOMER_PROFILE_REQUIRED',
+  ADDRESS_LIMIT_REACHED: 'ADDRESS_LIMIT_REACHED',
 } as const;
+
+/**
+ * Most saved (active) addresses one customer may hold. An engineering default that keeps the list and the geocoding cost bounded
+ * (audit F-005); the product owner may change the number. Deleted addresses do not count.
+ */
+export const MAX_ACTIVE_ADDRESSES = 20;
 
 export function toAddressView(address: AddressRecord): AddressResponse {
   return {
@@ -108,6 +115,14 @@ export class CustomerAddressesService {
 
   private async createSaved(userId: string, dto: CreateAddressDto): Promise<AddressResponse> {
     return this.mutate(userId, async (tx, customerId) => {
+      // The customer row is locked by mutate(), so two parallel creates cannot both pass this check.
+      if ((await this.repository.countActiveAddresses(customerId, tx)) >= MAX_ACTIVE_ADDRESSES) {
+        throw new DomainException(
+          AddressErrorCode.ADDRESS_LIMIT_REACHED,
+          `You can save at most ${MAX_ACTIVE_ADDRESSES} addresses; delete one to add another`,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
       const wantsDefault = dto.isDefault === true;
       if (wantsDefault) {
         await this.repository.clearDefault(customerId, tx);

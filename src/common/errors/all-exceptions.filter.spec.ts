@@ -117,6 +117,60 @@ describe('AllExceptionsFilter', () => {
     expect(body).toMatchObject({ code: ErrorCode.PAYLOAD_TOO_LARGE });
   });
 
+  describe('database outage (F-004)', () => {
+    const prismaError = (code: string, meta?: Record<string, unknown>) => ({
+      name: 'PrismaClientKnownRequestError',
+      code,
+      meta,
+      message: 'password authentication failed for user "sevanest" at 10.0.0.5',
+    });
+
+    it.each([
+      ['unreachable server (raw query, no pg code)', prismaError('P2010', { code: 'N/A' })],
+      ['bad credentials (raw query, 28P01)', prismaError('P2010', { code: '28P01' })],
+      ['too many connections (raw query, 53300)', prismaError('P2010', { code: '53300' })],
+      ['cannot connect now (raw query, 57P03)', prismaError('P2010', { code: '57P03' })],
+      ['cannot reach database', prismaError('P1001')],
+      ['pool timeout', prismaError('P2024')],
+      [
+        'model query on a dead server (errno code)',
+        prismaError('ECONNREFUSED', { modelName: 'User' }),
+      ],
+      [
+        'transaction on a dead server (AggregateError)',
+        Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' }),
+      ],
+      ['dropped connection', prismaError('ECONNRESET')],
+      [
+        'redis offline (no offline queue)',
+        new Error("Stream isn't writeable and enableOfflineQueue options is false"),
+      ],
+      ['redis connection closed', new Error('Connection is closed.')],
+      ['driver read timeout', new Error('Query read timeout')],
+      ['driver connect timeout', new Error('timeout exceeded when trying to connect')],
+      ['init failure', { name: 'PrismaClientInitializationError' }],
+    ])(
+      'answers 503 SERVICE_UNAVAILABLE for %s, as a handled warning with no internals',
+      (_n, e) => {
+        const { status, body, logger } = run(e);
+        expect(status).toHaveBeenCalledWith(503);
+        expect(body).toEqual({
+          code: ErrorCode.SERVICE_UNAVAILABLE,
+          message: 'Service temporarily unavailable',
+          requestId: 'req-id-0001',
+        });
+        expect(JSON.stringify(body)).not.toMatch(/sevanest|10\.0\.0\.5|password/);
+        expect(logger.error).not.toHaveBeenCalled();
+        expect((logger as unknown as { warn: jest.Mock }).warn).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('keeps a failing raw query (syntax error, constraint) a 500: that is a defect, not an outage', () => {
+      const { status } = run(prismaError('P2010', { code: '42601' }));
+      expect(status).toHaveBeenCalledWith(500);
+    });
+  });
+
   it('never includes a stack trace', () => {
     const { body } = run(new Error('boom'));
     expect(JSON.stringify(body)).not.toContain('at ');

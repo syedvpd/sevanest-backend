@@ -28,6 +28,7 @@ import {
   RequestDeletionDto,
 } from './legal.dto';
 import { LegalService } from './legal.service';
+import { ApiNullableModelResponse } from '../../common/swagger/api-schema-responses';
 
 /** Terms and privacy consent. The current versions are public so the apps can show them before sign-in. */
 @ApiTags('Legal')
@@ -89,6 +90,10 @@ export class AccountDeletionController {
   }
 
   @Get()
+  @ApiNullableModelResponse(
+    DeletionRequestView,
+    'My open deletion request, or null when there is none',
+  )
   @ApiOperation({ summary: 'My open deletion request, or null' })
   async mine(@CurrentUser() user: AuthenticatedUser): Promise<DeletionRequestView | null> {
     return this.legal.myDeletion(user.userId);

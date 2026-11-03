@@ -15,6 +15,10 @@ import type { AuthenticatedUser } from '../../common/decorators/auth.decorators'
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { PhotoLink, PhotoUploadResponse, RequestPhotoUploadDto } from './dto/worker-photo.dto';
 import { WorkerPhotoService } from './worker-photo.service';
+import {
+  ApiSchemaResponse,
+  PHOTO_CONFIRMED_SCHEMA,
+} from '../../common/swagger/api-schema-responses';
 
 /** The signed-in worker's own profile photo (FR-WON-002). Scoped to the authenticated user; no worker id is accepted. */
 @ApiTags('Worker photo')
@@ -41,6 +45,7 @@ export class WorkerPhotoController {
 
   @Post(':photoId/confirm')
   @HttpCode(HttpStatus.OK)
+  @ApiSchemaResponse(PHOTO_CONFIRMED_SCHEMA, 'The photo is stored and ready')
   @ApiOperation({
     summary:
       'Confirm the upload; the photo becomes current once its size and file signature check out',

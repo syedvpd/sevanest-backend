@@ -80,7 +80,7 @@ export const TEST_USERS = {
 } as const;
 
 export interface TestInfra {
-  prisma: { $queryRaw: jest.Mock };
+  prisma: { $queryRaw: jest.Mock; ping: jest.Mock };
   redis: { ping: jest.Mock };
 }
 
@@ -98,7 +98,10 @@ export interface TestApp {
  */
 export async function createTestApp(): Promise<TestApp> {
   const infra: TestInfra = {
-    prisma: { $queryRaw: jest.fn().mockResolvedValue([{ ok: 1 }]) },
+    prisma: {
+      $queryRaw: jest.fn().mockResolvedValue([{ ok: 1 }]),
+      ping: jest.fn().mockResolvedValue(undefined),
+    },
     redis: { ping: jest.fn().mockResolvedValue(undefined) },
   };
   const authRepository = {

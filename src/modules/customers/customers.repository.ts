@@ -248,6 +248,10 @@ export class CustomersRepository {
     return row ? toAddress(row) : null;
   }
 
+  countActiveAddresses(customerId: string, tx: Prisma.TransactionClient): Promise<number> {
+    return tx.customerAddress.count({ where: { customerId, isActive: true } });
+  }
+
   async listActiveAddresses(customerId: string): Promise<AddressRecord[]> {
     const rows = await this.prisma.customerAddress.findMany({
       where: { customerId, isActive: true },

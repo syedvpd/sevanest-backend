@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '../../common/decorators/auth.decorators'
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { AuthService } from './auth.service';
 import { ChangeAdminPasswordDto } from './dto/auth.dto';
+import { ApiSchemaResponse } from '../../common/swagger/api-schema-responses';
 
 /** Admin self-service account routes. Admin-only routes live under /admin/ (enforced by the route inventory test). */
 @ApiTags('Admin account')
@@ -17,6 +18,16 @@ export class AdminAccountController {
   @RequireUserType('ADMIN')
   @Post('password')
   @HttpCode(HttpStatus.OK)
+  @ApiSchemaResponse(
+    {
+      type: 'object',
+      required: ['revokedSessions'],
+      properties: {
+        revokedSessions: { type: 'integer', description: 'Other sessions that were signed out.' },
+      },
+    },
+    'The password was changed',
+  )
   @ApiOperation({
     summary: 'Change my admin password',
     description:

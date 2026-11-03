@@ -17,7 +17,12 @@ import {
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
 import type { Response } from 'express';
 import { etagOf } from '../../common/concurrency/if-match';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+  ApiUnprocessableEntityResponse,
+} from '@nestjs/swagger';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -115,6 +120,10 @@ export class CustomersController {
 
   @Post('addresses')
   @ApiModelResponse(AddressResponse, { status: 201 })
+  @ApiUnprocessableEntityResponse({
+    description:
+      'ADDRESS_LIMIT_REACHED: the customer already holds the maximum of 20 saved addresses',
+  })
   @ApiOperation({ summary: 'Save an address; isDefault=true replaces the current default' })
   createAddress(
     @Body() dto: CreateAddressDto,

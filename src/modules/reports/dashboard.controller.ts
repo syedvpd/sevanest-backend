@@ -6,6 +6,7 @@ import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { UsersService } from '../users/users.service';
 import { DashboardService } from './dashboard.service';
 import type { DashboardView } from './dashboard.service';
+import { ApiSchemaResponse, DASHBOARD_SCHEMA } from '../../common/swagger/api-schema-responses';
 
 /**
  * Admin dashboard (FRD FM-14). Open to every admin account; WHAT it shows is decided per section by the permissions the
@@ -22,6 +23,7 @@ export class DashboardController {
   ) {}
 
   @Get()
+  @ApiSchemaResponse(DASHBOARD_SCHEMA, 'The sections the caller may see')
   @ApiOperation({
     summary: 'Operations dashboard: only the sections the caller is permitted to see',
   })
