@@ -66,7 +66,10 @@ describe('QA - API inventory and route invariants (integration)', () => {
     // A parameterised sibling is only a problem when the parameter would swallow a different literal route; this
     // codebase's generic `:action` routes are validated by an enum pipe, so each such pair is listed explicitly.
     const unexpected = shadows.filter(
-      (s) => !/:(action|checkType|code)\b/.test(s.split(' can ')[0]),
+      (s) =>
+        !/:(action|checkType|code)\b/.test(s.split(' can ')[0]) &&
+        // SearchController declares GET /search/workers/count before :workerId, so Express matches the literal first.
+        !s.endsWith('can capture /api/v1/search/workers/count (SearchController)'),
     );
     expect(unexpected).toEqual([]);
   });
