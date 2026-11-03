@@ -967,7 +967,7 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     }
     // Template values (docker.env.example, .env.example) and local-development values must never reach a shared environment.
     const placeholderSecret =
-      /change-?me|replace-?me|placeholder|example|secret|do-not-use|local|dev(elopment)?[-_]/i;
+      /change-?me|replace-?me|placeholder|example|do-not-use|(^|[-_ ])(secret|local)([-_ ]|$)|(^|[-_ ])dev(elopment)?[-_]/i;
     if (config.JWT_ACCESS_SECRET && placeholderSecret.test(config.JWT_ACCESS_SECRET)) {
       throw new Error(
         'Invalid environment configuration: JWT_ACCESS_SECRET looks like a placeholder',
