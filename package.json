@@ -58,7 +58,7 @@
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "@sentry/node": "11.7.0",
-    "bullmq": "6.3.11",
+    "bullmq": "6.5.3",
     "class-transformer": "0.5.1",
     "class-validator": "0.15.1",
     "helmet": "8.3.0",
