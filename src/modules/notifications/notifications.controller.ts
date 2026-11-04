@@ -31,6 +31,8 @@ import {
   EventView,
   InboxItemView,
   InboxQuery,
+  NotificationAckDto,
+  NotificationAckResponse,
   TemplateListQuery,
   TemplateView,
   TestPushDto,
@@ -258,6 +260,23 @@ export class InboxController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.notifications.markRead(user.userId, notificationId);
+  }
+
+  @Post(':notificationId/ack')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @ApiModelResponse(NotificationAckResponse)
+  @ApiOperation({
+    summary: 'Acknowledge physical receipt, display or tap of a notification on device (D-104)',
+    description:
+      'Called by the mobile app when a push notification is received on device, displayed as a heads-up or system notification, or tapped by the user. Enforces notification ownership. Idempotent.',
+  })
+  async acknowledge(
+    @Param('notificationId', ParseUUIDPipe) notificationId: string,
+    @Body() dto: NotificationAckDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<NotificationAckResponse> {
+    return this.notifications.acknowledge(user.userId, notificationId, dto);
   }
 
   @Post('test-push')

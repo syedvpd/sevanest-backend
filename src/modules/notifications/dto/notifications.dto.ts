@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Matches,
+} from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
 import { LANGUAGE_CODE } from '../../../common/validation/language';
 
@@ -277,6 +286,43 @@ export class TestPushResponse {
   })
   correlationId!: string;
 
+  @ApiPropertyOptional({
+    description: 'Diagnostic ID (matches correlationId for tracing)',
+  })
+  diagnostic_id?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether Firebase/FCM provider is initialized and configured',
+  })
+  firebase_initialized?: boolean;
+
+  @ApiPropertyOptional({ description: 'Whether active device registration was found for user' })
+  registration_found?: boolean;
+
+  @ApiPropertyOptional({ description: 'Number of active device tokens found' })
+  active_token_count?: number;
+
+  @ApiPropertyOptional({ description: 'Whether dispatch was attempted to FCM' })
+  dispatch_attempted?: boolean;
+
+  @ApiPropertyOptional({ description: 'Number of device tokens accepted by Firebase' })
+  firebase_accepted_count?: number;
+
+  @ApiPropertyOptional({ description: 'Number of device tokens rejected by Firebase' })
+  firebase_failure_count?: number;
+
+  @ApiPropertyOptional({
+    description: 'Normalized diagnostic outcome code',
+    enum: [
+      'FCM_ACCEPTED',
+      'NO_ACTIVE_DEVICE_TOKEN',
+      'FIREBASE_NOT_INITIALIZED',
+      'INVALID_FCM_TOKEN',
+      'FCM_DISPATCH_FAILED',
+    ],
+  })
+  result?: string;
+
   @ApiProperty({
     enum: ['CONFIG_ERROR', 'NO_DEVICE_TOKEN', 'DISPATCHED', 'FAILED'],
     description: 'Diagnostic stage identifying whether an issue is in the app or backend',
@@ -309,4 +355,24 @@ export class TestPushResponse {
 
   @ApiProperty({ description: 'Server timestamp of test dispatch' })
   dispatchedAt!: Date;
+}
+
+export class NotificationAckDto {
+  @ApiProperty({
+    enum: ['RECEIVED', 'DISPLAYED', 'TAPPED'],
+    description: 'Telemetry event reported by mobile client',
+  })
+  @IsIn(['RECEIVED', 'DISPLAYED', 'TAPPED'])
+  eventType!: 'RECEIVED' | 'DISPLAYED' | 'TAPPED';
+
+  @ApiPropertyOptional({ description: 'Client timestamp when event occurred on device' })
+  @IsOptional()
+  @IsString()
+  deviceTimestamp?: string;
+}
+
+export class NotificationAckResponse {
+  @ApiProperty() acknowledged!: boolean;
+  @ApiProperty({ enum: ['RECEIVED', 'DISPLAYED', 'TAPPED'] }) eventType!: string;
+  @ApiProperty() notificationId!: string;
 }

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DEFAULT_FIREBASE_PROJECT_ID,
   resolveFcmServiceAccount,
   type FcmServiceAccount,
 } from '../integrations/notifications/fcm.provider';
@@ -259,7 +260,14 @@ export class AppConfigService {
     return this.get('FCM_SERVICE_ACCOUNT_JSON') ?? '';
   }
   get firebaseProjectId(): string {
-    return this.get('FIREBASE_PROJECT_ID') || 'sevanest-47cef';
+    // Report the project pushes actually go to. When FCM_SERVICE_ACCOUNT_JSON is set, the provider sends to the
+    // project_id inside that JSON and ignores FIREBASE_PROJECT_ID, so reading FIREBASE_PROJECT_ID here would show a
+    // project that receives nothing. Never throws: diagnostics must still print a value when push is disabled.
+    try {
+      return this.fcmServiceAccount.project_id;
+    } catch {
+      return this.get('FIREBASE_PROJECT_ID') || DEFAULT_FIREBASE_PROJECT_ID;
+    }
   }
   get allowTestPush(): boolean {
     return this.get('ALLOW_TEST_PUSH') ?? false;

@@ -23,6 +23,7 @@ These items are infrastructure, not application code. The application exposes wh
 
 ## Background work
 * `node dist/worker` (or `EMBEDDED_WORKERS=true` in the API) runs notification delivery, re-check reminders, abandoned-upload clean-up, payment recovery, booking checks (also purges expired idempotency keys) and support SLA checks. Heartbeats show in the readiness report.
+* This deployment runs **one** Render web service with `EMBEDDED_WORKERS=true`: the API and the workers share a process, one Redis and one FCM service account. Every required variable, the startup chain, the Redis requirements and the rotation sequence are in `docs/qa/SINGLE_SERVICE_DEPLOYMENT.md`.
 
 ## Malware scanning (optional)
 * Run a ClamAV daemon (`clamd`) the API can reach, then set `CLAMAV_HOST` (and `CLAMAV_PORT`, default 3310). With it, every confirmed KYC document is streamed to the scanner; an infected file is deleted and rejected, a scanner that cannot answer leaves the document unconfirmed (503, retry).
@@ -41,7 +42,9 @@ Prints one line per provider and never prints a secret, touches the database or 
 * Storage: probes a key that cannot exist (proves credentials, bucket and endpoint).
 * ClamAV: scans the harmless EICAR test string and expects "infected".
 Last local result (2026-10-13, local `.env`): storage OK (bucket reachable); Razorpay, SMS, ClamAV, FCM NOT_CONFIGURED locally.
-Push end-to-end diagnosis (including the required `PUSH` templates) is in `docs/qa/FCM_PUSH_DIAGNOSTICS.md`.
+Push end-to-end diagnosis (including the required `PUSH` templates) is in `docs/qa/FCM_PUSH_DIAGNOSTICS.md`; the
+single-service deployment (variables, embedded workers, Redis, drop of `WORKER_FCM_SERVICE_ACCOUNT_JSON`) is in
+`docs/qa/SINGLE_SERVICE_DEPLOYMENT.md`.
 
 ### 2. Razorpay sandbox session (manual, test keys only)
 1. Set `PAYMENT_PROVIDER=razorpay`, test `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`, and (for webhooks) `RAZORPAY_WEBHOOK_SECRET`; in the Razorpay dashboard add the webhook URL `https://<service>/api/v1/webhooks/payments` for the payment and refund events.

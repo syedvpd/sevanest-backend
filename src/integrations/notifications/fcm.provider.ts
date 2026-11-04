@@ -139,6 +139,15 @@ export class FcmPushProvider implements PushProvider {
               notification: { title: input.title, body: input.body },
               // FCM data values must be strings; routing ids only, never personal data.
               data: input.data ?? {},
+              android: {
+                priority: 'HIGH',
+                notification: {
+                  channel_id: 'sevanest_high_importance',
+                  priority: 'PRIORITY_MAX',
+                  default_sound: true,
+                  default_vibrate_timings: true,
+                },
+              },
             },
           }),
         },

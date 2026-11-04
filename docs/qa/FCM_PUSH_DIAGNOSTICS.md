@@ -21,6 +21,11 @@ Credentials are read from **either**:
 * `FCM_SERVICE_ACCOUNT_JSON` — the whole JSON on one line, **or**
 * `FIREBASE_PROJECT_ID` (default `sevanest-47cef`), `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (literal `\n` accepted).
 
+There is **one** credential source for the whole deployment: the API and the embedded worker
+(`EMBEDDED_WORKERS=true`) share `NotificationsModule` and therefore one provider and one OAuth token.
+`WORKER_FCM_SERVICE_ACCOUNT_JSON` is not read by anything — setting it only logs a `ConfigWarning`. See
+`docs/qa/SINGLE_SERVICE_DEPLOYMENT.md` for the full single-service mapping.
+
 `PUSH_PROVIDER` selects the implementation: `fcm`, `memory` (tests only, refused in production), `disabled` (default).
 
 Push is a **separate channel** from in-app. `NotificationsService.expand()` creates one notification row per *active template channel*
@@ -127,7 +132,7 @@ Run top to bottom. Record evidence labels from §8 for each row.
 |---|---|---|---|---|---|
 | 1 | Firebase project | App config `project_id` vs backend `firebaseProjectId` | `POST /admin/notifications/test-push` response `firebaseProjectId` | `google-services.json` | Mismatch = config fault |
 | 2 | FCM credentials | `verifyCredentials()` | `npm run check:providers` → FCM OK / FAILED | — | FAILED = key/clock/project fault |
-| 3 | Provider wiring | `PUSH_PROVIDER=fcm` on API **and worker** | readiness `provider_push`; test-push `pushProvider` | — | `disabled` = no push ever |
+| 3 | Provider wiring | `PUSH_PROVIDER=fcm` on the service (API and embedded worker share it) | readiness `provider_push`; test-push `pushProvider` | — | `disabled` = no push ever |
 | 4 | Token presence | Token registered for the target user | test-push `tokensCount`, `stage` | Steps 3–4 | 0 tokens = app/registration fault |
 | 5 | Token validity | FCM accepts the token | test-push `tokens[].error` | Step 3 | `INVALID_REGISTRATION_TOKEN` = re-register |
 | 6 | Direct send | Backend → FCM accepted | `stage=DISPATCHED`, `providerMessageId` present | — | No message id = FCM rejection |
@@ -139,11 +144,16 @@ Run top to bottom. Record evidence labels from §8 for each row.
 
 ## 7. Rotation and deployment (owner action, NOT performed by an agent)
 
+The deployment is **one** Render web service with `EMBEDDED_WORKERS=true`; the API and the notification workers share
+one process and one credential. Full detail: `docs/qa/SINGLE_SERVICE_DEPLOYMENT.md`.
+
 1. Firebase console → Project settings → Service accounts → delete the key ending `c8ec68...` (or revoke via Google Cloud IAM).
 2. Create a new key; store it only in the host's secret store.
-3. Set on **both** Render services (API and worker): `PUSH_PROVIDER=fcm` and either `FCM_SERVICE_ACCOUNT_JSON` or
-   `FIREBASE_PROJECT_ID`/`FIREBASE_CLIENT_EMAIL`/`FIREBASE_PRIVATE_KEY`.
-   `render.yaml` currently hard-codes `PUSH_PROVIDER=disabled` and declares no Firebase secret; change that file or the dashboard values.
+3. On the **single** web service set `PUSH_PROVIDER=fcm` and either `FCM_SERVICE_ACCOUNT_JSON` or
+   `FIREBASE_PROJECT_ID`/`FIREBASE_CLIENT_EMAIL`/`FIREBASE_PRIVATE_KEY`, plus `EMBEDDED_WORKERS=true`.
+   **Delete** `WORKER_FCM_SERVICE_ACCOUNT_JSON`: nothing reads it, so rotating only that copy leaves push broken.
+   `render.yaml` currently hard-codes `PUSH_PROVIDER=disabled` and declares a second `sevanest-worker` service; change
+   that file or the dashboard values (the file is not edited here because blueprint-sync can create/delete services).
 4. Redeploy, then `GET /health/ready` and `GET /api/v1/admin/system/readiness` (`provider_push` OK, `background_workers` OK).
 5. Create the missing `PUSH` templates (§3) — otherwise even a perfect credential still queues nothing.
 6. Send one admin test push to a staff-controlled device and record the `correlationId` + `providerMessageId`.

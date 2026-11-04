@@ -40,6 +40,8 @@ import {
   EventView,
   InboxItemView,
   InboxQuery,
+  NotificationAckDto,
+  NotificationAckResponse,
   TemplateListQuery,
   TemplateView,
   TestPushDto,
@@ -648,6 +650,49 @@ export class NotificationsService {
   }
 
   /**
+   * Mobile device push acknowledgement telemetry (D-104).
+   * Validates notification ownership, sets readAt if TAPPED, and logs telemetry audit record. Idempotent.
+   */
+  async acknowledge(
+    userId: string,
+    notificationId: string,
+    dto: NotificationAckDto,
+  ): Promise<NotificationAckResponse> {
+    const notification = await this.repository.findById(notificationId);
+    if (!notification || notification.recipientUserId !== userId) {
+      throw new DomainException(
+        NotificationErrorCode.NOTIFICATION_NOT_FOUND,
+        'Notification not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (dto.eventType === 'TAPPED') {
+      await this.repository.markRead(userId, notificationId);
+    }
+
+    await this.audit.record({
+      action: 'notification.acknowledged',
+      entityType: 'notification',
+      entityId: notificationId,
+      actorId: userId,
+      actorRole: 'USER',
+      metadata: {
+        eventType: dto.eventType,
+        channel: notification.channel,
+        eventCode: notification.eventCode,
+        deviceTimestamp: dto.deviceTimestamp ?? null,
+      },
+    });
+
+    return {
+      acknowledged: true,
+      eventType: dto.eventType,
+      notificationId,
+    };
+  }
+
+  /**
    * Diagnostic test push notification dispatch for Worker / Customer App diagnostics (D-104).
    * Restricts production dispatch to administrators unless ALLOW_TEST_PUSH=true.
    * Resolves registered device tokens for the authenticated user and dispatches test push via active PushProvider.
@@ -687,6 +732,14 @@ export class NotificationsService {
       return {
         success: false,
         correlationId,
+        diagnostic_id: correlationId,
+        firebase_initialized: providerKind === MessagingProviderKind.Fcm,
+        registration_found: false,
+        active_token_count: 0,
+        dispatch_attempted: false,
+        firebase_accepted_count: 0,
+        firebase_failure_count: 0,
+        result: 'NO_ACTIVE_DEVICE_TOKEN',
         stage: 'NO_DEVICE_TOKEN',
         message:
           'No active FCM device token found for this user. The mobile app must register an FCM token via PUT /api/v1/auth/device-token first.',
@@ -714,6 +767,14 @@ export class NotificationsService {
       return {
         success: false,
         correlationId,
+        diagnostic_id: correlationId,
+        firebase_initialized: false,
+        registration_found: true,
+        active_token_count: tokens.length,
+        dispatch_attempted: false,
+        firebase_accepted_count: 0,
+        firebase_failure_count: tokens.length,
+        result: 'FIREBASE_NOT_INITIALIZED',
         stage: 'CONFIG_ERROR',
         message:
           'PUSH_PROVIDER is disabled on this backend instance. Set PUSH_PROVIDER=fcm and configure Firebase service account credentials.',
@@ -805,9 +866,22 @@ export class NotificationsService {
     });
 
     const isSuccessful = deliveredCount > 0;
+    const resultOutcome = isSuccessful
+      ? 'FCM_ACCEPTED'
+      : results.some((r) => r.error?.includes('INVALID_REGISTRATION_TOKEN'))
+        ? 'INVALID_FCM_TOKEN'
+        : 'FCM_DISPATCH_FAILED';
     return {
       success: isSuccessful,
       correlationId,
+      diagnostic_id: correlationId,
+      firebase_initialized: true,
+      registration_found: true,
+      active_token_count: tokens.length,
+      dispatch_attempted: true,
+      firebase_accepted_count: deliveredCount,
+      firebase_failure_count: failedCount,
+      result: resultOutcome,
       stage: isSuccessful ? 'DISPATCHED' : 'FAILED',
       message: isSuccessful
         ? `Test push notification dispatched successfully to ${deliveredCount} device(s).`

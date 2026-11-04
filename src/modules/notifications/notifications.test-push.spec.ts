@@ -112,6 +112,12 @@ describe('NotificationsService testPush (D-104)', () => {
     const res = await service.testPush(workerUser);
     expect(res.success).toBe(false);
     expect(res.stage).toBe('NO_DEVICE_TOKEN');
+    expect(res.diagnostic_id).toBe(res.correlationId);
+    expect(res.firebase_initialized).toBe(true);
+    expect(res.registration_found).toBe(false);
+    expect(res.active_token_count).toBe(0);
+    expect(res.dispatch_attempted).toBe(false);
+    expect(res.result).toBe('NO_ACTIVE_DEVICE_TOKEN');
     expect(res.tokensCount).toBe(0);
     expect(res.tokens).toEqual([]);
     expect(res.diagnostics.tokenRegistered).toBe(false);
@@ -127,6 +133,11 @@ describe('NotificationsService testPush (D-104)', () => {
     const res = await service.testPush(workerUser);
     expect(res.success).toBe(false);
     expect(res.stage).toBe('CONFIG_ERROR');
+    expect(res.firebase_initialized).toBe(false);
+    expect(res.registration_found).toBe(true);
+    expect(res.active_token_count).toBe(1);
+    expect(res.dispatch_attempted).toBe(false);
+    expect(res.result).toBe('FIREBASE_NOT_INITIALIZED');
     expect(res.tokensCount).toBe(1);
     expect(res.tokens[0].error).toBe('PUSH_PROVIDER_DISABLED');
     expect(res.correlationId).toBeTruthy();
@@ -141,6 +152,14 @@ describe('NotificationsService testPush (D-104)', () => {
 
     expect(res.success).toBe(true);
     expect(res.stage).toBe('DISPATCHED');
+    expect(res.diagnostic_id).toBe(generated);
+    expect(res.firebase_initialized).toBe(true);
+    expect(res.registration_found).toBe(true);
+    expect(res.active_token_count).toBe(1);
+    expect(res.dispatch_attempted).toBe(true);
+    expect(res.firebase_accepted_count).toBe(1);
+    expect(res.firebase_failure_count).toBe(0);
+    expect(res.result).toBe('FCM_ACCEPTED');
     expect(generated).toMatch(/^[0-9a-f-]{36}$/);
     expect(res.tokensCount).toBe(1);
     expect(res.tokens[0].status).toBe('DELIVERED');

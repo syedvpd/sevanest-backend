@@ -1,5 +1,8 @@
 import { createVerify, generateKeyPairSync } from 'node:crypto';
-import { DEFAULT_IN_APP_TEMPLATES } from '../../modules/notifications/default-templates';
+import {
+  DEFAULT_IN_APP_TEMPLATES,
+  DEFAULT_PUSH_TEMPLATES,
+} from '../../modules/notifications/default-templates';
 import { EVENT_PARAMS } from '../../common/outbox/notification-events';
 import { placeholdersOf } from '../../modules/notifications/notifications.service';
 import { ProviderError } from '../provider-error';
@@ -95,6 +98,15 @@ describe('FcmPushProvider', () => {
       token: 'device-token-1',
       notification: { title: 'Hi', body: 'There' },
       data: { route: 'booking' },
+      android: {
+        priority: 'HIGH',
+        notification: {
+          channel_id: 'sevanest_high_importance',
+          priority: 'PRIORITY_MAX',
+          default_sound: true,
+          default_vibrate_timings: true,
+        },
+      },
     });
     expect((calls[1].init.headers as Record<string, string>).Authorization).toBe(
       'Bearer ya29.token',
@@ -313,6 +325,22 @@ describe('default in-app templates', () => {
     const staffOnly = new Set(['PAYMENT_EXCEPTION_ALERT']);
     for (const event of Object.keys(EVENT_PARAMS)) {
       if (!staffOnly.has(event)) expect(covered.has(event as never)).toBe(true);
+    }
+  });
+});
+
+describe('default push templates (D-104)', () => {
+  it('cover confirmed core workflows, use only allowed placeholders, and never repeat an event', () => {
+    const seen = new Set<string>();
+    for (const t of DEFAULT_PUSH_TEMPLATES) {
+      expect(Object.keys(EVENT_PARAMS)).toContain(t.event);
+      expect(seen.has(t.event)).toBe(false);
+      seen.add(t.event);
+      const allowed = EVENT_PARAMS[t.event];
+      for (const placeholder of [...placeholdersOf(t.body), ...placeholdersOf(t.title)]) {
+        expect(allowed).toContain(placeholder);
+      }
+      expect(t.body.length).toBeLessThanOrEqual(1000);
     }
   });
 });

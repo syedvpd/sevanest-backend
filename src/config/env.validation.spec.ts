@@ -675,4 +675,78 @@ describe('validateEnvironment', () => {
     expect(validateEnvironment({ ...valid, SWAGGER_ENABLED: 'true' }).SWAGGER_ENABLED).toBe(true);
     expect(validateEnvironment({ ...valid, SWAGGER_ENABLED: 'false' }).SWAGGER_ENABLED).toBe(false);
   });
+
+  // The API and the embedded worker (EMBEDDED_WORKERS=true) share one NotificationsModule, so they share one
+  // credential source. These cases pin that mapping: only the un-prefixed variables are read.
+  describe('FCM credential mapping (one service account for API and embedded worker)', () => {
+    const serviceAccount = (projectId: string): string =>
+      JSON.stringify({
+        type: 'service_account',
+        project_id: projectId,
+        client_email: `push@${projectId}.iam.gserviceaccount.com`,
+        // A placeholder, never a real credential: only the "PRIVATE KEY" marker is checked.
+        private_key: '-----BEGIN PRIVATE KEY-----\\nplaceholder\\n-----END PRIVATE KEY-----\\n',
+      });
+
+    const fcm = { ...valid, PUSH_PROVIDER: 'fcm' };
+
+    it('accepts a single FCM_SERVICE_ACCOUNT_JSON', () => {
+      expect(() =>
+        validateEnvironment({
+          ...fcm,
+          FCM_SERVICE_ACCOUNT_JSON: serviceAccount('sevanest-47cef'),
+        }),
+      ).not.toThrow();
+    });
+
+    it('accepts the discrete FIREBASE_* form and defaults the project id', () => {
+      const env = validateEnvironment({
+        ...fcm,
+        FIREBASE_CLIENT_EMAIL: 'push@sevanest-47cef.iam.gserviceaccount.com',
+        FIREBASE_PRIVATE_KEY:
+          '-----BEGIN PRIVATE KEY-----\\nplaceholder\\n-----END PRIVATE KEY-----\\n',
+      });
+      expect(env.PUSH_PROVIDER).toBe('fcm');
+    });
+
+    it('refuses PUSH_PROVIDER=fcm when only WORKER_FCM_SERVICE_ACCOUNT_JSON is set', () => {
+      // Proves the WORKER_ copy is inert: the process would start with no usable credential and every send fails.
+      expect(() =>
+        validateEnvironment({
+          ...fcm,
+          WORKER_FCM_SERVICE_ACCOUNT_JSON: serviceAccount('sevanest-47cef'),
+        }),
+      ).toThrow('FCM configuration requires either FCM_SERVICE_ACCOUNT_JSON');
+    });
+
+    it('warns when a WORKER_ FCM/FIREBASE variable is present but unread', () => {
+      const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+      try {
+        validateEnvironment({
+          ...fcm,
+          FCM_SERVICE_ACCOUNT_JSON: serviceAccount('sevanest-47cef'),
+          WORKER_FCM_SERVICE_ACCOUNT_JSON: serviceAccount('sevanest-47cef'),
+        });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('WORKER_FCM_SERVICE_ACCOUNT_JSON'),
+          'ConfigWarning',
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('does not warn when no WORKER_ FCM/FIREBASE variable is present', () => {
+      const warn = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+      try {
+        validateEnvironment({
+          ...fcm,
+          FCM_SERVICE_ACCOUNT_JSON: serviceAccount('sevanest-47cef'),
+        });
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
 });

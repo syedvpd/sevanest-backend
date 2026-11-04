@@ -160,3 +160,114 @@ export const DEFAULT_IN_APP_TEMPLATES: ReadonlyArray<{
     body: 'An attendance exception was recorded for a booking.',
   },
 ];
+
+/**
+ * Starter wording for push notifications (FCM), installed by `npm run seed:launch` only where an administrator has not
+ * written a push template yet (an existing template is never overwritten). Limited to confirmed core product workflows (D-104).
+ */
+export const DEFAULT_PUSH_TEMPLATES: ReadonlyArray<{
+  event: NotificationEventCode;
+  title: string;
+  body: string;
+}> = [
+  {
+    event: 'JOB_OPPORTUNITY',
+    title: 'New job opportunity',
+    body: 'A new {{category}} job in {{area}} is waiting for your response.',
+  },
+  {
+    event: 'BOOKING_MATCHED',
+    title: 'Worker matched',
+    body: 'A worker has been matched to your request.',
+  },
+  {
+    event: 'WORKER_ACCEPTED',
+    title: 'Worker accepted',
+    body: 'The matched worker accepted your request.',
+  },
+  {
+    event: 'WORKER_DECLINED',
+    title: 'Worker unavailable',
+    body: 'The matched worker is not available. We will find another worker for you.',
+  },
+  {
+    event: 'BOOKING_CONFIRMED',
+    title: 'Booking confirmed',
+    body: 'Your booking is confirmed. Start date: {{startDate}}.',
+  },
+  {
+    event: 'BOOKING_PAYMENT_DUE',
+    title: 'Payment due',
+    body: 'Your worker is confirmed. Please pay the booking fee to complete the booking.',
+  },
+  {
+    event: 'BOOKING_STARTED',
+    title: 'Service started',
+    body: 'The service has started.',
+  },
+  {
+    event: 'BOOKING_COMPLETED',
+    title: 'Service completed',
+    body: 'The service is marked completed. You can now rate it.',
+  },
+  {
+    event: 'BOOKING_CANCELLED',
+    title: 'Booking cancelled',
+    body: 'A booking was cancelled.',
+  },
+  {
+    event: 'INTERVIEW_TRIAL_SCHEDULED',
+    title: 'Interview or trial scheduled',
+    body: 'A {{scheduleType}} is scheduled for {{scheduledAt}}.',
+  },
+  {
+    event: 'INTERVIEW_REQUESTED',
+    title: 'Interview or trial requested',
+    body: 'A customer asked for an interview or trial. Please accept, decline or propose another time.',
+  },
+  {
+    event: 'INTERVIEW_RESPONDED',
+    title: 'Interview or trial update',
+    body: 'The worker answered your interview or trial request. Open the booking to see it.',
+  },
+  {
+    event: 'INTERVIEW_CANCELLED',
+    title: 'Interview or trial cancelled',
+    body: 'An interview or trial was cancelled.',
+  },
+  {
+    event: 'PAYMENT_SUCCEEDED',
+    title: 'Payment received',
+    body: 'Your payment was received. Receipt: {{receiptNumber}}.',
+  },
+  {
+    event: 'PAYMENT_FAILED',
+    title: 'Payment failed',
+    body: 'Your payment did not go through. You can try again from the booking.',
+  },
+  {
+    event: 'PAYMENT_REFUNDED',
+    title: 'Refund completed',
+    body: 'Your refund has been processed by the payment provider.',
+  },
+  {
+    event: 'VERIFICATION_APPROVED',
+    title: 'Verification approved',
+    body: 'Your {{checkType}} verification was approved.',
+  },
+  {
+    event: 'VERIFICATION_REJECTED',
+    title: 'Verification needs attention',
+    body: 'Your {{checkType}} verification was not approved. Please check the remarks and resubmit.',
+  },
+  {
+    event: 'WORKER_VERIFIED',
+    title: 'Profile verified',
+    body: 'Congratulations! Your SevaNest profile {{applicationReference}} has been verified.',
+  },
+  {
+    event: 'WORKER_ACTIVATED',
+    title: 'You are live',
+    body: 'Your SevaNest account is active. You can now discover and accept domestic work opportunities!',
+  },
+];

@@ -116,3 +116,31 @@ describe('AppConfigService.policyContent', () => {
     expect(set.cancellationUrl).toBeUndefined();
   });
 });
+
+describe('AppConfigService.firebaseProjectId', () => {
+  const serviceAccount = (projectId: string): string =>
+    JSON.stringify({
+      project_id: projectId,
+      client_email: `push@${projectId}.iam.gserviceaccount.com`,
+      private_key: '-----BEGIN PRIVATE KEY-----\\nplaceholder\\n-----END PRIVATE KEY-----\\n',
+    });
+
+  it('reports the project inside the service-account JSON (the one actually used for sending)', () => {
+    const config = make({
+      FCM_SERVICE_ACCOUNT_JSON: serviceAccount('json-project'),
+      FIREBASE_PROJECT_ID: 'ignored-project',
+    });
+    // The provider sends to project_id from the JSON, so the diagnostic must not claim the other one.
+    expect(config.firebaseProjectId).toBe('json-project');
+  });
+
+  it('falls back to FIREBASE_PROJECT_ID for the discrete credential form', () => {
+    expect(make({ FIREBASE_PROJECT_ID: 'discrete-project' }).firebaseProjectId).toBe(
+      'discrete-project',
+    );
+  });
+
+  it('returns the default project id when nothing is configured (push disabled diagnostics)', () => {
+    expect(make({}).firebaseProjectId).toBe('sevanest-47cef');
+  });
+});

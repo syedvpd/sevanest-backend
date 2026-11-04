@@ -908,6 +908,16 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       });
     }
   }
+  // A variable nobody reads is worse than a missing one: an operator who rotates the key in the copy the process
+  // ignores believes push was fixed. There is ONE service account. The API and the background workers (embedded
+  // with EMBEDDED_WORKERS=true, or the separate worker process) read PUSH_PROVIDER + FCM_SERVICE_ACCOUNT_JSON.
+  const unreadFcmKeys = Object.keys(raw).filter((key) => /^WORKER_(FCM|FIREBASE)_/.test(key));
+  if (unreadFcmKeys.length > 0) {
+    process.emitWarning(
+      `${unreadFcmKeys.join(', ')} ${unreadFcmKeys.length === 1 ? 'is' : 'are'} not read: push credentials come from FCM_SERVICE_ACCOUNT_JSON (or FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY), shared by the API and the background workers. Remove the WORKER_ copy`,
+      'ConfigWarning',
+    );
+  }
   const appEnv =
     config.APP_ENV ??
     (config.NODE_ENV === NodeEnv.Production ? AppEnv.Production : AppEnv.Development);

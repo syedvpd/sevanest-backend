@@ -140,10 +140,16 @@ export class SessionRepository {
     });
   }
 
-  /** Push tokens of a user's signed-in sessions (a token disappears when its session ends). */
-  async listDeviceTokens(userId: string): Promise<string[]> {
+  /** Push tokens of a user's signed-in sessions (a token disappears when its session ends or expires). */
+  async listDeviceTokens(userId: string, now: Date = new Date()): Promise<string[]> {
     const rows = await this.prisma.deviceToken.findMany({
-      where: { userId },
+      where: {
+        userId,
+        session: {
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+      },
       select: { token: true },
       orderBy: { createdAt: 'asc' },
     });

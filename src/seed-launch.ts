@@ -4,7 +4,10 @@ import { NestFactory } from '@nestjs/core';
 import { AppConfigModule } from './config/config.module';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { PrismaService } from './infrastructure/database/prisma.service';
-import { DEFAULT_IN_APP_TEMPLATES } from './modules/notifications/default-templates';
+import {
+  DEFAULT_IN_APP_TEMPLATES,
+  DEFAULT_PUSH_TEMPLATES,
+} from './modules/notifications/default-templates';
 import { NotificationsRepository } from './modules/notifications/notifications.repository';
 
 @Module({ imports: [AppConfigModule, DatabaseModule] })
@@ -39,7 +42,7 @@ async function main(): Promise<void> {
       }
     }
     const repository = new NotificationsRepository(prisma);
-    let templates = 0;
+    let inAppTemplates = 0;
     for (const t of DEFAULT_IN_APP_TEMPLATES) {
       if (
         await repository.upsertDefaultTemplate({
@@ -50,11 +53,26 @@ async function main(): Promise<void> {
           body: t.body,
         })
       ) {
-        templates++;
+        inAppTemplates++;
+      }
+    }
+    let pushTemplates = 0;
+    for (const t of DEFAULT_PUSH_TEMPLATES) {
+      if (
+        await repository.upsertDefaultTemplate({
+          eventCode: t.event,
+          channel: 'PUSH',
+          language: 'en',
+          title: t.title,
+          body: t.body,
+        })
+      ) {
+        pushTemplates++;
       }
     }
     console.log(`Pilot areas created: ${areas} (existing untouched)`);
-    console.log(`Starter in-app templates created: ${templates} (existing untouched)`);
+    console.log(`Starter in-app templates created: ${inAppTemplates} (existing untouched)`);
+    console.log(`Starter push templates created: ${pushTemplates} (existing untouched)`);
     console.log(
       'Still for an administrator: booking fee, required verification checks, support categories, SMS/WhatsApp wording. See GET /admin/system/readiness.',
     );
