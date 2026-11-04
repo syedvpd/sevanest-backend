@@ -257,6 +257,7 @@ export class CustomerPhotoService {
   }
 
   private async scan(userId: string, photoId: string, bytes: Buffer): Promise<void> {
+    if (!this.scanner.enabled) return;
     const verdict = await this.scanner.scan(bytes).catch((error: unknown) => {
       this.logger.error(`Malware scan unavailable: ${(error as Error).message}`);
       throw new DomainException(

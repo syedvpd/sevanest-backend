@@ -128,7 +128,11 @@ async function main(): Promise<void> {
       return `scanner answers and detects the EICAR test file (${verdict.signature ?? 'signature n/a'})`;
     });
   } else {
-    results.push({ name: 'clamav', status: 'NOT_CONFIGURED', detail: 'CLAMAV_HOST not set' });
+    results.push({
+      name: 'clamav',
+      status: 'NOT_CONFIGURED',
+      detail: 'malware scanning disabled (D-101) or CLAMAV_HOST not set',
+    });
   }
 
   results.push({

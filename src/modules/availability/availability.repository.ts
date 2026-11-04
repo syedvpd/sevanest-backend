@@ -122,6 +122,19 @@ export class AvailabilityRepository {
     });
   }
 
+  async hasEnabledAreasInCity(city: string): Promise<boolean> {
+    const trimmed = city.trim();
+    if (!trimmed) return false;
+    const row = await this.prisma.serviceArea.findFirst({
+      where: {
+        isEnabled: true,
+        city: { equals: trimmed, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
   async lockArea(id: string, tx: Prisma.TransactionClient): Promise<AreaRecord | null> {
     await tx.$queryRaw`SELECT id FROM service_areas WHERE id = ${id}::uuid FOR UPDATE`;
     return this.findAreaById(id, tx);

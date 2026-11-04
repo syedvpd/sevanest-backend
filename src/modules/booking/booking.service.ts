@@ -63,12 +63,25 @@ export const BookingErrorCode = {
   DUPLICATE_BOOKING: 'DUPLICATE_BOOKING',
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
   ADDRESS_NOT_FOUND: 'ADDRESS_NOT_FOUND',
+  ADDRESS_REQUIRED: 'ADDRESS_REQUIRED',
   OUTSIDE_SERVICE_AREA: 'OUTSIDE_SERVICE_AREA',
   START_TOO_EARLY: 'START_TOO_EARLY',
   NO_SLOT_PROPOSAL: 'NO_SLOT_PROPOSAL',
   WORKER_UNAVAILABLE: 'WORKER_UNAVAILABLE',
   REBOOK_NOT_ALLOWED: 'REBOOK_NOT_ALLOWED',
 } as const;
+
+/**
+ * Home-service categories that require a customer home address (D-99).
+ * Driver bookings keep addressId optional.
+ */
+export const HOME_SERVICE_CATEGORY_CODES = new Set([
+  'HOUSE_MAID',
+  'COOK',
+  'CLEANING_HELPER',
+  'BABYSITTER',
+  'ELDERLY_CARE_HELPER',
+]);
 
 export type ActorKindValue = 'CUSTOMER' | 'WORKER' | 'ADMIN' | 'SYSTEM';
 
@@ -216,6 +229,14 @@ export class BookingService {
       this.areas.requireEnabled(dto.areaId),
     ]);
     await this.categories.assertEngagementOffered(category.id, dto.engagement);
+    if (HOME_SERVICE_CATEGORY_CODES.has(category.code) && !dto.addressId) {
+      throw new DomainException(
+        BookingErrorCode.ADDRESS_REQUIRED,
+        'An address is required for this service',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        [{ field: 'addressId', messages: ['addressId is required for home services'] }],
+      );
+    }
     let addressId: string | null = null;
     if (dto.addressId) {
       const address = await this.customers.findActiveAddressForBooking(
@@ -236,6 +257,20 @@ export class BookingService {
           'The address is outside the city of the selected service area',
           HttpStatus.UNPROCESSABLE_ENTITY,
           [{ field: 'addressId', messages: ['the address is not in the service area city'] }],
+        );
+      }
+      const serviceability = await this.areas.evaluateServiceability({
+        area: address.area,
+        city: address.city,
+        latitude: address.latitude,
+        longitude: address.longitude,
+      });
+      if (!serviceability.isServiceable) {
+        throw new DomainException(
+          BookingErrorCode.OUTSIDE_SERVICE_AREA,
+          'The address is outside enabled service areas',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          [{ field: 'addressId', messages: ['the address is not in an enabled service area'] }],
         );
       }
       addressId = address.id;

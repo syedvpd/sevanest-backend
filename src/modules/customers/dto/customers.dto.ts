@@ -235,6 +235,17 @@ export class AddressResponse {
   @ApiProperty({ nullable: true, type: Number }) latitude!: number | null;
   @ApiProperty({ nullable: true, type: Number }) longitude!: number | null;
   @ApiProperty() isDefault!: boolean;
+  @ApiProperty({
+    description: 'Whether the address falls within an enabled service area.',
+  })
+  isServiceable!: boolean;
+  @ApiProperty({
+    nullable: true,
+    enum: ['CITY_NOT_SERVICEABLE', 'AREA_NOT_SERVICEABLE'],
+    type: String,
+    description: 'Null when serviceable; otherwise indicates why the address is outside coverage.',
+  })
+  unserviceableReason!: 'CITY_NOT_SERVICEABLE' | 'AREA_NOT_SERVICEABLE' | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

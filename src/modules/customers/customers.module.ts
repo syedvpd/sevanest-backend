@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AvailabilityModule } from '../availability/availability.module';
 import { UsersModule } from '../users/users.module';
 import { CustomerAddressesService } from './customer-addresses.service';
 import { AdminCustomersController, CustomersController } from './customers.controller';
@@ -11,7 +12,7 @@ import { CustomerEraser } from './customer-eraser';
  * reads account data (mobile, account status) only through Users' exported service.
  */
 @Module({
-  imports: [UsersModule],
+  imports: [UsersModule, AvailabilityModule],
   controllers: [CustomersController, AdminCustomersController],
   providers: [CustomerEraser, CustomersRepository, CustomersService, CustomerAddressesService],
   exports: [CustomersService],

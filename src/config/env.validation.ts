@@ -226,6 +226,16 @@ export class EnvironmentVariables {
   PROVIDER_HTTP_TIMEOUT_MS: number = 8000;
 
   /**
+   * Master feature switch for malware scanning (D-101).
+   * Product decision: disabled globally in the current V1 deployment.
+   * Scanner code is retained for future activation (set MALWARE_SCANNER_ENABLED=true and configure CLAMAV_HOST).
+   */
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  MALWARE_SCANNER_ENABLED: boolean = false;
+
+  /**
    * Optional malware scanning of uploaded KYC documents with a ClamAV daemon (clamd) that the operator runs. Unset = documents are
    * validated (type, size, content) but not scanned, and the readiness report says so.
    */

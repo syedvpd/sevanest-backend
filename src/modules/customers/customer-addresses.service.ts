@@ -14,6 +14,10 @@ import {
 } from './dto/customers.dto';
 import { changedFieldNames } from '../../common/validation/fields';
 import { assertCoordinatePair } from './domain/customer.rules';
+import {
+  ServiceAreasService,
+  type ServiceabilityResult,
+} from '../availability/service-areas.service';
 
 export const AddressErrorCode = {
   ADDRESS_NOT_FOUND: 'ADDRESS_NOT_FOUND',
@@ -27,7 +31,10 @@ export const AddressErrorCode = {
  */
 export const MAX_ACTIVE_ADDRESSES = 20;
 
-export function toAddressView(address: AddressRecord): AddressResponse {
+export function toAddressView(
+  address: AddressRecord,
+  serviceability?: ServiceabilityResult,
+): AddressResponse {
   return {
     id: address.id,
     line: address.line,
@@ -40,13 +47,20 @@ export function toAddressView(address: AddressRecord): AddressResponse {
     latitude: address.latitude,
     longitude: address.longitude,
     isDefault: address.isDefault,
+    isServiceable: serviceability?.isServiceable ?? false,
+    unserviceableReason: serviceability
+      ? serviceability.unserviceableReason
+      : 'AREA_NOT_SERVICEABLE',
     createdAt: address.createdAt,
     updatedAt: address.updatedAt,
   };
 }
 
-export function toAdminAddressView(address: AddressRecord): AdminAddressResponse {
-  return { ...toAddressView(address), isActive: address.isActive };
+export function toAdminAddressView(
+  address: AddressRecord,
+  serviceability?: ServiceabilityResult,
+): AdminAddressResponse {
+  return { ...toAddressView(address, serviceability), isActive: address.isActive };
 }
 
 /**
@@ -63,14 +77,26 @@ export class CustomerAddressesService {
     private readonly repository: CustomersRepository,
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
+    private readonly areas: ServiceAreasService,
     @Inject(MAPS_PROVIDER) private readonly maps: MapsProvider,
   ) {}
 
   private readonly logger = new Logger(CustomerAddressesService.name);
 
+  private async toAddressViewWithServiceability(address: AddressRecord): Promise<AddressResponse> {
+    const serviceability = await this.areas.evaluateServiceability({
+      area: address.area,
+      city: address.city,
+      latitude: address.latitude,
+      longitude: address.longitude,
+    });
+    return toAddressView(address, serviceability);
+  }
+
   async list(userId: string): Promise<AddressResponse[]> {
     const profile = await this.requireProfile(userId);
-    return (await this.repository.listActiveAddresses(profile.id)).map(toAddressView);
+    const addresses = await this.repository.listActiveAddresses(profile.id);
+    return Promise.all(addresses.map((a) => this.toAddressViewWithServiceability(a)));
   }
 
   async get(userId: string, addressId: string): Promise<AddressResponse> {
@@ -79,7 +105,7 @@ export class CustomerAddressesService {
     if (!address) {
       throw this.notFound();
     }
-    return toAddressView(address);
+    return this.toAddressViewWithServiceability(address);
   }
 
   /**
@@ -100,7 +126,7 @@ export class CustomerAddressesService {
         latitude: Math.round(point.latitude * 1e6) / 1e6,
         longitude: Math.round(point.longitude * 1e6) / 1e6,
       });
-      return updated ? toAddressView(updated) : saved;
+      return updated ? this.toAddressViewWithServiceability(updated) : saved;
     } catch (error) {
       this.logger.warn(`Address saved without a map location: ${(error as Error).message}`);
       return saved;
@@ -154,7 +180,7 @@ export class CustomerAddressesService {
         tx,
       );
       await this.autoVerify(customerId, userId, tx);
-      return toAddressView(created);
+      return this.toAddressViewWithServiceability(created);
     });
   }
 
@@ -224,7 +250,7 @@ export class CustomerAddressesService {
         },
         tx,
       );
-      return toAddressView(updated);
+      return this.toAddressViewWithServiceability(updated);
     });
   }
 
@@ -236,7 +262,7 @@ export class CustomerAddressesService {
         throw this.notFound();
       }
       if (existing.isDefault) {
-        return toAddressView(existing);
+        return this.toAddressViewWithServiceability(existing);
       }
       await this.repository.clearDefault(customerId, tx);
       const updated = await this.repository.markDefault(addressId, tx);
@@ -249,7 +275,7 @@ export class CustomerAddressesService {
         },
         tx,
       );
-      return toAddressView(updated);
+      return this.toAddressViewWithServiceability(updated);
     });
   }
 

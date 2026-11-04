@@ -90,3 +90,33 @@ Report: `docs/qa/prd-gap-audit-2026-10-27.md` (atomic matrix, findings F-1..F-9,
 
 ## 2026-10-29 public images (D-93)
 Built: optional public bucket for worker photos and category images with permanent links (`STORAGE_S3_PUBLIC_BUCKET` + `STORAGE_PUBLIC_BASE_URL`), admin category image upload/remove (`PUT/DELETE /admin/service-categories/{id}/image`), `image` on category responses, erasure of public renditions. Migration `20261114090000_category_image` (additive). Unset variables = old behaviour (signed links). Customer photos and KYC unchanged (private). NOT verified: a real Supabase public bucket (create it, mark it public, set the two variables on staging), CDN-free load speed. Existing worker photos keep signed links until re-uploaded.
+
+## 2026-10-30 client decisions D-94, D-95 (Q-89, Q-04, Q-51), D-94 reverted same day by D-96
+Built then reverted same day: `CLAMAV_HOST` was made required in production/staging (D-94); the client decided against running a second Render service for ClamAV, so D-96 reverted it back to optional, `WARNING`-level readiness (Q-89 reopened). Still recorded, unchanged: worker verification stays fully manual (admin reviews step by step in the Admin Portal; no automated partner, D-95) — confirms the existing built flow, no code change. Evidence: typecheck, unit 403/403 clean (both before and after the revert).
+NOT done: no malware scanning of KYC documents or photos in production/staging unless/until a reachable `clamd` is configured; documents are still validated by type/size/signature either way.
+
+
+## 2026-11-04 Customer App Hyderabad-only Serviceability & Booking Guard (D-98)
+Built: derived runtime fields `isServiceable: boolean` and `unserviceableReason: 'CITY_NOT_SERVICEABLE' | 'AREA_NOT_SERVICEABLE' | null` on `AddressResponse` and `AdminAddressResponse` without DB schema changes or migrations; address saving allowed for non-serviceable cities with `isServiceable: false` and `CITY_NOT_SERVICEABLE`; authoritative serviceability resolution in `ServiceAreasService.evaluateServiceability` using existing coordinate radius (`findAreaCovering`) and fallback area name (`findEnabledAreaByName`) checks; server-side booking rejection in `BookingService.create` with HTTP 422 `BookingErrorCode.OUTSIDE_SERVICE_AREA` for unserviceable addresses.
+Evidence (local): `npm run typecheck` 0 errors; `npm run lint` 0 errors (3 pre-existing warnings in `test/perf`); `npm run format:check` clean; new unit suites passed: `src/modules/availability/service-areas.service.spec.ts` (11/11 passed), `src/modules/customers/customer-addresses.service.spec.ts` (6/6 passed), `src/modules/booking/booking.service.address-serviceability.spec.ts` (6/6 passed). Total new unit tests: 23/23 passed.
+NOT verified / NOT done: external real SMS (DLT/MSG91/Twilio), real Razorpay payment gateway API or webhooks, real FCM push notifications with Apple/Google push servers. Nothing committed or pushed.
+
+## 2026-11-04 Mandatory Address for Home Services (D-99) & V1 Product Decisions
+Built:
+- D-99: Mandatory address requirement in `BookingService.create` for home-service categories (`HOUSE_MAID`, `COOK`, `CLEANING_HELPER`, `BABYSITTER`, `ELDERLY_CARE_HELPER`), rejecting with HTTP 422 `BookingErrorCode.ADDRESS_REQUIRED` ('An address is required for this service', details: `[{ field: 'addressId', messages: ['addressId is required for home services'] }]`) when `addressId` is omitted. `DRIVER` bookings keep `addressId` optional. Enforced uniformly across customer booking creation, admin-created booking (`createForCustomer`), and rebooking (`rebook`). No DB schema changes.
+- Booking quote for V1: inspected existing `GET /fees/booking`; confirmed no approved GST/tax calculation or wage calculation exists in the backend (receipts explicitly note plain payment receipt, not a tax invoice per Q-100). Tax calculation is documented as a Product/Ops blocker; no unapproved tax rates or wage calculators were invented.
+- Operations configuration: confirmed existing Admin Portal functionality `PUT /admin/app-settings/:key` for `customerStoreUrl`, `supportPhone`, `cancellationPolicyUrl`, `refundPolicyUrl`.
+- Address photos: Q-138 recorded as deferred for V1; Customer App must hide or disable address-photo screens.
+Evidence (local): `npm run typecheck` 0 errors; `npm run lint` 0 errors (3 pre-existing warnings in `test/perf`); `npm run format:check` clean; unit test suite `src/modules/booking/booking.service.address-serviceability.spec.ts` (19/19 passed, 14 dedicated D-99 tests covering all home categories, driver positive/negative, admin creation, and rebooking).
+NOT verified / NOT done: external real SMS, real payment gateway, real push notifications. Nothing committed or pushed.
+
+## 2026-11-04 Globally Disabled Malware Scanning (D-101)
+Built:
+- D-101: Product decision implemented to disable malware scanning globally in the current V1 deployment. All scanner source code (`ClamAvMalwareScanner`, `DisabledMalwareScanner`, `MalwareScanner`, `MalwareModule`) is retained for potential future activation.
+- Added `MALWARE_SCANNER_ENABLED` environment variable (default: `false` in `env.validation.ts`).
+- `AppConfigService.clamav` evaluates to `null` by default; `MalwareModule` injects `DisabledMalwareScanner` (no TCP/socket connections, reports `enabled=false`, zero network activity).
+- Guard checks added across all upload workflows (`CustomerPhotoService`, `WorkerPhotoService`, `VerificationService`, `ServiceCategoriesService`): if `!this.scanner.enabled`, scanner is never called.
+- Upload security controls preserved: authentication, role authorization, file size limits, MIME type filtering, magic-byte signatures, ownership verification, and signed URL expirations remain strictly enforced.
+- Re-enabling procedure: set `MALWARE_SCANNER_ENABLED=true` and configure `CLAMAV_HOST` (plus optional `CLAMAV_PORT`, `CLAMAV_TIMEOUT_MS`).
+Evidence (local): `npm run typecheck` 0 errors; `npm run lint` 0 errors (3 pre-existing warnings in `test/perf`); `npm run format:check` clean; unit test suite `npm test` passed 50 of 50 suites (475 passed, 8 skipped, 0 failed). Dedicated tests in `malware-disabled.spec.ts` (6 passed) and `malware-scanner.spec.ts` (4 passed).
+NOT verified / NOT done: external live SMS, live payment gateway, live push notifications. Nothing committed or pushed.

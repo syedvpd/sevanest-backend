@@ -24,6 +24,11 @@ export const AreaErrorCode = {
   AREA_NOT_AVAILABLE: 'AREA_NOT_AVAILABLE',
 } as const;
 
+export interface ServiceabilityResult {
+  isServiceable: boolean;
+  unserviceableReason: 'CITY_NOT_SERVICEABLE' | 'AREA_NOT_SERVICEABLE' | null;
+}
+
 export function toPublicArea(area: AreaRecord): ServiceAreaResponse {
   return { id: area.id, name: area.name, city: area.city };
 }
@@ -95,6 +100,60 @@ export class ServiceAreasService {
       throw this.notFound();
     }
     return toPublicArea(area);
+  }
+
+  /**
+   * Evaluates serviceability for a given address (area, city, optional coordinates).
+   * Distinguishes between:
+   * - CITY_NOT_SERVICEABLE: No enabled service areas exist in the given city.
+   * - AREA_NOT_SERVICEABLE: Enabled areas exist in the city, but neither the coordinates (within radius) nor the area name match an enabled area.
+   * - Serviceable: isServiceable: true, unserviceableReason: null.
+   */
+  async evaluateServiceability(query: {
+    area: string;
+    city: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  }): Promise<ServiceabilityResult> {
+    const city = (query.city ?? '').trim();
+    if (!city) {
+      return { isServiceable: false, unserviceableReason: 'CITY_NOT_SERVICEABLE' };
+    }
+
+    const hasCity = await this.repository.hasEnabledAreasInCity(city);
+    if (!hasCity) {
+      return { isServiceable: false, unserviceableReason: 'CITY_NOT_SERVICEABLE' };
+    }
+
+    const hasPoint =
+      query.latitude !== undefined &&
+      query.latitude !== null &&
+      query.longitude !== undefined &&
+      query.longitude !== null &&
+      !Number.isNaN(Number(query.latitude)) &&
+      !Number.isNaN(Number(query.longitude));
+
+    const byPoint = hasPoint
+      ? await this.repository.findAreaCovering(
+          Number(query.latitude),
+          Number(query.longitude),
+          city,
+        )
+      : null;
+
+    if (byPoint) {
+      return { isServiceable: true, unserviceableReason: null };
+    }
+
+    const areaName = (query.area ?? '').trim();
+    if (areaName) {
+      const byName = await this.repository.findEnabledAreaByName(areaName, city);
+      if (byName) {
+        return { isServiceable: true, unserviceableReason: null };
+      }
+    }
+
+    return { isServiceable: false, unserviceableReason: 'AREA_NOT_SERVICEABLE' };
   }
 
   async getEnabled(id: string): Promise<ServiceAreaResponse> {

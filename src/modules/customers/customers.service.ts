@@ -25,6 +25,7 @@ import {
 } from './dto/customers.dto';
 import { changedFieldNames } from '../../common/validation/fields';
 import { toAdminAddressView } from './customer-addresses.service';
+import { ServiceAreasService } from '../availability/service-areas.service';
 
 export const CustomersErrorCode = {
   CUSTOMER_PROFILE_EXISTS: 'CUSTOMER_PROFILE_EXISTS',
@@ -59,6 +60,7 @@ export class CustomersService {
     private readonly users: UsersService,
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
+    private readonly areas: ServiceAreasService,
   ) {}
 
   // --- the customer's own profile ---------------------------------------------------------------------------
@@ -97,17 +99,31 @@ export class CustomersService {
   }
 
   /**
-   * Contract for Booking: one of the customer's own, still active addresses (id and city only). null covers "not mine",
+   * Contract for Booking: one of the customer's own, still active addresses. null covers "not mine",
    * "removed" and "no profile yet", so a caller cannot tell them apart.
    */
   async findActiveAddressForBooking(
     userId: string,
     addressId: string,
-  ): Promise<{ id: string; city: string } | null> {
+  ): Promise<{
+    id: string;
+    city: string;
+    area: string;
+    latitude: number | null;
+    longitude: number | null;
+  } | null> {
     const profile = await this.repository.findProfileByUserId(userId);
     if (!profile) return null;
     const address = await this.repository.findActiveAddress(profile.id, addressId);
-    return address ? { id: address.id, city: address.city } : null;
+    return address
+      ? {
+          id: address.id,
+          city: address.city,
+          area: address.area,
+          latitude: address.latitude,
+          longitude: address.longitude,
+        }
+      : null;
   }
 
   /** Contract for Home: area name and city of the customer's default (else newest) active address, or null. */
@@ -282,10 +298,21 @@ export class CustomersService {
       this.users.findById(profile.userId),
       this.repository.listAllAddresses(profile.id),
     ]);
+    const addressViews = await Promise.all(
+      addresses.map(async (address) => {
+        const serviceability = await this.areas.evaluateServiceability({
+          area: address.area,
+          city: address.city,
+          latitude: address.latitude,
+          longitude: address.longitude,
+        });
+        return toAdminAddressView(address, serviceability);
+      }),
+    );
     return {
       ...this.toSummary(profile, user, false),
       updatedAt: profile.updatedAt,
-      addresses: addresses.map(toAdminAddressView),
+      addresses: addressViews,
     };
   }
 

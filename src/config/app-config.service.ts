@@ -265,8 +265,16 @@ export class AppConfigService {
     return this.get('CUSTOMER_AUTO_VERIFY');
   }
 
-  /** The ClamAV daemon to scan uploaded documents with; null = no scanning. */
+  /** Whether malware scanning is enabled globally (D-101). Defaults to false in V1. */
+  get malwareScannerEnabled(): boolean {
+    return this.get('MALWARE_SCANNER_ENABLED');
+  }
+
+  /** The ClamAV daemon to scan uploaded documents with; null when disabled (D-101 default) or unconfigured. */
   get clamav(): { host: string; port: number; timeoutMs: number } | null {
+    if (!this.malwareScannerEnabled) {
+      return null;
+    }
     const host = this.get('CLAMAV_HOST');
     return host
       ? { host, port: this.get('CLAMAV_PORT'), timeoutMs: this.get('CLAMAV_TIMEOUT_MS') }

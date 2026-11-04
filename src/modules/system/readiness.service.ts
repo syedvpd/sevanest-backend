@@ -208,7 +208,7 @@ export class ReadinessService {
       this.config.clamav !== null,
       this.config.clamav !== null
         ? 'Uploaded documents and photos are scanned (ClamAV)'
-        : 'Uploaded documents and photos are checked for type, size and content but NOT scanned for malware (set CLAMAV_HOST)',
+        : 'Uploaded documents and photos are checked for type, size and content but NOT scanned for malware (malware scanning disabled in V1, D-101)',
     );
     add(
       'provider_push',
