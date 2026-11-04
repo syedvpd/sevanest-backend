@@ -11,7 +11,7 @@ function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) return name === 'generated' ? [] : sources(path);
-    return /\.ts$/.test(name) && !/\.spec\.ts$/.test(name) && !/^seed-demo/.test(name)
+    return /\.ts$/.test(name) && !/\.spec\.ts$/.test(name) && !/^seed(-|$)/.test(name)
       ? [path]
       : [];
   });

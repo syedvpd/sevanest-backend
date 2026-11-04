@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  resolveFcmServiceAccount,
+  type FcmServiceAccount,
+} from '../integrations/notifications/fcm.provider';
 import { parseJwtKeys, type JwtKeySet } from './jwt-keys';
 import {
   EnvironmentVariables,
@@ -253,6 +257,17 @@ export class AppConfigService {
   }
   get fcmServiceAccountJson(): string {
     return this.get('FCM_SERVICE_ACCOUNT_JSON') ?? '';
+  }
+  get firebaseProjectId(): string {
+    return this.get('FIREBASE_PROJECT_ID') || 'sevanest-47cef';
+  }
+  get fcmServiceAccount(): FcmServiceAccount {
+    return resolveFcmServiceAccount({
+      json: this.get('FCM_SERVICE_ACCOUNT_JSON'),
+      projectId: this.get('FIREBASE_PROJECT_ID'),
+      clientEmail: this.get('FIREBASE_CLIENT_EMAIL'),
+      privateKey: this.get('FIREBASE_PRIVATE_KEY'),
+    });
   }
   get searchCacheTtlSeconds(): number {
     return this.get('SEARCH_CACHE_TTL_SECONDS');

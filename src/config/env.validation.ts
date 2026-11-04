@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { parseFcmServiceAccount } from '../integrations/notifications/fcm.provider';
+import { resolveFcmServiceAccount } from '../integrations/notifications/fcm.provider';
 import { plainToInstance, Transform, Type } from 'class-transformer';
 import { parseJwtKeys } from './jwt-keys';
 import {
@@ -794,10 +794,24 @@ export class EnvironmentVariables {
   POLICY_REFUND_URL?: string;
 
   /** Firebase service-account JSON (one line) for PUSH_PROVIDER=fcm. Secret: environment only. */
-  @ValidateIf((o: EnvironmentVariables) => o.PUSH_PROVIDER === MessagingProviderKind.Fcm)
+  @IsOptional()
   @IsString()
-  @MinLength(50)
   FCM_SERVICE_ACCOUNT_JSON?: string;
+
+  /** Firebase project id for PUSH_PROVIDER=fcm (default: sevanest-47cef). */
+  @IsOptional()
+  @IsString()
+  FIREBASE_PROJECT_ID?: string;
+
+  /** Firebase client email for PUSH_PROVIDER=fcm. Secret: environment only. */
+  @IsOptional()
+  @IsString()
+  FIREBASE_CLIENT_EMAIL?: string;
+
+  /** Firebase private key for PUSH_PROVIDER=fcm (PEM). Secret: environment only. */
+  @IsOptional()
+  @IsString()
+  FIREBASE_PRIVATE_KEY?: string;
 
   /**
    * STAGING/DEMO ONLY, refused when NODE_ENV=production (D-70). When true, the mobile numbers in TEST_OTP_NUMBERS log in with the fixed TEST_OTP_CODE and no SMS is sent
@@ -873,7 +887,12 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
   }
   if (config.PUSH_PROVIDER === MessagingProviderKind.Fcm) {
     try {
-      parseFcmServiceAccount(config.FCM_SERVICE_ACCOUNT_JSON ?? '');
+      resolveFcmServiceAccount({
+        json: config.FCM_SERVICE_ACCOUNT_JSON,
+        projectId: config.FIREBASE_PROJECT_ID,
+        clientEmail: config.FIREBASE_CLIENT_EMAIL,
+        privateKey: config.FIREBASE_PRIVATE_KEY,
+      });
     } catch (error) {
       throw new Error(`Invalid environment configuration: ${(error as Error).message}`, {
         cause: error,

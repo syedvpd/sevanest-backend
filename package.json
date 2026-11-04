@@ -41,7 +41,8 @@
     "prisma:migrate:status": "prisma migrate status",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
-    "seed:demo": "node dist/seed-demo"
+    "seed:demo": "node dist/seed-demo",
+    "seed:workers": "node dist/seed-worker-test-data"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1148.0",

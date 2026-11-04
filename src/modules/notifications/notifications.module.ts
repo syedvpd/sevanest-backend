@@ -16,10 +16,7 @@ import {
   type PushProvider,
   type WhatsAppProvider,
 } from '../../integrations/notifications/notification-providers.interface';
-import {
-  FcmPushProvider,
-  parseFcmServiceAccount,
-} from '../../integrations/notifications/fcm.provider';
+import { FcmPushProvider } from '../../integrations/notifications/fcm.provider';
 import { TwilioWhatsAppProvider } from '../../integrations/notifications/twilio.provider';
 import { QueueModule } from '../../infrastructure/queue/queue.module';
 import {
@@ -73,7 +70,7 @@ function whatsAppProviderFor(config: AppConfigService): WhatsAppProvider {
             return new InMemoryPushProvider();
           case MessagingProviderKind.Fcm:
             return new FcmPushProvider({
-              serviceAccount: parseFcmServiceAccount(config.fcmServiceAccountJson),
+              serviceAccount: config.fcmServiceAccount,
               timeoutMs: config.providerHttpTimeoutMs,
             });
           default:

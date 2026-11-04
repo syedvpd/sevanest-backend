@@ -25,6 +25,15 @@ export interface FcmSettings {
 
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 
+export const DEFAULT_FIREBASE_PROJECT_ID = 'sevanest-47cef';
+
+export interface ResolveFcmOptions {
+  json?: string;
+  projectId?: string;
+  clientEmail?: string;
+  privateKey?: string;
+}
+
 /** Parses the service-account JSON from the environment. Throws a message that never contains the key. */
 export function parseFcmServiceAccount(json: string): FcmServiceAccount {
   let parsed: Partial<FcmServiceAccount>;
@@ -41,6 +50,29 @@ export function parseFcmServiceAccount(json: string): FcmServiceAccount {
   return parsed as FcmServiceAccount;
 }
 
+/** Resolves service account credentials from either a JSON string or discrete environment variables. */
+export function resolveFcmServiceAccount(options: ResolveFcmOptions): FcmServiceAccount {
+  if (options.json && options.json.trim()) {
+    return parseFcmServiceAccount(options.json);
+  }
+  const projectId = options.projectId?.trim() || DEFAULT_FIREBASE_PROJECT_ID;
+  const clientEmail = options.clientEmail?.trim();
+  let privateKey = options.privateKey?.trim();
+  if (privateKey) {
+    privateKey = privateKey.replace(/\\n/g, '\n');
+  }
+  if (!clientEmail || !privateKey || !privateKey.includes('PRIVATE KEY')) {
+    throw new Error(
+      'FCM configuration requires either FCM_SERVICE_ACCOUNT_JSON or FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY',
+    );
+  }
+  return {
+    project_id: projectId,
+    client_email: clientEmail,
+    private_key: privateKey,
+  };
+}
+
 /**
  * FCM HTTP v1 errors that mean the registration token itself is dead: HTTP 404 / errorCode UNREGISTERED, or HTTP 400
  * INVALID_ARGUMENT whose message names the registration token. Any other 4xx (bad credentials, bad payload, wrong sender) is a
@@ -53,12 +85,21 @@ export function isInvalidTokenRejection(error: ProviderError): boolean {
     | { error?: { status?: string; message?: string; details?: Array<{ errorCode?: string }> } }
     | null
     | undefined;
-  if (body?.error?.details?.some((d) => d?.errorCode === 'UNREGISTERED')) return true;
+  if (
+    body?.error?.details?.some(
+      (d) =>
+        d?.errorCode === 'UNREGISTERED' ||
+        /not-registered|invalid-registration-token/i.test(d?.errorCode ?? ''),
+    )
+  ) {
+    return true;
+  }
   if (cause.status === 404) return true;
+  const msg = body?.error?.message ?? '';
   return (
     cause.status === 400 &&
-    body?.error?.status === 'INVALID_ARGUMENT' &&
-    /registration token/i.test(body.error.message ?? '')
+    (body?.error?.status === 'INVALID_ARGUMENT' || /invalid/i.test(body?.error?.status ?? '')) &&
+    /registration token|registration-token-not-registered|invalid-registration-token/i.test(msg)
   );
 }
 

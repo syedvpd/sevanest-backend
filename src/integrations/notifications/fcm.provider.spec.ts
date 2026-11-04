@@ -4,7 +4,13 @@ import { EVENT_PARAMS } from '../../common/outbox/notification-events';
 import { placeholdersOf } from '../../modules/notifications/notifications.service';
 import { ProviderError } from '../provider-error';
 import { InvalidDeviceTokenError } from './notification-providers.interface';
-import { FcmPushProvider, parseFcmServiceAccount } from './fcm.provider';
+import {
+  DEFAULT_FIREBASE_PROJECT_ID,
+  FcmPushProvider,
+  isInvalidTokenRejection,
+  parseFcmServiceAccount,
+  resolveFcmServiceAccount,
+} from './fcm.provider';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -193,6 +199,52 @@ describe('FcmPushProvider', () => {
     } catch (error) {
       expect((error as Error).message).not.toContain('PRIVATE KEY');
     }
+  });
+
+  it('resolves discrete Firebase credentials defaulting to sevanest-47cef and replaces escaped newlines', () => {
+    const escapedKey = account.private_key.replace(/\n/g, '\\n');
+    const resolved = resolveFcmServiceAccount({
+      clientEmail: account.client_email,
+      privateKey: escapedKey,
+    });
+    expect(resolved.project_id).toBe(DEFAULT_FIREBASE_PROJECT_ID);
+    expect(resolved.project_id).toBe('sevanest-47cef');
+    expect(resolved.client_email).toBe(account.client_email);
+    expect(resolved.private_key).toBe(account.private_key);
+
+    const explicit = resolveFcmServiceAccount({
+      projectId: 'my-custom-project',
+      clientEmail: account.client_email,
+      privateKey: account.private_key,
+    });
+    expect(explicit.project_id).toBe('my-custom-project');
+
+    expect(() => resolveFcmServiceAccount({})).toThrow('FCM configuration requires');
+  });
+
+  it('identifies registration token error codes as invalid token rejections for dead token cleanup', () => {
+    const errUnregistered = new ProviderError('fcm', 'failed', false, {
+      status: 400,
+      json: {
+        error: {
+          status: 'INVALID_ARGUMENT',
+          message: 'The registration token is not a valid FCM registration token',
+          details: [{ errorCode: 'messaging/registration-token-not-registered' }],
+        },
+      },
+    });
+    expect(isInvalidTokenRejection(errUnregistered)).toBe(true);
+
+    const errInvalidToken = new ProviderError('fcm', 'failed', false, {
+      status: 400,
+      json: {
+        error: {
+          status: 'INVALID_ARGUMENT',
+          message: 'messaging/invalid-registration-token',
+        },
+      },
+    });
+    expect(isInvalidTokenRejection(errInvalidToken)).toBe(true);
   });
 });
 
