@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { assertIfMatch } from '../../common/concurrency/if-match';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -28,7 +29,11 @@ import {
 import { SessionService } from '../auth/session.service';
 import type { Actor } from '../users/users.types';
 import { UsersService } from '../users/users.service';
+import { AppConfigService } from '../../config/app-config.service';
+import { MessagingProviderKind } from '../../config/env.validation';
+import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import {
+  AdminTestPushDto,
   CreateTemplateDto,
   DeliveryListQuery,
   DeliveryView,
@@ -37,6 +42,9 @@ import {
   InboxQuery,
   TemplateListQuery,
   TemplateView,
+  TestPushDto,
+  TestPushResponse,
+  TestPushTokenResult,
   UnreadCountView,
   UpdateTemplateDto,
 } from './dto/notifications.dto';
@@ -132,6 +140,7 @@ export class NotificationsService {
     @Inject(PUSH_PROVIDER) private readonly push: PushProvider,
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
     @Inject(EMAIL_PROVIDER) private readonly email: EmailProvider,
+    private readonly config: AppConfigService,
   ) {}
 
   // --- outbox -> notifications -> queue ---------------------------------------------------------------------
@@ -636,6 +645,213 @@ export class NotificationsService {
 
   async markAllRead(userId: string): Promise<{ updated: number }> {
     return { updated: await this.repository.markAllRead(userId) };
+  }
+
+  /**
+   * Diagnostic test push notification dispatch for Worker / Customer App diagnostics (D-104).
+   * Restricts production dispatch to administrators unless ALLOW_TEST_PUSH=true.
+   * Resolves registered device tokens for the authenticated user and dispatches test push via active PushProvider.
+   */
+  async testPush(user: AuthenticatedUser, dto?: TestPushDto): Promise<TestPushResponse> {
+    if (this.config.isProduction && !this.config.allowTestPush && user.type !== 'ADMIN') {
+      throw new DomainException(
+        'TEST_PUSH_RESTRICTED',
+        'Test push notification endpoint is restricted to staging/development environments or administrator accounts',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    return this.dispatchTestPush(user.userId, user, dto);
+  }
+
+  /**
+   * Administrator variant (D-104): sends to an explicit customer's or worker's registered device(s) from the admin-only
+   * endpoint. The caller's own devices are never used, and the target user id is written to the audit record.
+   */
+  adminTestPush(admin: AuthenticatedUser, dto: AdminTestPushDto): Promise<TestPushResponse> {
+    return this.dispatchTestPush(dto.userId, admin, dto);
+  }
+
+  private async dispatchTestPush(
+    targetUserId: string,
+    actor: AuthenticatedUser,
+    dto?: TestPushDto,
+  ): Promise<TestPushResponse> {
+    const correlationId = dto?.correlationId?.trim() || randomUUID();
+    const tokens = await this.sessions.listDeviceTokens(targetUserId);
+    const title = dto?.title?.trim() || 'SevaNest Test Notification';
+    const body = dto?.body?.trim() || 'Your push notification setup is working successfully!';
+    const providerKind = this.config.pushProvider;
+    const projectId = this.config.firebaseProjectId;
+
+    if (tokens.length === 0) {
+      return {
+        success: false,
+        correlationId,
+        stage: 'NO_DEVICE_TOKEN',
+        message:
+          'No active FCM device token found for this user. The mobile app must register an FCM token via PUT /api/v1/auth/device-token first.',
+        pushProvider: providerKind,
+        firebaseProjectId: projectId,
+        tokensCount: 0,
+        tokens: [],
+        diagnostics: {
+          tokenRegistered: false,
+          fcmConfigured: providerKind === MessagingProviderKind.Fcm,
+          deliveredCount: 0,
+          failedCount: 0,
+          foregroundHandlingNote:
+            'Notification cannot be received until device registers its FCM token with backend.',
+          backgroundHandlingNote:
+            'Notification cannot be received until device registers its FCM token with backend.',
+          troubleshootingRecommendation:
+            'ISSUE IS IN APP: The Flutter app has not registered an FCM token with the backend. Call FirebaseMessaging.instance.getToken() and submit it to PUT /api/v1/auth/device-token.',
+        },
+        dispatchedAt: new Date(),
+      };
+    }
+
+    if (providerKind === MessagingProviderKind.Disabled) {
+      return {
+        success: false,
+        correlationId,
+        stage: 'CONFIG_ERROR',
+        message:
+          'PUSH_PROVIDER is disabled on this backend instance. Set PUSH_PROVIDER=fcm and configure Firebase service account credentials.',
+        pushProvider: providerKind,
+        firebaseProjectId: projectId,
+        tokensCount: tokens.length,
+        tokens: tokens.map((t) => ({
+          token: this.maskToken(t),
+          status: 'FAILED',
+          error: 'PUSH_PROVIDER_DISABLED',
+        })),
+        diagnostics: {
+          tokenRegistered: true,
+          fcmConfigured: false,
+          deliveredCount: 0,
+          failedCount: tokens.length,
+          foregroundHandlingNote: 'Backend push provider is disabled.',
+          backgroundHandlingNote: 'Backend push provider is disabled.',
+          troubleshootingRecommendation:
+            'ISSUE IS IN BACKEND: PUSH_PROVIDER is set to disabled or Firebase credentials (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing in environment.',
+        },
+        dispatchedAt: new Date(),
+      };
+    }
+
+    const testId = randomUUID();
+    const data: Record<string, string> = {
+      type: 'TEST_PUSH',
+      event: 'TEST_PUSH',
+      notificationId: testId,
+      title,
+      body,
+      routeType: 'test',
+      routeId: testId,
+      channelId: 'sevanest_high_importance',
+      priority: 'high',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    const results: TestPushTokenResult[] = [];
+    let deliveredCount = 0;
+    let failedCount = 0;
+
+    for (const deviceToken of tokens) {
+      const masked = this.maskToken(deviceToken);
+      try {
+        const res = await this.push.sendPush({ deviceToken, title, body, data });
+        deliveredCount += 1;
+        results.push({
+          token: masked,
+          status: 'DELIVERED',
+          providerMessageId: res.providerMessageId,
+        });
+      } catch (error) {
+        failedCount += 1;
+        if (error instanceof InvalidDeviceTokenError) {
+          await this.sessions.removeDeviceToken(deviceToken).catch(() => undefined);
+          results.push({
+            token: masked,
+            status: 'FAILED',
+            error:
+              'INVALID_REGISTRATION_TOKEN: Token is dead or unregistered on Firebase. Cleaned up from database.',
+          });
+        } else {
+          results.push({
+            token: masked,
+            status: 'FAILED',
+            error: this.testPushErrorCode(error),
+          });
+        }
+      }
+    }
+
+    await this.audit.record({
+      action: 'notification.test_push',
+      entityType: 'notification_test',
+      entityId: testId,
+      actorId: actor.userId,
+      actorRole: actor.type,
+      metadata: {
+        correlationId,
+        targetUserId,
+        targetIsActor: targetUserId === actor.userId,
+        tokensFound: tokens.length,
+        deliveredCount,
+        failedCount,
+        provider: providerKind,
+      },
+    });
+
+    const isSuccessful = deliveredCount > 0;
+    return {
+      success: isSuccessful,
+      correlationId,
+      stage: isSuccessful ? 'DISPATCHED' : 'FAILED',
+      message: isSuccessful
+        ? `Test push notification dispatched successfully to ${deliveredCount} device(s).`
+        : `Failed to dispatch test push notification to any registered device.`,
+      pushProvider: providerKind,
+      firebaseProjectId: projectId,
+      tokensCount: tokens.length,
+      tokens: results,
+      diagnostics: {
+        tokenRegistered: true,
+        fcmConfigured: true,
+        deliveredCount,
+        failedCount,
+        foregroundHandlingNote:
+          "In Flutter foreground state, FirebaseMessaging.onMessage receives this payload. Ensure you display a local notification using flutter_local_notifications on AndroidNotificationChannel('sevanest_high_importance', 'High Importance', importance: Importance.max).",
+        backgroundHandlingNote:
+          'In background or terminated mode, the FCM notification banner will pop up automatically in the Android notification drawer with title and body.',
+        ...(failedCount > 0 && failedCount === tokens.length
+          ? {
+              troubleshootingRecommendation:
+                'FCM API rejected dispatch. Verify that google-services.json in mobile app matches Firebase Project ID "' +
+                projectId +
+                '" and backend FCM credentials are valid. Quote correlationId ' +
+                correlationId +
+                ' when reporting this.',
+            }
+          : {}),
+      },
+      dispatchedAt: new Date(),
+    };
+  }
+
+  /** A stable reason code for the diagnostic response; never provider text, a token or a key. */
+  private testPushErrorCode(error: unknown): string {
+    if (error instanceof InvalidDeviceTokenError) return 'INVALID_REGISTRATION_TOKEN';
+    if (error instanceof ProviderError) {
+      return error.retryable ? 'PROVIDER_UNAVAILABLE' : 'PROVIDER_REJECTED';
+    }
+    return 'DISPATCH_FAILED';
+  }
+
+  private maskToken(token: string): string {
+    if (token.length <= 12) return '***';
+    return `${token.slice(0, 6)}...${token.slice(-6)}`;
   }
 
   /**

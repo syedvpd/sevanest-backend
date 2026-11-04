@@ -1,5 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { MAPS_PROVIDER, type MapsProvider } from '../../integrations/maps/maps-provider.interface';
+import {
+  STORAGE_PROVIDER,
+  type StorageProvider,
+} from '../../integrations/storage/storage-provider.interface';
+import { MALWARE_SCANNER, type MalwareScanner } from '../../integrations/malware/malware-scanner';
+import { matchesDeclaredType, SIGNATURE_BYTES } from '../../integrations/storage/file-signature';
 import { assertIfMatch } from '../../common/concurrency/if-match';
 import { AppConfigService } from '../../config/app-config.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -12,6 +19,10 @@ import {
   CreateAddressDto,
   UpdateAddressDto,
 } from './dto/customers.dto';
+import type {
+  PhotoUploadResponse,
+  RequestPhotoUploadDto,
+} from '../worker-photo/dto/worker-photo.dto';
 import { changedFieldNames } from '../../common/validation/fields';
 import { assertCoordinatePair } from './domain/customer.rules';
 import {
@@ -23,7 +34,16 @@ export const AddressErrorCode = {
   ADDRESS_NOT_FOUND: 'ADDRESS_NOT_FOUND',
   PROFILE_REQUIRED: 'CUSTOMER_PROFILE_REQUIRED',
   ADDRESS_LIMIT_REACHED: 'ADDRESS_LIMIT_REACHED',
+  PHOTO_TOO_LARGE: 'PHOTO_TOO_LARGE',
+  PHOTO_TYPE_NOT_ALLOWED: 'PHOTO_TYPE_NOT_ALLOWED',
+  PHOTO_NOT_UPLOADED: 'PHOTO_NOT_UPLOADED',
+  PHOTO_CONTENT_MISMATCH: 'PHOTO_CONTENT_MISMATCH',
+  PHOTO_MALWARE_DETECTED: 'PHOTO_MALWARE_DETECTED',
 } as const;
+
+export const ADDRESS_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export const ADDRESS_PHOTO_CONTENT_TYPES = ['image/jpeg', 'image/png'] as const;
+export const ADDRESS_PHOTO_EXPIRY_SECONDS = 900;
 
 /**
  * Most saved (active) addresses one customer may hold. An engineering default that keeps the list and the geocoding cost bounded
@@ -34,6 +54,7 @@ export const MAX_ACTIVE_ADDRESSES = 20;
 export function toAddressView(
   address: AddressRecord,
   serviceability?: ServiceabilityResult,
+  photoUrl: string | null = null,
 ): AddressResponse {
   return {
     id: address.id,
@@ -51,6 +72,7 @@ export function toAddressView(
     unserviceableReason: serviceability
       ? serviceability.unserviceableReason
       : 'AREA_NOT_SERVICEABLE',
+    photoUrl,
     createdAt: address.createdAt,
     updatedAt: address.updatedAt,
   };
@@ -59,8 +81,9 @@ export function toAddressView(
 export function toAdminAddressView(
   address: AddressRecord,
   serviceability?: ServiceabilityResult,
+  photoUrl: string | null = null,
 ): AdminAddressResponse {
-  return { ...toAddressView(address, serviceability), isActive: address.isActive };
+  return { ...toAddressView(address, serviceability, photoUrl), isActive: address.isActive };
 }
 
 /**
@@ -79,18 +102,31 @@ export class CustomerAddressesService {
     private readonly config: AppConfigService,
     private readonly areas: ServiceAreasService,
     @Inject(MAPS_PROVIDER) private readonly maps: MapsProvider,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    @Inject(MALWARE_SCANNER) private readonly scanner: MalwareScanner,
   ) {}
 
   private readonly logger = new Logger(CustomerAddressesService.name);
 
   private async toAddressViewWithServiceability(address: AddressRecord): Promise<AddressResponse> {
-    const serviceability = await this.areas.evaluateServiceability({
-      area: address.area,
-      city: address.city,
-      latitude: address.latitude,
-      longitude: address.longitude,
-    });
-    return toAddressView(address, serviceability);
+    const [serviceability, photoUrl] = await Promise.all([
+      this.areas.evaluateServiceability({
+        area: address.area,
+        city: address.city,
+        latitude: address.latitude,
+        longitude: address.longitude,
+      }),
+      address.photoObjectKey
+        ? this.storage
+            .createDownloadUrl({
+              objectKey: address.photoObjectKey,
+              ttlSeconds: ADDRESS_PHOTO_EXPIRY_SECONDS,
+            })
+            .then((res) => res.url)
+            .catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    return toAddressView(address, serviceability, photoUrl);
   }
 
   async list(userId: string): Promise<AddressResponse[]> {
@@ -365,5 +401,160 @@ export class CustomerAddressesService {
       'Create your profile before managing addresses',
       HttpStatus.CONFLICT,
     );
+  }
+
+  /**
+   * Request short-lived signed upload URL for an address photo (D-103).
+   * Up to 5 MB, JPEG or PNG.
+   */
+  async requestPhotoUpload(
+    userId: string,
+    addressId: string,
+    dto: RequestPhotoUploadDto,
+  ): Promise<PhotoUploadResponse> {
+    const profile = await this.requireProfile(userId);
+    const address = await this.repository.findActiveAddress(profile.id, addressId);
+    if (!address) {
+      throw this.notFound();
+    }
+    const contentType = dto.contentType.toLowerCase();
+    if (!ADDRESS_PHOTO_CONTENT_TYPES.includes(contentType as never)) {
+      throw new DomainException(
+        AddressErrorCode.PHOTO_TYPE_NOT_ALLOWED,
+        'Only image/jpeg and image/png are allowed',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    if (dto.sizeBytes > ADDRESS_PHOTO_MAX_BYTES) {
+      throw new DomainException(
+        AddressErrorCode.PHOTO_TOO_LARGE,
+        'The image exceeds the 5 MB limit',
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
+    const photoId = randomUUID();
+    const objectKey = `customers/${profile.id}/addresses/${address.id}/photos/${photoId}`;
+    const upload = await this.storage.createUploadUrl({
+      objectKey,
+      contentType,
+      maxBytes: dto.sizeBytes,
+      ttlSeconds: ADDRESS_PHOTO_EXPIRY_SECONDS,
+    });
+    return {
+      photoId,
+      url: upload.url,
+      method: 'PUT',
+      expiresAt: upload.expiresAt,
+      contentType,
+      maxBytes: ADDRESS_PHOTO_MAX_BYTES,
+    };
+  }
+
+  /**
+   * Confirm address photo upload (D-103).
+   * Validates file presence, size, magic-bytes signature, and optional malware scan.
+   * Updates photoObjectKey and deletes superseded photo if any.
+   */
+  async confirmPhoto(userId: string, addressId: string, photoId: string): Promise<AddressResponse> {
+    const profile = await this.requireProfile(userId);
+    const address = await this.repository.findActiveAddress(profile.id, addressId);
+    if (!address) {
+      throw this.notFound();
+    }
+    const objectKey = `customers/${profile.id}/addresses/${address.id}/photos/${photoId}`;
+    let info;
+    try {
+      info = await this.storage.getObjectInfo(objectKey);
+    } catch {
+      throw new DomainException(
+        AddressErrorCode.PHOTO_NOT_UPLOADED,
+        'No uploaded image found at the storage location',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    if (!info || info.sizeBytes <= 0) {
+      throw new DomainException(
+        AddressErrorCode.PHOTO_NOT_UPLOADED,
+        'No uploaded image found at the storage location',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    if (info.sizeBytes > ADDRESS_PHOTO_MAX_BYTES) {
+      await this.storage.deleteObject(objectKey).catch(() => undefined);
+      throw new DomainException(
+        AddressErrorCode.PHOTO_TOO_LARGE,
+        'The uploaded image exceeds the 5 MB limit',
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
+    const head = await this.storage.readObjectHead(objectKey, SIGNATURE_BYTES);
+    const detected =
+      head !== null &&
+      (matchesDeclaredType('image/jpeg', head) || matchesDeclaredType('image/png', head));
+    if (!detected) {
+      await this.storage.deleteObject(objectKey).catch(() => undefined);
+      throw new DomainException(
+        AddressErrorCode.PHOTO_CONTENT_MISMATCH,
+        'The file contents do not match its declared content type',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    if (this.scanner.enabled) {
+      const object = await this.storage.readObject(objectKey, ADDRESS_PHOTO_MAX_BYTES);
+      if (!object) {
+        throw new DomainException(
+          AddressErrorCode.PHOTO_NOT_UPLOADED,
+          'No uploaded image found at the storage location',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      const verdict = await this.scanner.scan(object.bytes);
+      if (!verdict.clean) {
+        await this.storage.deleteObject(objectKey).catch(() => undefined);
+        throw new DomainException(
+          AddressErrorCode.PHOTO_MALWARE_DETECTED,
+          'The uploaded image contains malicious content',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+    }
+    const oldKey = address.photoObjectKey;
+    if (oldKey && oldKey !== objectKey) {
+      await this.storage.deleteObject(oldKey).catch(() => undefined);
+    }
+    const updated = await this.repository.setAddressPhoto(address.id, objectKey);
+    await this.audit.record({
+      action: 'customer.address_photo_update',
+      entityType: 'customer_address',
+      entityId: address.id,
+      actorId: userId,
+      actorRole: 'CUSTOMER',
+      metadata: { photoId, sizeBytes: info.sizeBytes },
+    });
+    return this.toAddressViewWithServiceability(updated);
+  }
+
+  /**
+   * Delete address photo (D-103).
+   * Removes photoObjectKey from the database and deletes the file from storage.
+   */
+  async deletePhoto(userId: string, addressId: string): Promise<void> {
+    const profile = await this.requireProfile(userId);
+    const address = await this.repository.findActiveAddress(profile.id, addressId);
+    if (!address) {
+      throw this.notFound();
+    }
+    if (address.photoObjectKey) {
+      const oldKey = address.photoObjectKey;
+      await this.repository.setAddressPhoto(address.id, null);
+      await this.storage.deleteObject(oldKey).catch(() => undefined);
+      await this.audit.record({
+        action: 'customer.address_photo_delete',
+        entityType: 'customer_address',
+        entityId: address.id,
+        actorId: userId,
+        actorRole: 'CUSTOMER',
+      });
+    }
   }
 }

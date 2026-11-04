@@ -188,6 +188,51 @@ describe('FcmPushProvider', () => {
     await expect(new FcmPushProvider(settings).sendPush(push)).rejects.toThrow('did not accept');
   });
 
+  it('verifies credentials by exchanging the JWT only, without sending a message or exposing secrets', async () => {
+    replies = [{ status: 200, body: { access_token: 'ya29.verify', expires_in: 3599 } }];
+    const provider = new FcmPushProvider(settings);
+
+    await expect(provider.verifyCredentials()).resolves.toEqual({
+      projectId: 'sevanest-test',
+      expiresInSeconds: 3599,
+    });
+    expect(calls.map((c) => c.url)).toEqual(['https://oauth.test/token']);
+    expect(JSON.stringify(calls)).not.toContain('PRIVATE KEY');
+    expect(JSON.stringify(calls)).not.toContain('ya29.verify');
+  });
+
+  it('verifies credentials with a fresh exchange even when a token is already cached', async () => {
+    replies = [
+      { status: 200, body: { access_token: 'ya29.first', expires_in: 3600 } },
+      { status: 200, body: { name: 'projects/sevanest-test/messages/m1' } },
+      { status: 200, body: { access_token: 'ya29.second', expires_in: 1200 } },
+    ];
+    const provider = new FcmPushProvider(settings);
+    await provider.sendPush(push);
+    await expect(provider.verifyCredentials()).resolves.toEqual({
+      projectId: 'sevanest-test',
+      expiresInSeconds: 1200,
+    });
+    expect(calls.filter((c) => c.url === 'https://oauth.test/token')).toHaveLength(2);
+    expect(calls.some((c) => c.url.includes('messages:send'))).toBe(true);
+  });
+
+  it('reports bad credentials without leaking the key or the token in the error', async () => {
+    replies = [
+      {
+        status: 400,
+        body: { error: 'invalid_grant', error_description: 'Invalid JWT Signature.' },
+      },
+    ];
+    const error = (await new FcmPushProvider(settings)
+      .verifyCredentials()
+      .catch((e: unknown) => e)) as ProviderError;
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.retryable).toBe(false);
+    expect(error.message).not.toContain('PRIVATE KEY');
+    expect(error.message).not.toContain('ya29');
+  });
+
   it('validates the service account JSON without echoing it', () => {
     expect(parseFcmServiceAccount(JSON.stringify(account)).project_id).toBe('sevanest-test');
     expect(() => parseFcmServiceAccount('not json')).toThrow('not valid JSON');

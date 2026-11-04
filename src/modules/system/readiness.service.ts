@@ -183,6 +183,24 @@ export class ReadinessService {
         : `No active template for: ${without.join(', ')} (those events notify nobody). Run \`npm run seed:launch\` for starter in-app wording`,
     );
 
+    // Push is a separate channel: an IN_APP template queues nothing to FCM. Only shown when push is actually on.
+    if (this.config.pushProvider === MessagingProviderKind.Fcm) {
+      const eventsWithPush = new Set(
+        templates.filter((t) => t.channel === 'PUSH').map((t) => t.eventCode),
+      );
+      const pushWithout = Object.keys(EVENT_PARAMS).filter(
+        (e) => !staffOnly.has(e) && !eventsWithPush.has(e),
+      );
+      add(
+        'notification_push_templates',
+        'WARNING',
+        pushWithout.length === 0,
+        pushWithout.length === 0
+          ? 'Every event has an active PUSH template'
+          : `No active PUSH template for: ${pushWithout.join(', ')} (those events send no push: an IN_APP template alone queues nothing to FCM). Add one with POST /api/v1/admin/notification-templates`,
+      );
+    }
+
     const real = (ok: boolean, name: string, what: string): void =>
       add(
         `provider_${name}`,

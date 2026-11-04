@@ -10,6 +10,7 @@ import {
   StorageProviderKind,
 } from './config/env.validation';
 import { ClamAvMalwareScanner } from './integrations/malware/malware-scanner';
+import { FcmPushProvider } from './integrations/notifications/fcm.provider';
 import { RazorpayPaymentProvider } from './integrations/payments/razorpay-payment.provider';
 import { S3StorageProvider } from './integrations/storage/s3-storage.provider';
 
@@ -31,7 +32,8 @@ const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$
  *  - Twilio: reads the account record (credentials check, no message).
  *  - S3 / Supabase Storage: asks for a key that does not exist (proves credentials, bucket and endpoint).
  *  - ClamAV: scans the harmless EICAR test string; it must be reported as infected.
- * MSG91 and FCM have no read-only call: use the staging test OTP and a real device token (docs/qa/OPERATIONS_RUNBOOK.md).
+ *  - FCM: exchanges the service-account key for an OAuth access token only; no push is sent.
+ * MSG91 has no read-only call: use the staging test OTP (docs/qa/OPERATIONS_RUNBOOK.md).
  * Anything that needs a customer to pay (checkout, webhook, refund) is a manual sandbox session, not part of this command.
  */
 async function main(): Promise<void> {
@@ -135,11 +137,22 @@ async function main(): Promise<void> {
     });
   }
 
-  results.push({
-    name: 'fcm',
-    status: config.pushProvider === MessagingProviderKind.Fcm ? 'SKIPPED' : 'NOT_CONFIGURED',
-    detail: 'no read-only call: send a test push to a real device token',
-  });
+  if (config.pushProvider === MessagingProviderKind.Fcm) {
+    await run('fcm', async () => {
+      const provider = new FcmPushProvider({
+        serviceAccount: config.fcmServiceAccount,
+        timeoutMs: config.providerHttpTimeoutMs,
+      });
+      const verified = await provider.verifyCredentials();
+      return `service account exchanged for an OAuth token (project ${verified.projectId}, expires in ${verified.expiresInSeconds}s); no message was sent`;
+    });
+  } else {
+    results.push({
+      name: 'fcm',
+      status: 'NOT_CONFIGURED',
+      detail: `PUSH_PROVIDER=${config.pushProvider}`,
+    });
+  }
 
   for (const r of results) console.log(`${r.status.padEnd(15)} ${r.name.padEnd(10)} ${r.detail}`);
   await app.close();

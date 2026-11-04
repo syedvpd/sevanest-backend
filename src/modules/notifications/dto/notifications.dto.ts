@@ -177,3 +177,136 @@ export class DeliveryView {
   @ApiProperty({ nullable: true, type: Date }) sentAt!: Date | null;
   @ApiProperty() createdAt!: Date;
 }
+
+export class TestPushDto {
+  @ApiPropertyOptional({
+    example: 'SevaNest Test Notification',
+    description: 'Custom test push title. Defaults to "SevaNest Test Notification".',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 120)
+  title?: string;
+
+  @ApiPropertyOptional({
+    example: 'Your push notification setup is working successfully!',
+    description:
+      'Custom test push body text. Defaults to "Your push notification setup is working successfully!".',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 1000)
+  body?: string;
+
+  @ApiPropertyOptional({
+    example: 'flutter-diag-01J2ABCDEF',
+    description:
+      'Optional client correlation id (max 64 characters). Echoed in the response and written to the audit record so an app log can be matched to a backend dispatch.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
+  correlationId?: string;
+}
+
+/** Administrator variant: an explicit recipient instead of the caller's own devices. */
+export class AdminTestPushDto extends TestPushDto {
+  @ApiProperty({
+    description: 'The customer or worker whose registered device(s) receive the test push.',
+  })
+  @IsUUID()
+  userId!: string;
+}
+
+export class TestPushTokenResult {
+  @ApiProperty({ description: 'Masked device token for privacy' })
+  token!: string;
+
+  @ApiProperty({ enum: ['DELIVERED', 'FAILED'] })
+  status!: 'DELIVERED' | 'FAILED';
+
+  @ApiPropertyOptional({ description: 'FCM message ID when delivered successfully' })
+  providerMessageId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Stable error code when delivery failed (never provider text)',
+  })
+  error?: string;
+}
+
+export class TestPushDiagnostics {
+  @ApiProperty({ description: 'Whether active device token(s) are registered with backend' })
+  tokenRegistered!: boolean;
+
+  @ApiProperty({ description: 'Whether backend push provider is active (fcm or mock)' })
+  fcmConfigured!: boolean;
+
+  @ApiProperty({ description: 'Number of device tokens that successfully received the test push' })
+  deliveredCount!: number;
+
+  @ApiProperty({ description: 'Number of device tokens that failed dispatch' })
+  failedCount!: number;
+
+  @ApiProperty({
+    description: 'Guidance for handling notifications in the Flutter foreground state (onMessage)',
+  })
+  foregroundHandlingNote!: string;
+
+  @ApiProperty({
+    description: 'Guidance for handling notifications in the Flutter background/terminated state',
+  })
+  backgroundHandlingNote!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Actionable troubleshooting advice indicating whether an issue originates from the app or backend',
+  })
+  troubleshootingRecommendation?: string;
+}
+
+export class TestPushResponse {
+  @ApiProperty({ description: 'Overall success of the test push dispatch' })
+  success!: boolean;
+
+  @ApiProperty({
+    description:
+      'Correlation id echoed from the request, or a generated one. Quote it when reporting a delivery problem.',
+  })
+  correlationId!: string;
+
+  @ApiProperty({
+    enum: ['CONFIG_ERROR', 'NO_DEVICE_TOKEN', 'DISPATCHED', 'FAILED'],
+    description: 'Diagnostic stage identifying whether an issue is in the app or backend',
+  })
+  stage!: 'CONFIG_ERROR' | 'NO_DEVICE_TOKEN' | 'DISPATCHED' | 'FAILED';
+
+  @ApiProperty({ description: 'Human-readable explanation of result and next steps' })
+  message!: string;
+
+  @ApiProperty({ description: 'Active FCM push provider configured on backend' })
+  pushProvider!: string;
+
+  @ApiProperty({ description: 'Firebase Project ID targeted' })
+  firebaseProjectId!: string;
+
+  @ApiProperty({ description: 'Number of device tokens found for this authenticated user' })
+  tokensCount!: number;
+
+  @ApiProperty({
+    type: [TestPushTokenResult],
+    description: 'Detailed dispatch result per device token',
+  })
+  tokens!: TestPushTokenResult[];
+
+  @ApiProperty({
+    type: TestPushDiagnostics,
+    description: 'Diagnostic notes for Flutter foreground/background handling',
+  })
+  diagnostics!: TestPushDiagnostics;
+
+  @ApiProperty({ description: 'Server timestamp of test dispatch' })
+  dispatchedAt!: Date;
+}

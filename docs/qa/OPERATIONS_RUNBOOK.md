@@ -36,10 +36,12 @@ npm run check:providers
 ```
 Prints one line per provider and never prints a secret, touches the database or sends a message.
 * Razorpay: with **test** keys it creates a Rs 1 test order and looks it up; live keys are refused.
-* Twilio: reads the account record (credentials check). MSG91 and FCM have no read-only call.
+* Twilio: reads the account record (credentials check). MSG91 has no read-only call.
+* FCM: exchanges the service-account key for an OAuth access token only (no push is sent). It still authenticates as the configured service account, so do not run it with a key you are about to revoke.
 * Storage: probes a key that cannot exist (proves credentials, bucket and endpoint).
 * ClamAV: scans the harmless EICAR test string and expects "infected".
 Last local result (2026-10-13, local `.env`): storage OK (bucket reachable); Razorpay, SMS, ClamAV, FCM NOT_CONFIGURED locally.
+Push end-to-end diagnosis (including the required `PUSH` templates) is in `docs/qa/FCM_PUSH_DIAGNOSTICS.md`.
 
 ### 2. Razorpay sandbox session (manual, test keys only)
 1. Set `PAYMENT_PROVIDER=razorpay`, test `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`, and (for webhooks) `RAZORPAY_WEBHOOK_SECRET`; in the Razorpay dashboard add the webhook URL `https://<service>/api/v1/webhooks/payments` for the payment and refund events.

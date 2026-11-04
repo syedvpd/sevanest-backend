@@ -1,6 +1,10 @@
 import { assertIfMatch } from '../../common/concurrency/if-match';
 import { createdRange } from '../../common/time/india';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  STORAGE_PROVIDER,
+  type StorageProvider,
+} from '../../integrations/storage/storage-provider.interface';
 import { AuditService } from '../../common/audit/audit.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -61,6 +65,7 @@ export class CustomersService {
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
     private readonly areas: ServiceAreasService,
+    @Optional() @Inject(STORAGE_PROVIDER) private readonly storage?: StorageProvider,
   ) {}
 
   // --- the customer's own profile ---------------------------------------------------------------------------
@@ -300,13 +305,24 @@ export class CustomersService {
     ]);
     const addressViews = await Promise.all(
       addresses.map(async (address) => {
-        const serviceability = await this.areas.evaluateServiceability({
-          area: address.area,
-          city: address.city,
-          latitude: address.latitude,
-          longitude: address.longitude,
-        });
-        return toAdminAddressView(address, serviceability);
+        const [serviceability, photoUrl] = await Promise.all([
+          this.areas.evaluateServiceability({
+            area: address.area,
+            city: address.city,
+            latitude: address.latitude,
+            longitude: address.longitude,
+          }),
+          address.photoObjectKey && this.storage
+            ? this.storage
+                .createDownloadUrl({
+                  objectKey: address.photoObjectKey,
+                  ttlSeconds: 900,
+                })
+                .then((res) => res.url)
+                .catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        return toAdminAddressView(address, serviceability, photoUrl);
       }),
     );
     return {

@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Matches,
   Max,
@@ -246,8 +247,20 @@ export class AddressResponse {
     description: 'Null when serviceable; otherwise indicates why the address is outside coverage.',
   })
   unserviceableReason!: 'CITY_NOT_SERVICEABLE' | 'AREA_NOT_SERVICEABLE' | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Signed URL to the address photo (null when no photo on file).',
+  })
+  photoUrl!: string | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
+}
+
+export class ConfirmAddressPhotoDto {
+  @ApiProperty({ description: 'The photoId returned by the upload request' })
+  @IsUUID()
+  photoId!: string;
 }
 
 export class AdminAddressResponse extends AddressResponse {

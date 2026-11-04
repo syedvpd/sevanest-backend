@@ -115,6 +115,7 @@ const b64url = (value: Buffer | string): string => Buffer.from(value).toString('
 @Injectable()
 export class FcmPushProvider implements PushProvider {
   private accessToken: { value: string; expiresAt: number } | null = null;
+  private lastTokenLifetimeSeconds = 0;
 
   constructor(private readonly settings: FcmSettings) {}
 
@@ -177,6 +178,19 @@ export class FcmPushProvider implements PushProvider {
     return (error.cause as { status?: number } | undefined)?.status === 401;
   }
 
+  /**
+   * Proves the credentials can be exchanged for an OAuth access token, without sending any message (used by
+   * `npm run check:providers`). Always performs a fresh exchange. Returns only non-secret facts: never the token.
+   */
+  async verifyCredentials(): Promise<{ projectId: string; expiresInSeconds: number }> {
+    this.accessToken = null;
+    await this.token();
+    return {
+      projectId: this.settings.serviceAccount.project_id,
+      expiresInSeconds: this.lastTokenLifetimeSeconds,
+    };
+  }
+
   private async token(): Promise<string> {
     const now = Date.now();
     if (this.accessToken && this.accessToken.expiresAt - 60_000 > now)
@@ -218,6 +232,7 @@ export class FcmPushProvider implements PushProvider {
       throw new ProviderError('fcm', 'fcm authentication failed', false);
     }
     const lifetime = typeof reply.expires_in === 'number' ? reply.expires_in : 3600;
+    this.lastTokenLifetimeSeconds = lifetime;
     this.accessToken = { value: reply.access_token, expiresAt: now + lifetime * 1000 };
     return reply.access_token;
   }

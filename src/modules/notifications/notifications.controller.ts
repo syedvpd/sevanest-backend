@@ -16,6 +16,7 @@ import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-resp
 import type { Response } from 'express';
 import { etagOf } from '../../common/concurrency/if-match';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
@@ -23,6 +24,7 @@ import type { Page } from '../../common/pagination/pagination';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
 import {
+  AdminTestPushDto,
   CreateTemplateDto,
   DeliveryListQuery,
   DeliveryView,
@@ -31,6 +33,8 @@ import {
   InboxQuery,
   TemplateListQuery,
   TemplateView,
+  TestPushDto,
+  TestPushResponse,
   UnreadCountView,
   UpdateTemplateDto,
 } from './dto/notifications.dto';
@@ -132,6 +136,23 @@ export class AdminNotificationsController {
   })
   health(): Promise<HealthView> {
     return this.notifications.health();
+  }
+
+  @Post('notifications/test-push')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.NOTIFICATION_MANAGE)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiModelResponse(TestPushResponse)
+  @ApiOperation({
+    summary: "Send a diagnostic test push to one user's registered devices (D-104)",
+    description:
+      "Admin-only. `userId` is the customer or worker whose registered FCM device token(s) receive the test push; the caller's own devices are never used. Returns per-token results, a stable error code per failure and the `correlationId` to quote in a support report. Audited (action `notification.test_push`, including the target user id). Rate limited to 5/minute.",
+  })
+  testPushToUser(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Body() dto: AdminTestPushDto,
+  ): Promise<TestPushResponse> {
+    return this.notifications.adminTestPush(admin, dto);
   }
 
   @Post('notifications/:notificationId/retry')
@@ -237,5 +258,21 @@ export class InboxController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.notifications.markRead(user.userId, notificationId);
+  }
+
+  @Post('test-push')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiModelResponse(TestPushResponse)
+  @ApiOperation({
+    summary: 'Send a diagnostic test push notification to my registered device(s) (D-104)',
+    description:
+      'Retrieves the FCM device token(s) registered for the authenticated worker/customer, dispatches a test push notification via Firebase FCM, and returns detailed delivery and diagnostic status plus a `correlationId`. In production it is restricted to administrators unless ALLOW_TEST_PUSH=true. Rate limited to 5/minute.',
+  })
+  testPush(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto?: TestPushDto,
+  ): Promise<TestPushResponse> {
+    return this.notifications.testPush(user, dto);
   }
 }

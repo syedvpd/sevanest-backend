@@ -29,6 +29,7 @@ export interface AddressRecord {
   longitude: number | null;
   isDefault: boolean;
   isActive: boolean;
+  photoObjectKey: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -66,6 +67,7 @@ const ADDRESS_SELECT = {
   longitude: true,
   isDefault: true,
   isActive: true,
+  photoObjectKey: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.CustomerAddressSelect;
@@ -330,6 +332,21 @@ export class CustomersRepository {
       data: { isActive: false, isDefault: false },
       select: { id: true },
     });
+  }
+
+  async setAddressPhoto(
+    id: string,
+    photoObjectKey: string | null,
+    tx?: Prisma.TransactionClient,
+  ): Promise<AddressRecord> {
+    const client = tx ?? this.prisma;
+    return toAddress(
+      await client.customerAddress.update({
+        where: { id },
+        data: { photoObjectKey },
+        select: ADDRESS_SELECT,
+      }),
+    );
   }
 
   // --- notes --------------------------------------------------------------------------------------------------

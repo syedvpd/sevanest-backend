@@ -30,6 +30,7 @@ import type { Page } from '../../common/pagination/pagination';
 import { PageQueryDto } from '../../common/pagination/pagination';
 import { PermissionCode } from '../users/rbac.constants';
 import { UsersService } from '../users/users.service';
+import { PhotoUploadResponse, RequestPhotoUploadDto } from '../worker-photo/dto/worker-photo.dto';
 import { CustomerAddressesService } from './customer-addresses.service';
 import { CustomersService } from './customers.service';
 import {
@@ -37,6 +38,7 @@ import {
   AdminCustomerDetail,
   AdminCustomerListQuery,
   AdminCustomerSummary,
+  ConfirmAddressPhotoDto,
   CreateAddressDto,
   CreateCustomerNoteDto,
   CreateCustomerProfileDto,
@@ -185,6 +187,58 @@ export class CustomersController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.addresses.deactivate(user.userId, addressId);
+  }
+
+  @Post('addresses/:addressId/photo')
+  @ApiModelResponse(PhotoUploadResponse, { status: 201 })
+  @ApiOperation({
+    summary: 'Request signed upload URL for an address photo (D-103)',
+    description: 'Up to 5 MB, image/jpeg or image/png. Photo is customer/admin readable only.',
+  })
+  requestAddressPhoto(
+    @Param('addressId', ParseUUIDPipe) addressId: string,
+    @Body() dto: RequestPhotoUploadDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PhotoUploadResponse> {
+    return this.addresses.requestPhotoUpload(user.userId, addressId, dto);
+  }
+
+  @Post('addresses/:addressId/photo/confirm')
+  @ApiModelResponse(AddressResponse)
+  @ApiOperation({
+    summary: 'Confirm address photo upload with photoId in request body (D-103)',
+  })
+  confirmAddressPhoto(
+    @Param('addressId', ParseUUIDPipe) addressId: string,
+    @Body() dto: ConfirmAddressPhotoDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AddressResponse> {
+    return this.addresses.confirmPhoto(user.userId, addressId, dto.photoId);
+  }
+
+  @Post('addresses/:addressId/photo/:photoId/confirm')
+  @ApiModelResponse(AddressResponse)
+  @ApiOperation({
+    summary: 'Confirm address photo upload with photoId in URL parameter (D-103)',
+  })
+  confirmAddressPhotoParam(
+    @Param('addressId', ParseUUIDPipe) addressId: string,
+    @Param('photoId', ParseUUIDPipe) photoId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AddressResponse> {
+    return this.addresses.confirmPhoto(user.userId, addressId, photoId);
+  }
+
+  @Delete('addresses/:addressId/photo')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete the photo attached to an address (D-103)',
+  })
+  async deleteAddressPhoto(
+    @Param('addressId', ParseUUIDPipe) addressId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.addresses.deletePhoto(user.userId, addressId);
   }
 }
 

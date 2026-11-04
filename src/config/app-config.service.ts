@@ -261,6 +261,9 @@ export class AppConfigService {
   get firebaseProjectId(): string {
     return this.get('FIREBASE_PROJECT_ID') || 'sevanest-47cef';
   }
+  get allowTestPush(): boolean {
+    return this.get('ALLOW_TEST_PUSH') ?? false;
+  }
   get fcmServiceAccount(): FcmServiceAccount {
     return resolveFcmServiceAccount({
       json: this.get('FCM_SERVICE_ACCOUNT_JSON'),

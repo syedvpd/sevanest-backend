@@ -814,6 +814,15 @@ export class EnvironmentVariables {
   FIREBASE_PRIVATE_KEY?: string;
 
   /**
+   * When true, permits non-admin workers/customers to trigger test push dispatch in production.
+   * Default false (in production, test push is restricted to administrators only).
+   */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  ALLOW_TEST_PUSH: boolean = false;
+
+  /**
    * STAGING/DEMO ONLY, refused when NODE_ENV=production (D-70). When true, the mobile numbers in TEST_OTP_NUMBERS log in with the fixed TEST_OTP_CODE and no SMS is sent
    * (so the apps can be tested before an SMS provider exists). Every other number behaves exactly as without it. Everything else
    * about the OTP (cooldown, attempt limit, lockout, expiry, single use) is unchanged. Never enable it for real users.
