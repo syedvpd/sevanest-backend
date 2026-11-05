@@ -227,7 +227,6 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
       'COMPLETED',
       'CANCELLED',
       'INTERVIEW_TRIAL_SCHEDULED',
-      'INTERVIEW_TRIAL_COMPLETED',
       'PENDING_PAYMENT',
       'REPLACEMENT_REQUESTED',
     ];
@@ -252,6 +251,36 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
         expect(mockRepo.update).not.toHaveBeenCalled();
       },
     );
+
+    it('worker confirm-worker on INTERVIEW_TRIAL_COMPLETED advances booking to PENDING_PAYMENT', async () => {
+      const completedTrialBooking: BookingRecord = {
+        ...baseBooking,
+        status: 'INTERVIEW_TRIAL_COMPLETED',
+      };
+      mockRepo.lock.mockResolvedValueOnce({ ...completedTrialBooking });
+      mockRepo.findById.mockResolvedValueOnce({
+        ...completedTrialBooking,
+        status: 'PENDING_PAYMENT',
+        startDate: '2026-11-10',
+      });
+
+      const res = await bookingService.act(
+        completedTrialBooking.id,
+        'confirm-worker',
+        { startDate: '2026-11-10' },
+        assignedWorkerActor,
+      );
+
+      expect(res).toBeDefined();
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        completedTrialBooking.id,
+        expect.objectContaining({
+          status: 'PENDING_PAYMENT',
+          startDate: '2026-11-10',
+        }),
+        expect.anything(),
+      );
+    });
 
     it('rejects worker confirm-worker on NEW_REQUEST (not matched) with 404 or 403', async () => {
       mockRepo.lock.mockResolvedValueOnce({

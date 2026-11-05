@@ -198,10 +198,10 @@ describe('Worker Opportunity Acceptance Fix (HTTP 403 ACTION_NOT_ALLOWED Resolut
   });
 
   describe('Task 1: Booking Acceptance (accept & confirm-worker for worker)', () => {
-    it('proves actionsFor(WORKER) includes accept and does not grant global confirm-worker', () => {
+    it('proves actionsFor(WORKER) includes accept and confirm-worker (state-scoped)', () => {
       const workerActions = actionsFor('WORKER');
       expect(workerActions).toContain('accept');
-      expect(workerActions).not.toContain('confirm-worker');
+      expect(workerActions).toContain('confirm-worker');
     });
 
     it('worker calling confirm-worker on MATCHED booking without interview succeeds with 200 and sets workerRespondedAt', async () => {
@@ -344,7 +344,7 @@ describe('Worker Opportunity Acceptance Fix (HTTP 403 ACTION_NOT_ALLOWED Resolut
       );
     });
 
-    it('worker calling confirm-worker on a non-MATCHED booking rejects with 403 ACTION_NOT_ALLOWED', async () => {
+    it('worker confirm-worker on INTERVIEW_TRIAL_COMPLETED passes the authorization guard', async () => {
       mockRepo.lock.mockResolvedValueOnce({
         ...baseMatchedBooking,
         status: 'INTERVIEW_TRIAL_COMPLETED',
@@ -352,12 +352,13 @@ describe('Worker Opportunity Acceptance Fix (HTTP 403 ACTION_NOT_ALLOWED Resolut
 
       try {
         await bookingService.act(baseMatchedBooking.id, 'confirm-worker', {}, workerActor);
-        fail('Expected ACTION_NOT_ALLOWED exception');
+        fail('Expected an exception (missing startDate validation)');
       } catch (err) {
         const error = err as DomainException;
-        expect(error.code).toBe(BookingErrorCode.ACTION_NOT_ALLOWED);
-        expect(error.getStatus()).toBe(HttpStatus.FORBIDDEN);
-        expect(error.message).toBe('This action is not available to you');
+        // No longer ACTION_NOT_ALLOWED (403): the worker is authorized to confirm-worker on
+        // INTERVIEW_TRIAL_COMPLETED. The failure is the missing startDate (400).
+        expect(error.code).not.toBe(BookingErrorCode.ACTION_NOT_ALLOWED);
+        expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       }
     });
 

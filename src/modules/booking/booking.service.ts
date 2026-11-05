@@ -124,7 +124,11 @@ const RULES: Record<BookingAction, Rule[]> = {
     },
   ],
   'confirm-worker': [
-    { from: ['INTERVIEW_TRIAL_COMPLETED'], to: 'PENDING_PAYMENT', actors: ['CUSTOMER', 'ADMIN'] },
+    {
+      from: ['INTERVIEW_TRIAL_COMPLETED'],
+      to: 'PENDING_PAYMENT',
+      actors: ['CUSTOMER', 'ADMIN', 'WORKER'],
+    },
   ],
   accept: [{ from: ['MATCHED'], to: 'MATCHED', actors: ['WORKER', 'ADMIN'] }],
   start: [{ from: ['CONFIRMED'], to: 'ACTIVE', actors: ['CUSTOMER', 'WORKER', 'ADMIN'] }],
@@ -772,19 +776,38 @@ export class BookingService {
         HttpStatus.FORBIDDEN,
       );
     }
-    const effectiveAction: BookingAction = isWorkerConfirmWorker ? 'accept' : action;
+    // A worker's confirm-worker on a MATCHED opportunity behaves as accept (records the worker's
+    // response without a start date). On an INTERVIEW_TRIAL_COMPLETED booking it uses the
+    // confirm-worker rule (moves to PENDING_PAYMENT with the agreed start date).
+    let effectiveAction: BookingAction = isWorkerConfirmWorker ? 'accept' : action;
     const prepared = this.prepare(effectiveAction, dto);
     const result = await this.repository.transaction(async (tx) => {
       const booking = await this.repository.lock(bookingId, tx);
       if (!booking || !this.owns(booking, actor)) {
         throw this.notFound();
       }
-      if (isWorkerConfirmWorker && booking.status !== 'MATCHED') {
-        throw new DomainException(
-          BookingErrorCode.ACTION_NOT_ALLOWED,
-          'This action is not available to you',
-          HttpStatus.FORBIDDEN,
-        );
+      if (isWorkerConfirmWorker) {
+        if (booking.status === 'INTERVIEW_TRIAL_COMPLETED') {
+          effectiveAction = 'confirm-worker';
+        } else if (booking.status !== 'MATCHED') {
+          throw new DomainException(
+            BookingErrorCode.ACTION_NOT_ALLOWED,
+            'This action is not available to you',
+            HttpStatus.FORBIDDEN,
+          );
+        }
+      }
+      // confirm-worker needs its start date validated (prepare() above ran with 'accept').
+      if (effectiveAction === 'confirm-worker') {
+        if (!dto.startDate) {
+          throw this.invalid('startDate', 'startDate is required to confirm-worker');
+        }
+        if (!isRealDate(dto.startDate)) {
+          throw this.invalid('startDate', 'startDate is not a real date');
+        }
+        if (dto.startDate < indiaToday()) {
+          throw this.invalid('startDate', 'startDate must be today or later');
+        }
       }
       const rule = RULES[effectiveAction].find(
         (r) => r.actors.includes(actor.kind) && r.from.includes(booking.status),
