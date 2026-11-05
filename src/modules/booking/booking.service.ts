@@ -809,6 +809,10 @@ export class BookingService {
           throw this.invalid('startDate', 'startDate must be today or later');
         }
       }
+      // A worker re-confirming an already-answered booking is a harmless no-op.
+      if (isWorkerConfirmWorker && effectiveAction === 'accept' && booking.workerRespondedAt) {
+        return booking.id;
+      }
       const rule = RULES[effectiveAction].find(
         (r) => r.actors.includes(actor.kind) && r.from.includes(booking.status),
       );
