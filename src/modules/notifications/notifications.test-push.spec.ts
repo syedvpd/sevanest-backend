@@ -10,6 +10,11 @@ describe('NotificationsService testPush (D-104)', () => {
   const DEVICE_TOKEN = 'fcm-token-abcdef1234567890';
 
   let service: NotificationsService;
+  let mockRepository: {
+    createTestPushNotification: jest.Mock;
+    finish: jest.Mock;
+    findById: jest.Mock;
+  };
   let mockSessions: {
     listDeviceTokens: jest.Mock<Promise<string[]>, [string]>;
     removeDeviceToken: jest.Mock<Promise<number>, [string]>;
@@ -40,6 +45,20 @@ describe('NotificationsService testPush (D-104)', () => {
   };
 
   beforeEach(() => {
+    mockRepository = {
+      createTestPushNotification: jest.fn().mockImplementation((input) =>
+        Promise.resolve({
+          id: input.id,
+          recipientUserId: input.recipientUserId,
+          eventCode: 'TEST_PUSH',
+          channel: 'PUSH',
+          status: 'QUEUED',
+          params: { title: input.title, body: input.body },
+        }),
+      ),
+      finish: jest.fn().mockResolvedValue(true),
+      findById: jest.fn(),
+    };
     mockSessions = {
       listDeviceTokens: jest.fn<Promise<string[]>, [string]>(() => Promise.resolve([DEVICE_TOKEN])),
       removeDeviceToken: jest.fn<Promise<number>, [string]>(() => Promise.resolve(1)),
@@ -60,7 +79,7 @@ describe('NotificationsService testPush (D-104)', () => {
     };
 
     service = new NotificationsService(
-      {} as never,
+      mockRepository as never,
       {} as never,
       {} as never,
       mockSessions as never,
@@ -304,5 +323,53 @@ describe('NotificationsService testPush (D-104)', () => {
         }),
       }),
     );
+  });
+
+  it('persists test push notification in repository before dispatch and marks it SENT on delivery', async () => {
+    const res = await service.testPush(workerUser);
+
+    expect(res.success).toBe(true);
+    expect(mockRepository.createTestPushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        recipientUserId: 'user-worker-1',
+        title: 'SevaNest Test Notification',
+        body: 'Your push notification setup is working successfully!',
+        correlationId: res.correlationId,
+      }),
+    );
+
+    const persistedId = mockRepository.createTestPushNotification.mock.calls[0][0].id;
+
+    // FCM data payload must carry this exact notificationId for client ACK
+    expect(mockPush.sendPush).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          notificationId: persistedId,
+          routeId: persistedId,
+        }),
+      }),
+    );
+
+    // Repository finish is called with SENT and providerMessageId
+    expect(mockRepository.finish).toHaveBeenCalledWith(persistedId, {
+      status: 'SENT',
+      providerMessageId: 'projects/sevanest-47cef/messages/msg-1',
+      lastError: null,
+    });
+  });
+
+  it('marks test notification FAILED in repository when dispatch fails', async () => {
+    mockPush.sendPush.mockRejectedValueOnce(new Error('FCM unreachable'));
+
+    const res = await service.testPush(workerUser);
+
+    expect(res.success).toBe(false);
+    const persistedId = mockRepository.createTestPushNotification.mock.calls[0][0].id;
+    expect(mockRepository.finish).toHaveBeenCalledWith(persistedId, {
+      status: 'FAILED',
+      providerMessageId: null,
+      lastError: 'DISPATCH_FAILED',
+    });
   });
 });

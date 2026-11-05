@@ -801,6 +801,14 @@ export class NotificationsService {
     }
 
     const testId = randomUUID();
+    await this.repository.createTestPushNotification({
+      id: testId,
+      recipientUserId: targetUserId,
+      title,
+      body,
+      correlationId,
+    });
+
     const data: Record<string, string> = {
       type: 'TEST_PUSH',
       event: 'TEST_PUSH',
@@ -817,12 +825,15 @@ export class NotificationsService {
     const results: TestPushTokenResult[] = [];
     let deliveredCount = 0;
     let failedCount = 0;
+    let firstProviderMessageId: string | null = null;
+    let firstError: string | null = null;
 
     for (const deviceToken of tokens) {
       const masked = this.maskToken(deviceToken);
       try {
         const res = await this.push.sendPush({ deviceToken, title, body, data });
         deliveredCount += 1;
+        if (!firstProviderMessageId) firstProviderMessageId = res.providerMessageId;
         results.push({
           token: masked,
           status: 'DELIVERED',
@@ -831,23 +842,40 @@ export class NotificationsService {
       } catch (error) {
         failedCount += 1;
         this.logTestPushFailure(error, masked, correlationId);
+        const errCode =
+          error instanceof InvalidDeviceTokenError
+            ? 'INVALID_REGISTRATION_TOKEN: Token is dead or unregistered on Firebase. Cleaned up from database.'
+            : this.testPushErrorCode(error);
+        if (!firstError) firstError = errCode;
         if (error instanceof InvalidDeviceTokenError) {
           await this.sessions.removeDeviceToken(deviceToken).catch(() => undefined);
           results.push({
             token: masked,
             status: 'FAILED',
-            error:
-              'INVALID_REGISTRATION_TOKEN: Token is dead or unregistered on Firebase. Cleaned up from database.',
+            error: errCode,
           });
         } else {
           results.push({
             token: masked,
             status: 'FAILED',
-            error: this.testPushErrorCode(error),
+            error: errCode,
           });
         }
       }
     }
+
+    const isSuccessful = deliveredCount > 0;
+    await this.repository
+      .finish(testId, {
+        status: isSuccessful ? 'SENT' : 'FAILED',
+        providerMessageId: firstProviderMessageId,
+        lastError: isSuccessful ? null : (firstError ?? 'DISPATCH_FAILED'),
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `Could not update test notification status for ${testId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
 
     await this.audit.record({
       action: 'notification.test_push',
@@ -866,7 +894,6 @@ export class NotificationsService {
       },
     });
 
-    const isSuccessful = deliveredCount > 0;
     const resultOutcome = isSuccessful
       ? 'FCM_ACCEPTED'
       : results.some((r) => r.error?.includes('INVALID_REGISTRATION_TOKEN'))

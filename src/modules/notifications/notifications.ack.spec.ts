@@ -136,4 +136,94 @@ describe('NotificationsService.acknowledge', () => {
       }),
     );
   });
+
+  it('acknowledges a persisted diagnostic TEST_PUSH notification on device receipt', async () => {
+    const testNotificationId = '05eae485-18dc-47a9-ac27-e9328afc924d';
+    mockRepository.findById.mockResolvedValueOnce({
+      id: testNotificationId,
+      recipientUserId: 'user-worker-1',
+      channel: 'PUSH',
+      eventCode: 'TEST_PUSH',
+      status: 'SENT',
+      readAt: null,
+    });
+
+    const res = await service.acknowledge('user-worker-1', testNotificationId, {
+      eventType: 'RECEIVED',
+      deviceTimestamp: '2026-11-05T14:09:33.518Z',
+    });
+
+    expect(res).toEqual({
+      acknowledged: true,
+      eventType: 'RECEIVED',
+      notificationId: testNotificationId,
+    });
+    expect(mockAudit.record).toHaveBeenCalledWith({
+      action: 'notification.acknowledged',
+      entityType: 'notification',
+      entityId: testNotificationId,
+      actorId: 'user-worker-1',
+      actorRole: 'USER',
+      metadata: {
+        eventType: 'RECEIVED',
+        channel: 'PUSH',
+        eventCode: 'TEST_PUSH',
+        deviceTimestamp: '2026-11-05T14:09:33.518Z',
+      },
+    });
+  });
+
+  it('handles duplicate ACKs idempotently without error', async () => {
+    const testNotificationId = '05eae485-18dc-47a9-ac27-e9328afc924d';
+    mockRepository.findById.mockResolvedValue({
+      id: testNotificationId,
+      recipientUserId: 'user-worker-1',
+      channel: 'PUSH',
+      eventCode: 'TEST_PUSH',
+      status: 'SENT',
+      readAt: null,
+    });
+
+    const ack1 = await service.acknowledge('user-worker-1', testNotificationId, {
+      eventType: 'RECEIVED',
+    });
+    const ack2 = await service.acknowledge('user-worker-1', testNotificationId, {
+      eventType: 'RECEIVED',
+    });
+
+    expect(ack1.acknowledged).toBe(true);
+    expect(ack2.acknowledged).toBe(true);
+    expect(ack1.notificationId).toBe(testNotificationId);
+    expect(ack2.notificationId).toBe(testNotificationId);
+  });
+
+  it('rejects with 404 NOTIFICATION_NOT_FOUND when another worker attempts to ACK test push', async () => {
+    const testNotificationId = '05eae485-18dc-47a9-ac27-e9328afc924d';
+    mockRepository.findById.mockResolvedValueOnce({
+      id: testNotificationId,
+      recipientUserId: 'user-worker-1',
+      channel: 'PUSH',
+      eventCode: 'TEST_PUSH',
+      status: 'SENT',
+      readAt: null,
+    });
+
+    await expect(
+      service.acknowledge('user-other-worker', testNotificationId, {
+        eventType: 'RECEIVED',
+      }),
+    ).rejects.toThrow(DomainException);
+  });
+
+  it('rejects with 404 NOTIFICATION_NOT_FOUND when FCM providerMessageId is passed instead of notification ID', async () => {
+    mockRepository.findById.mockResolvedValueOnce(null);
+
+    await expect(
+      service.acknowledge(
+        'user-worker-1',
+        'projects/sevanest-ab168/messages/0:1793867973879670%4ef0d22a4ef0d22a',
+        { eventType: 'RECEIVED' },
+      ),
+    ).rejects.toThrow(DomainException);
+  });
 });

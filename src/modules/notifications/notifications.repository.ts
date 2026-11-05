@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client';
+import { NOTIFICATION_TOPIC } from '../../common/outbox/notification-events';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 
 type Db = Prisma.TransactionClient | PrismaService;
@@ -266,6 +267,49 @@ export class NotificationsRepository {
       ON CONFLICT (dedupe_key) DO NOTHING
       RETURNING id`;
     return rows[0]?.id ?? null;
+  }
+
+  /**
+   * Persists a diagnostic test push notification with an associated processed outbox event (D-104).
+   * Ensures the test push has a legitimate notification record so mobile ACK telemetry succeeds.
+   */
+  async createTestPushNotification(input: {
+    id: string;
+    recipientUserId: string;
+    title: string;
+    body: string;
+    correlationId: string;
+  }): Promise<NotificationRecord> {
+    return this.prisma.$transaction(async (tx) => {
+      const outboxEvent = await tx.outboxEvent.create({
+        data: {
+          topic: NOTIFICATION_TOPIC,
+          payload: {
+            event: 'TEST_PUSH',
+            recipients: [input.recipientUserId],
+            params: { title: input.title, body: input.body },
+            correlationId: input.correlationId,
+          },
+          processedAt: new Date(),
+        },
+      });
+
+      const row = await tx.notification.create({
+        data: {
+          id: input.id,
+          outboxEventId: outboxEvent.id,
+          recipientUserId: input.recipientUserId,
+          eventCode: 'TEST_PUSH',
+          channel: 'PUSH',
+          params: { title: input.title, body: input.body },
+          status: 'QUEUED',
+          attempts: 1,
+          dedupeKey: `test:${input.id}`,
+        },
+      });
+
+      return toNotification(row);
+    });
   }
 
   async findById(id: string, db: Db = this.prisma): Promise<NotificationRecord | null> {
