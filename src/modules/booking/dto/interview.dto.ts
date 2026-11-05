@@ -157,6 +157,20 @@ export const CUSTOMER_INTERVIEW_ACTIONS = [
   'reject-proposal',
 ] as const;
 
+export const WORKER_INTERVIEW_ACTIONS = ['accept', 'decline', 'propose', 'cancel'] as const;
+
+export const ALL_INTERVIEW_ACTIONS = [
+  'reschedule',
+  'cancel',
+  'complete',
+  'accept-proposal',
+  'reject-proposal',
+  'accept',
+  'decline',
+  'propose',
+] as const;
+export type InterviewAction = (typeof ALL_INTERVIEW_ACTIONS)[number];
+
 export class InterviewTimelineEntry {
   @ApiProperty({ example: 'Requested' }) title!: string;
   @ApiProperty({ enum: ['done', 'current', 'upcoming', 'failed'] }) state!: string;
@@ -201,12 +215,12 @@ export class InterviewView {
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
   @ApiProperty({
-    enum: CUSTOMER_INTERVIEW_ACTIONS,
+    enum: ALL_INTERVIEW_ACTIONS,
     isArray: true,
     description:
-      'What the CUSTOMER may do now (POST /interviews/{id}/<action>). Empty once the session is closed. Staff and the worker use their own routes.',
+      'What the caller may do now. Empty once the session is closed. Worker and customer permitted actions are contextualized to their role.',
   })
-  allowedActions!: Array<(typeof CUSTOMER_INTERVIEW_ACTIONS)[number]>;
+  allowedActions!: InterviewAction[];
   @ApiProperty({
     type: [InterviewTimelineEntry],
     description: 'Derived from the recorded times, oldest first.',

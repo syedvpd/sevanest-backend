@@ -403,6 +403,12 @@ export class WorkerBookingView {
   @ApiProperty({ nullable: true, type: Date }) respondBy!: Date | null;
   @ApiProperty({ nullable: true, type: Date }) proposedSlotAt!: Date | null;
   @ApiProperty({ nullable: true, type: String }) proposedSlotNote!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'ID of an open interview or trial session, if any.',
+  })
+  openInterviewId?: string | null;
   @ApiProperty() updatedAt!: Date;
 }
 

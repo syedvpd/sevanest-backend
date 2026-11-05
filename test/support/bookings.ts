@@ -1,5 +1,5 @@
 import { indiaToday } from '../../src/common/time/india';
-import { ApiApp } from './api-app';
+import { ApiApp, unique } from './api-app';
 import { as, approveCheck, onboardWorker, OnboardedWorker } from './workforce';
 import type { Caller } from './workforce';
 import { FakePaymentProvider } from '../../src/integrations/payments/fake-payment.provider';
@@ -26,6 +26,56 @@ export interface TestBooking {
 export type Stage =
   'MATCHED' | 'INTERVIEW_TRIAL_COMPLETED' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE';
 
+/**
+ * D-99: home-service bookings require a customer-owned address in the service area's city.
+ * Creates the customer profile once, then reuses one address per (city, area) so suites that book
+ * many times for the same customer stay well under the 20-active-address cap.
+ */
+async function ensureCustomerAddress(
+  api: ApiApp,
+  customer: Caller & { userId: string },
+  areaId: string,
+): Promise<string> {
+  const area = await api.prisma.serviceArea.findUniqueOrThrow({ where: { id: areaId } });
+  const c = as(api, customer);
+  const profile = await c.get('/api/v1/customers/me');
+  if (profile.status === 404) {
+    const createdProfile = await c.post('/api/v1/customers/me', {
+      name: 'Test Customer',
+      email: `customer.${unique()}@example.test`,
+      preferredLanguage: 'en',
+    });
+    if (createdProfile.status !== 201) {
+      throw new Error(
+        `customer profile: ${createdProfile.status} ${JSON.stringify(createdProfile.body)}`,
+      );
+    }
+  } else if (profile.status !== 200) {
+    throw new Error(`customer profile: ${profile.status} ${JSON.stringify(profile.body)}`);
+  }
+  const listed = await c.get('/api/v1/customers/me/addresses');
+  if (listed.status !== 200) {
+    throw new Error(`customer addresses: ${listed.status} ${JSON.stringify(listed.body)}`);
+  }
+  const sameArea = (listed.body as Array<{ id: string; area: string; city: string }>).find(
+    (a) =>
+      a.city.trim().toLowerCase() === area.city.trim().toLowerCase() &&
+      a.area.trim().toLowerCase() === area.name.trim().toLowerCase(),
+  );
+  if (sameArea) return sameArea.id;
+  const createdAddress = await c.post('/api/v1/customers/me/addresses', {
+    line: `1 ${area.name} Test Lane`,
+    area: area.name,
+    city: area.city,
+    pincode: '500001',
+    label: 'Home',
+  });
+  if (createdAddress.status !== 201) {
+    throw new Error(`address: ${createdAddress.status} ${JSON.stringify(createdAddress.body)}`);
+  }
+  return (createdAddress.body as { id: string }).id;
+}
+
 /** Takes a fresh booking with a fresh verified worker through the real HTTP lifecycle up to `stage`. */
 export async function makeBooking(
   api: ApiApp,
@@ -38,9 +88,12 @@ export async function makeBooking(
   const worker = existingWorker ?? (await onboardWorker(api, { areaIds: [areaId] }));
   if (!existingWorker) await approveCheck(api, admin, worker, 'IDENTITY');
   const c = as(api, customer);
+  // HOUSE_MAID is a home service, so the booking needs a customer-owned address (D-99).
+  const addressId = await ensureCustomerAddress(api, customer, areaId);
   const created = await c.post('/api/v1/bookings', {
     category: 'HOUSE_MAID',
     areaId,
+    addressId,
     engagement: 'PART_TIME',
     availableFrom: '09:00',
     availableTo: '12:00',

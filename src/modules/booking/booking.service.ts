@@ -519,8 +519,9 @@ export class BookingService {
       query.limit,
     );
     const views = await this.views(items);
+    const openInterviews = await Promise.all(items.map((b) => this.interviews.findOpen(b.id)));
     return {
-      data: views.map((view) => this.workerView(view)),
+      data: views.map((view, i) => this.workerView(view, openInterviews[i]?.id ?? null)),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -696,8 +697,9 @@ export class BookingService {
       query.limit,
     );
     const views = await this.views(items);
+    const openInterviews = await Promise.all(items.map((b) => this.interviews.findOpen(b.id)));
     return {
-      data: views.map((view) => this.workerView(view)),
+      data: views.map((view, i) => this.workerView(view, openInterviews[i]?.id ?? null)),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -707,7 +709,8 @@ export class BookingService {
     if (!booking || booking.workerId !== workerId) {
       throw this.notFound();
     }
-    return this.workerView((await this.views([booking]))[0]);
+    const openInterview = await this.interviews.findOpen(booking.id);
+    return this.workerView((await this.views([booking]))[0], openInterview?.id ?? null);
   }
 
   // --- admin -------------------------------------------------------------------------------------------------
@@ -761,25 +764,41 @@ export class BookingService {
     dto: BookingActionDto,
     actor: BookingActor,
   ): Promise<BookingDetailView> {
-    if (!actionsFor(actor.kind).includes(action)) {
+    const isWorkerConfirmWorker = actor.kind === 'WORKER' && action === 'confirm-worker';
+    if (!isWorkerConfirmWorker && !actionsFor(actor.kind).includes(action)) {
       throw new DomainException(
         BookingErrorCode.ACTION_NOT_ALLOWED,
         'This action is not available to you',
         HttpStatus.FORBIDDEN,
       );
     }
-    const prepared = this.prepare(action, dto);
+    const effectiveAction: BookingAction = isWorkerConfirmWorker ? 'accept' : action;
+    const prepared = this.prepare(effectiveAction, dto);
     const result = await this.repository.transaction(async (tx) => {
       const booking = await this.repository.lock(bookingId, tx);
       if (!booking || !this.owns(booking, actor)) {
         throw this.notFound();
       }
-      const rule = RULES[action].find(
+      if (isWorkerConfirmWorker && booking.status !== 'MATCHED') {
+        throw new DomainException(
+          BookingErrorCode.ACTION_NOT_ALLOWED,
+          'This action is not available to you',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      const rule = RULES[effectiveAction].find(
         (r) => r.actors.includes(actor.kind) && r.from.includes(booking.status),
       );
       if (!rule) {
-        const any = RULES[action].find((r) => r.actors.includes(actor.kind))!;
-        if (booking.status === any.to && this.isRepeat(action, booking, dto)) {
+        const any = RULES[effectiveAction].find((r) => r.actors.includes(actor.kind))!;
+        if (booking.status === any.to && this.isRepeat(effectiveAction, booking, dto)) {
+          return booking.id;
+        }
+        if (
+          effectiveAction === 'accept' &&
+          booking.status === 'INTERVIEW_TRIAL_SCHEDULED' &&
+          booking.workerRespondedAt
+        ) {
           return booking.id;
         }
         throw new DomainException(
@@ -788,7 +807,7 @@ export class BookingService {
           HttpStatus.CONFLICT,
         );
       }
-      await this.apply(booking, action, rule, dto, prepared, actor, tx);
+      await this.apply(booking, effectiveAction, rule, dto, prepared, actor, tx);
       return booking.id;
     });
     const fresh = (await this.repository.findById(result))!;
@@ -995,6 +1014,66 @@ export class BookingService {
         return;
       }
       case 'accept': {
+        const openInterview = await this.interviews.findOpen(booking.id, tx);
+        if (openInterview && openInterview.status === 'REQUESTED') {
+          await this.interviews.update(
+            openInterview.id,
+            { status: 'CONFIRMED', scheduledAt: openInterview.preferredAt },
+            tx,
+          );
+          await this.move(
+            booking,
+            {
+              status: 'INTERVIEW_TRIAL_SCHEDULED',
+              scheduleType: openInterview.type,
+              scheduledAt: openInterview.preferredAt,
+              outcomeNote: null,
+              workerRespondedAt: new Date(),
+            },
+            actor,
+            tx,
+            { action: audit, note: `${openInterview.type.toLowerCase()} scheduled` },
+          );
+          await this.audit.record(
+            {
+              action: 'interview.accept',
+              entityType: 'interview_trial',
+              entityId: openInterview.id,
+              actorId: actor.userId,
+              actorRole: actor.roles?.join(',') || actor.kind,
+              metadata: {
+                bookingId: booking.id,
+                scheduledAt: openInterview.preferredAt.toISOString(),
+              },
+            },
+            tx,
+          );
+          const recipients = [booking.customerUserId];
+          if (booking.workerId) {
+            recipients.push((await this.workers.requireRefById(booking.workerId)).userId);
+          }
+          await this.outbox.notify(
+            {
+              event: NotificationEvent.INTERVIEW_TRIAL_SCHEDULED,
+              recipients,
+              params: {
+                bookingId: booking.id,
+                scheduleType: openInterview.type,
+                scheduledAt: openInterview.preferredAt.toISOString(),
+              },
+            },
+            tx,
+          );
+          await this.outbox.notify(
+            {
+              event: NotificationEvent.WORKER_ACCEPTED,
+              recipients: [booking.customerUserId],
+              params: { bookingId: booking.id },
+            },
+            tx,
+          );
+          return;
+        }
         if (booking.workerRespondedAt) return; // repeating changes nothing
         await this.move(booking, { status: rule.to, workerRespondedAt: new Date() }, actor, tx, {
           action: audit,
@@ -1650,7 +1729,7 @@ export class BookingService {
     };
   }
 
-  private workerView(view: BookingView): WorkerBookingView {
+  private workerView(view: BookingView, openInterviewId?: string | null): WorkerBookingView {
     return {
       id: view.id,
       status: view.status,
@@ -1671,6 +1750,7 @@ export class BookingService {
       respondBy: view.respondBy,
       proposedSlotAt: view.proposedSlotAt,
       proposedSlotNote: view.proposedSlotNote,
+      openInterviewId: openInterviewId ?? null,
       updatedAt: view.updatedAt,
     };
   }

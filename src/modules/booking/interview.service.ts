@@ -45,6 +45,15 @@ const ACTIONS: Record<InterviewStatusValue, InterviewView['allowedActions']> = {
   COMPLETED: [],
 };
 
+const WORKER_ACTIONS: Record<InterviewStatusValue, InterviewView['allowedActions']> = {
+  REQUESTED: ['accept', 'decline', 'propose'],
+  CONFIRMED: ['cancel'],
+  RESCHEDULE_PROPOSED: ['cancel'],
+  DECLINED: [],
+  CANCELLED: [],
+  COMPLETED: [],
+};
+
 function timelineOf(r: InterviewRecord): InterviewView['timeline'] {
   const t: InterviewView['timeline'] = [{ title: 'Requested', state: 'done', at: r.createdAt }];
   if (r.status === 'REQUESTED')
@@ -61,9 +70,14 @@ function timelineOf(r: InterviewRecord): InterviewView['timeline'] {
   return t;
 }
 
-export function toInterviewView(r: InterviewRecord): InterviewView {
+export function toInterviewView(
+  r: InterviewRecord,
+  actorKind?: BookingActor['kind'],
+): InterviewView {
+  const allowed =
+    actorKind === 'WORKER' ? (WORKER_ACTIONS[r.status] ?? []) : (ACTIONS[r.status] ?? []);
   return {
-    allowedActions: ACTIONS[r.status],
+    allowedActions: allowed,
     timeline: timelineOf(r),
     id: r.id,
     bookingId: r.bookingId,
@@ -122,7 +136,7 @@ export class InterviewService {
   async listForCustomer(userId: string, bookingId: string): Promise<InterviewView[]> {
     const booking = await this.bookingRepo.findById(bookingId);
     if (!booking || booking.customerUserId !== userId) throw this.bookingNotFound();
-    return (await this.repo.listForBooking(bookingId)).map(toInterviewView);
+    return (await this.repo.listForBooking(bookingId)).map((i) => toInterviewView(i, 'CUSTOMER'));
   }
 
   async pageForCustomer(
@@ -151,7 +165,7 @@ export class InterviewService {
         const id = workerOf.get(i.bookingId);
         const d = id ? displays.get(id) : undefined;
         return {
-          ...toInterviewView(i),
+          ...toInterviewView(i, 'CUSTOMER'),
           worker:
             id && d
               ? { workerId: id, name: d.name, initials: d.initials, photoUrl: d.photoUrl }
@@ -165,12 +179,12 @@ export class InterviewService {
 
   async upcomingForCustomer(userId: string): Promise<InterviewView | null> {
     const next = await this.repo.nextConfirmedForCustomer(userId, new Date());
-    return next ? toInterviewView(next) : null;
+    return next ? toInterviewView(next, 'CUSTOMER') : null;
   }
 
   async listForAdmin(bookingId: string): Promise<InterviewView[]> {
     if (!(await this.bookingRepo.findById(bookingId))) throw this.bookingNotFound();
-    return (await this.repo.listForBooking(bookingId)).map(toInterviewView);
+    return (await this.repo.listForBooking(bookingId)).map((i) => toInterviewView(i, 'ADMIN'));
   }
 
   async listForWorker(workerId: string, query: InterviewListQuery): Promise<Page<InterviewView>> {
@@ -181,7 +195,7 @@ export class InterviewService {
       query.limit,
     );
     return {
-      data: items.map(toInterviewView),
+      data: items.map((i) => toInterviewView(i, 'WORKER')),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -193,7 +207,7 @@ export class InterviewService {
       query.limit,
     );
     return {
-      data: items.map(toInterviewView),
+      data: items.map((i) => toInterviewView(i, 'ADMIN')),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -203,7 +217,7 @@ export class InterviewService {
     if (!session) throw this.notFound();
     const booking = await this.bookingRepo.findById(session.bookingId);
     if (!booking || !this.owns(booking, actor)) throw this.notFound();
-    return toInterviewView(session);
+    return toInterviewView(session, actor.kind);
   }
 
   // --- the customer asks -----------------------------------------------------------------------------------
@@ -250,7 +264,7 @@ export class InterviewService {
       await this.notifyWorker(booking, NotificationEvent.INTERVIEW_REQUESTED, created, tx);
       return created.id;
     });
-    return toInterviewView((await this.repo.findById(id))!);
+    return toInterviewView((await this.repo.findById(id))!, actor.kind);
   }
 
   // --- the worker answers ----------------------------------------------------------------------------------
@@ -562,7 +576,7 @@ export class InterviewService {
       if (!session) throw this.notFound();
       return work(booking, session, tx);
     });
-    return toInterviewView((await this.repo.findById(result.id))!);
+    return toInterviewView((await this.repo.findById(result.id))!, actor.kind);
   }
 
   /** The session is now agreed for `at`: move the booking to SCHEDULED, notify both sides, leave the audit trail. */

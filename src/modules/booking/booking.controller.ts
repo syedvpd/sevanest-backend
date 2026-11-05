@@ -59,7 +59,7 @@ function assertIdempotencyKey(key: string | undefined): void {
 }
 
 const ACTION_DOC =
-  'Actions: match (admin), schedule, decline (worker/admin), reopen-matching, interview-complete, confirm-worker, start, complete, cancel. Each is one permitted transition of the booking state model; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating an action whose result already holds changes nothing.';
+  'Actions: accept (worker/admin), decline (worker/admin), match (admin), schedule, reopen-matching, interview-complete, confirm-worker, start, complete, cancel. Each is one permitted transition of the booking state model; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating an action whose result already holds changes nothing.';
 
 /** The worker's feed of jobs waiting for an answer (PRD 6.3). */
 @ApiTags('Worker bookings')
