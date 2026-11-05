@@ -102,7 +102,7 @@ describe('FcmPushProvider', () => {
         priority: 'HIGH',
         notification: {
           channel_id: 'sevanest_high_importance',
-          priority: 'PRIORITY_MAX',
+          notification_priority: 'PRIORITY_MAX',
           default_sound: true,
           default_vibrate_timings: true,
         },
@@ -247,6 +247,8 @@ describe('FcmPushProvider', () => {
 
   it('validates the service account JSON without echoing it', () => {
     expect(parseFcmServiceAccount(JSON.stringify(account)).project_id).toBe('sevanest-test');
+    expect(parseFcmServiceAccount(`'${JSON.stringify(account)}'`).project_id).toBe('sevanest-test');
+    expect(parseFcmServiceAccount(`"${JSON.stringify(account)}"`).project_id).toBe('sevanest-test');
     expect(() => parseFcmServiceAccount('not json')).toThrow('not valid JSON');
     expect(() => parseFcmServiceAccount(JSON.stringify({ project_id: 'x' }))).toThrow(
       'must contain',

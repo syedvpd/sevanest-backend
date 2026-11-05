@@ -258,6 +258,28 @@ describe('NotificationsService testPush (D-104)', () => {
     expect(res.diagnostics.troubleshootingRecommendation).toContain(res.correlationId);
   });
 
+  it('identifies SENDER_ID_MISMATCH and provides specific project-matching recommendation', async () => {
+    mockPush.sendPush.mockRejectedValueOnce(
+      new ProviderError('fcm', 'fcm rejected the request (HTTP 403)', false, {
+        status: 403,
+        json: {
+          error: {
+            code: 403,
+            message: 'SenderId mismatch',
+            status: 'PERMISSION_DENIED',
+            details: [{ errorCode: 'SENDER_ID_MISMATCH' }],
+          },
+        },
+      }),
+    );
+
+    const res = await service.testPush(workerUser);
+
+    expect(res.tokens[0].error).toBe('SENDER_ID_MISMATCH');
+    expect(res.diagnostics.troubleshootingRecommendation).toContain('SENDER_ID_MISMATCH');
+    expect(res.diagnostics.troubleshootingRecommendation).toContain(mockConfig.firebaseProjectId);
+  });
+
   it('admin variant targets the explicit user, never the caller, and audits both ids', async () => {
     mockConfig.isProduction = true;
     mockConfig.allowTestPush = false;

@@ -36,9 +36,17 @@ export interface ResolveFcmOptions {
 
 /** Parses the service-account JSON from the environment. Throws a message that never contains the key. */
 export function parseFcmServiceAccount(json: string): FcmServiceAccount {
+  let cleaned = json.trim();
+  // Strip leading/trailing quotes often added by dashboard environment variable forms (e.g. Render)
+  if (
+    (cleaned.startsWith("'") && cleaned.endsWith("'")) ||
+    (cleaned.startsWith('"') && cleaned.endsWith('"') && !cleaned.startsWith('{"'))
+  ) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
   let parsed: Partial<FcmServiceAccount>;
   try {
-    parsed = JSON.parse(json) as Partial<FcmServiceAccount>;
+    parsed = JSON.parse(cleaned) as Partial<FcmServiceAccount>;
   } catch {
     throw new Error('FCM_SERVICE_ACCOUNT_JSON is not valid JSON');
   }
@@ -46,6 +54,9 @@ export function parseFcmServiceAccount(json: string): FcmServiceAccount {
     throw new Error(
       'FCM_SERVICE_ACCOUNT_JSON must contain project_id, client_email and private_key of a service account',
     );
+  }
+  if (parsed.private_key) {
+    parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
   }
   return parsed as FcmServiceAccount;
 }
@@ -73,6 +84,26 @@ export function resolveFcmServiceAccount(options: ResolveFcmOptions): FcmService
   };
 }
 
+interface GoogleErrorFieldViolation {
+  field?: string;
+  description?: string;
+}
+
+interface GoogleErrorDetail {
+  errorCode?: string;
+  '@type'?: string;
+  fieldViolations?: GoogleErrorFieldViolation[];
+}
+
+interface GoogleErrorResponse {
+  error?: {
+    status?: string;
+    message?: string;
+    code?: number;
+    details?: GoogleErrorDetail[];
+  };
+}
+
 /**
  * FCM HTTP v1 errors that mean the registration token itself is dead: HTTP 404 / errorCode UNREGISTERED, or HTTP 400
  * INVALID_ARGUMENT whose message names the registration token. Any other 4xx (bad credentials, bad payload, wrong sender) is a
@@ -81,10 +112,7 @@ export function resolveFcmServiceAccount(options: ResolveFcmOptions): FcmService
 export function isInvalidTokenRejection(error: ProviderError): boolean {
   const cause = error.cause as { status?: number; json?: unknown } | undefined;
   if (!cause || error.retryable) return false;
-  const body = cause.json as
-    | { error?: { status?: string; message?: string; details?: Array<{ errorCode?: string }> } }
-    | null
-    | undefined;
+  const body = cause.json as GoogleErrorResponse | null | undefined;
   if (
     body?.error?.details?.some(
       (d) =>
@@ -96,10 +124,16 @@ export function isInvalidTokenRejection(error: ProviderError): boolean {
   }
   if (cause.status === 404) return true;
   const msg = body?.error?.message ?? '';
+  const tokenFieldViolation = Boolean(
+    body?.error?.details?.some((d) =>
+      d?.fieldViolations?.some((f) => f?.field === 'message.token'),
+    ),
+  );
   return (
     cause.status === 400 &&
     (body?.error?.status === 'INVALID_ARGUMENT' || /invalid/i.test(body?.error?.status ?? '')) &&
-    /registration token|registration-token-not-registered|invalid-registration-token/i.test(msg)
+    (/registration token|registration-token-not-registered|invalid-registration-token/i.test(msg) ||
+      tokenFieldViolation)
   );
 }
 
@@ -143,7 +177,7 @@ export class FcmPushProvider implements PushProvider {
                 priority: 'HIGH',
                 notification: {
                   channel_id: 'sevanest_high_importance',
-                  priority: 'PRIORITY_MAX',
+                  notification_priority: 'PRIORITY_MAX',
                   default_sound: true,
                   default_vibrate_timings: true,
                 },

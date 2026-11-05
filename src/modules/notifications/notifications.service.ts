@@ -830,6 +830,7 @@ export class NotificationsService {
         });
       } catch (error) {
         failedCount += 1;
+        this.logTestPushFailure(error, masked, correlationId);
         if (error instanceof InvalidDeviceTokenError) {
           await this.sessions.removeDeviceToken(deviceToken).catch(() => undefined);
           results.push({
@@ -901,12 +902,17 @@ export class NotificationsService {
           'In background or terminated mode, the FCM notification banner will pop up automatically in the Android notification drawer with title and body.',
         ...(failedCount > 0 && failedCount === tokens.length
           ? {
-              troubleshootingRecommendation:
-                'FCM API rejected dispatch. Verify that google-services.json in mobile app matches Firebase Project ID "' +
-                projectId +
-                '" and backend FCM credentials are valid. Quote correlationId ' +
-                correlationId +
-                ' when reporting this.',
+              troubleshootingRecommendation: results.some((r) => r.error === 'SENDER_ID_MISMATCH')
+                ? 'SENDER_ID_MISMATCH: The device token belongs to a different Firebase project. Verify that google-services.json in mobile app matches backend Firebase Project ID "' +
+                  projectId +
+                  '". Quote correlationId ' +
+                  correlationId +
+                  ' when reporting this.'
+                : 'FCM API rejected dispatch. Verify that google-services.json in mobile app matches Firebase Project ID "' +
+                  projectId +
+                  '" and backend FCM credentials are valid. Quote correlationId ' +
+                  correlationId +
+                  ' when reporting this.',
             }
           : {}),
       },
@@ -914,10 +920,61 @@ export class NotificationsService {
     };
   }
 
+  private logTestPushFailure(error: unknown, maskedToken: string, correlationId: string): void {
+    const providerError = error instanceof ProviderError ? error : null;
+    const cause = providerError?.cause as
+      | {
+          status?: number;
+          json?: {
+            error?: {
+              code?: number;
+              message?: string;
+              status?: string;
+              details?: Array<{ errorCode?: string; '@type'?: string }>;
+            };
+          };
+        }
+      | undefined;
+    const googleError = cause?.json?.error;
+    const details = Array.isArray(googleError?.details)
+      ? googleError.details
+          .map((d) => d?.errorCode || d?.['@type'] || '')
+          .filter(Boolean)
+          .join(', ')
+      : '';
+    this.logger.warn(
+      `[TestPush] Push delivery failed for token ${maskedToken}: ` +
+        `status=${cause?.status ?? 'unknown'}, ` +
+        `code=${googleError?.status ?? googleError?.code ?? 'unknown'}, ` +
+        `details=${details || googleError?.message || (error instanceof Error ? error.message : 'Unknown error')}, ` +
+        `correlationId=${correlationId}`,
+    );
+  }
+
   /** A stable reason code for the diagnostic response; never provider text, a token or a key. */
   private testPushErrorCode(error: unknown): string {
     if (error instanceof InvalidDeviceTokenError) return 'INVALID_REGISTRATION_TOKEN';
     if (error instanceof ProviderError) {
+      const cause = error.cause as
+        | {
+            status?: number;
+            json?: {
+              error?: {
+                status?: string;
+                message?: string;
+                details?: Array<{ errorCode?: string }>;
+              };
+            };
+          }
+        | undefined;
+      const body = cause?.json;
+      const fcmCode = body?.error?.details?.find((d) => d?.errorCode)?.errorCode;
+      if (
+        fcmCode === 'SENDER_ID_MISMATCH' ||
+        /sender.*mismatch/i.test(body?.error?.message ?? '')
+      ) {
+        return 'SENDER_ID_MISMATCH';
+      }
       return error.retryable ? 'PROVIDER_UNAVAILABLE' : 'PROVIDER_REJECTED';
     }
     return 'DISPATCH_FAILED';

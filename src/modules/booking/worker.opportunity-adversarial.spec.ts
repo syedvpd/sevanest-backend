@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import { DomainException } from '../../common/errors/domain.exception';
 import { NotificationEvent } from '../../common/outbox/notification-events';
-import { BookingErrorCode, BookingService, actionsFor, type BookingActor } from './booking.service';
+import { BookingErrorCode, BookingService, type BookingActor } from './booking.service';
 import { WorkerBookingsController } from './booking.controller';
 import type { BookingRecord } from './booking.repository';
 import type { BookingStatusValue } from './dto/booking.dto';

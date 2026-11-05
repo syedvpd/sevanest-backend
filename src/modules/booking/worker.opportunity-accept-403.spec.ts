@@ -41,6 +41,7 @@ describe('Worker Opportunity Acceptance Fix (HTTP 403 ACTION_NOT_ALLOWED Resolut
     findByIds: jest.Mock;
   };
   let mockWorkers: {
+    namesByIds: jest.Mock;
     requireRefById: jest.Mock;
     requireRefByUserId: jest.Mock;
   };
