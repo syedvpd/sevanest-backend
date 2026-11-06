@@ -16,6 +16,8 @@ export class InMemoryStorageProvider implements StorageProvider {
   readonly deleted: string[] = [];
   /** Test switch: the next deleteObject fails like an unreachable storage. */
   failNextDelete = false;
+  /** Test switch: the next putObject fails like an unreachable storage (the profile must keep the old photo). */
+  failNextPut = false;
   readonly issuedUploads: Array<{ objectKey: string; contentType: string; maxBytes: number }> = [];
   readonly issuedDownloads: string[] = [];
 
@@ -72,6 +74,10 @@ export class InMemoryStorageProvider implements StorageProvider {
   }
 
   putObject(input: { objectKey: string; body: Buffer; contentType: string }): Promise<void> {
+    if (this.failNextPut) {
+      this.failNextPut = false;
+      return Promise.reject(new ProviderError('storage', 'storage unavailable', true));
+    }
     this.objects.set(input.objectKey, input.body.length);
     this.contents.set(input.objectKey, Buffer.from(input.body));
     this.contentTypes.set(input.objectKey, input.contentType);

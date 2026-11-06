@@ -49,6 +49,35 @@ export class UsersRepository {
     return this.prisma.user.findUnique({ where: { mobile }, select: PUBLIC_SELECT });
   }
 
+  findByEmail(email: string): Promise<UserRecord | null> {
+    return this.prisma.user.findUnique({ where: { email }, select: PUBLIC_SELECT });
+  }
+
+  /** Email uniqueness check for a self-service change: the caller's own row does not count as a conflict. */
+  findByEmailExcept(email: string, userId: string): Promise<{ id: string } | null> {
+    return this.prisma.user.findFirst({
+      where: { email, id: { not: userId } },
+      select: { id: true },
+    });
+  }
+
+  /** Mobile uniqueness check for a self-service change: the caller's own row does not count as a conflict. */
+  findByMobileExcept(mobile: string, userId: string): Promise<{ id: string } | null> {
+    return this.prisma.user.findFirst({
+      where: { mobile, id: { not: userId } },
+      select: { id: true },
+    });
+  }
+
+  /** Updates only the contact fields a user may change themselves; `undefined` leaves a field untouched. */
+  updateContact(
+    id: string,
+    data: { email?: string; mobile?: string },
+    db: Db = this.prisma,
+  ): Promise<UserRecord> {
+    return db.user.update({ where: { id }, data, select: PUBLIC_SELECT });
+  }
+
   findCredentialsByEmail(email: string): Promise<UserCredentialRecord | null> {
     return this.prisma.user.findUnique({
       where: { email },

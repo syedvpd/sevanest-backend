@@ -241,3 +241,24 @@ NOT verified / NOT tested against live external systems:
 - Real external payment gateway / payout rail disbursement: No live external payout provider is called (safe reservation model implemented; external automated payouts require provider integration decision).
 - Real SMS / FCM device notifications: In-memory/mock provider used in tests.
 - Nothing committed or pushed to git (all changes clean and uncommitted).
+
+## 2026-11-06 Admin portal "My Account": own profile read/update + profile photo
+
+Built:
+- `GET /api/v1/admin/me/profile`, `PATCH /api/v1/admin/me/profile` (`fullName`, `email`, `phoneNumber`; partial) and `POST /api/v1/admin/me/profile-photo` (multipart field `file`; JPEG/PNG/WebP), all in `src/modules/admin-profile/`. Identity comes only from the access token; no route accepts a target admin id.
+- New additive model/table `AdminProfile` (`admin_profiles`, keyed by `user_id`, FK `ON DELETE CASCADE`), migration `20261118090000_admin_profile`. No existing column changed.
+- The DTO is the write allow-list: `role`, `roles`, `status`, `password`, `userId` are stripped by global validation and never reach the service. E-mail/phone uniqueness is pre-checked and a concurrent unique violation is mapped to the same codes inside the transaction; the caller's row is excluded so re-saving an unchanged value is not a conflict.
+- Photo pipeline reuses `makeRenditions` (WebP card 320 px / large 1080 px, EXIF stripped), private storage + signed URLs, the malware scanner, `PROFILE_PHOTO_MAX_BYTES` (default 5 MB) and a 20 MB Multer transport cap. Real bytes are detected (`detectImageType`), declared type must match, the image is re-encoded, both objects are written before the row is updated, and the old objects are deleted only after the commit. A failed storage write or DB update discards the new objects and keeps the previous photo.
+- `file-signature.ts` extended with WebP (RIFF....WEBP markers plus RIFF container-length truncation check); `SIGNATURE_BYTES` is now 12. `UsersRepository` gained `findByEmail`, `findByEmailExcept`, `findByMobileExcept`, `updateContact` and is exported from `UsersModule`.
+- Audit entries `admin.profile_update` / `admin.profile_photo_update` record field names and byte counts only (the redaction layer keeps e-mail/phone out). OpenAPI is generated from the controller decorators; handoff in `docs/api/admin-profile.md`; Q-140 opened for the admin e-mail verification policy.
+
+Evidence (this session, Windows):
+- `npx prisma generate`: OK (7.10.0). `npx prisma validate`: "The schema at prisma\schema.prisma is valid".
+- `npx prisma migrate deploy` applied `20261118090000_admin_profile` to the hosted Supabase database (`DATABASE_URL` in `.env`).
+- `npx prisma migrate status`: "Database schema is up to date!" (48 migrations applied, 0 pending).
+- Unit suite (`jest`): 617 passed, 8 skipped, 625 total; 62 suites passed, 1 skipped, 0 failed (exit 0).
+- `npm run build`: exit 0.
+
+NOT verified / NOT done:
+- No real storage, malware-scan or SMS provider was called; the tests use the in-memory adapters.
+- The full integration suite and the e2e suite were not run end to end. `contract.openapi.int-spec.ts` and `qa.inventory.int-spec.ts` each keep one pre-existing failure unrelated to this change (missing `DELETE /workers/me/bank-accounts` response schema; duplicate `GET /workers/me/onboarding`).

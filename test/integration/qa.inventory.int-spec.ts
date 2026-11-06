@@ -113,10 +113,14 @@ describe('QA - API inventory and route invariants (integration)', () => {
       .filter((r) => r.permissions.length === 0)
       .map((r) => `${r.method} ${r.path}`);
     // Reviewed exceptions: the dashboard is open to every admin and returns only the sections the caller's permissions allow;
-    // the password change acts only on the caller's own account and re-verifies the current password.
+    // the password change acts only on the caller's own account and re-verifies the current password; the three
+    // self-service profile routes touch only the caller's own row (identity comes from the access token).
     expect(noPermission.sort()).toEqual([
       'GET /api/v1/admin/dashboard',
+      'GET /api/v1/admin/me/profile',
+      'PATCH /api/v1/admin/me/profile',
       'POST /api/v1/admin/account/password',
+      'POST /api/v1/admin/me/profile-photo',
     ]);
     expect(admin.every((r) => r.userTypes.includes('ADMIN'))).toBe(true);
 

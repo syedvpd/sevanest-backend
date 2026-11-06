@@ -34,6 +34,6 @@ import { UserEraser } from './user-eraser';
     PasswordHasher,
     RbacSeedService,
   ],
-  exports: [UsersService, UserEvents, PasswordHasher, RbacSeedService],
+  exports: [UsersService, UsersRepository, UserEvents, PasswordHasher, RbacSeedService],
 })
 export class UsersModule {}

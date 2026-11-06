@@ -49,6 +49,7 @@ model User {
   deviceTokens              DeviceToken[]
   customerProfile           CustomerProfile?
   workerProfile             WorkerProfile?
+  adminProfile              AdminProfile?
   verificationReviews       WorkerVerificationCheck[] @relation("VerificationReviewer")
   verificationEvents        WorkerVerificationEvent[] @relation("VerificationEventActor")
   verificationNotes         WorkerVerificationNote[]  @relation("VerificationNoteAuthor")
@@ -1353,6 +1354,22 @@ model CustomerProfilePhoto {
   @@index([customerUserId, status, confirmedAt])
   @@index([status, createdAt])
   @@map("customer_profile_photos")
+}
+
+/// The admin portal's "My Account" data that has no home on `users`: an optional display name and the current photo
+/// rendition keys. One row per admin account, created on first write. Photo keys are server-generated object keys; the
+/// signed URL is issued on read. Empty for admins who have never saved a name or photo.
+model AdminProfile {
+  userId        String    @id @map("user_id") @db.Uuid
+  fullName      String?   @map("full_name")
+  photoCardKey  String?   @unique @map("photo_card_key")
+  photoLargeKey String?   @unique @map("photo_large_key")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admin_profiles")
 }
 
 /// A customer's shortlist / favourites (FR-WD-005). One row per (customer, worker); owned by the customer.
