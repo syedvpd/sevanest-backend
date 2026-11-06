@@ -423,6 +423,10 @@ model WorkerProfile {
   /// Commercial activation (D-90): the worker is live in search and matching. Null = not activated.
   activatedAt                   DateTime?              @map("activated_at") @db.Timestamptz(6)
   activatedByUserId             String?                @map("activated_by_user_id") @db.Uuid
+  /// Date of birth (YYYY-MM-DD). Optional in V1.
+  dateOfBirth                   DateTime?              @map("date_of_birth") @db.Date
+  /// Gender. Optional in V1.
+  gender                        WorkerGender?          @map("gender")
   createdAt                     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -444,6 +448,8 @@ model WorkerProfile {
   shortlistedBy      CustomerShortlistItem[]
   references         WorkerReference[]
   paymentReferences  WorkerPaymentReference[]
+  bankAccounts       WorkerBankAccount[]
+  wallet             WorkerWallet?
 
   @@index([onboardingStatus, createdAt])
   @@map("worker_profiles")
@@ -1647,4 +1653,130 @@ model RatingTag {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("rating_tags")
+}
+
+enum WorkerGender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum BankAccountVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+/// A worker's bank account for payouts. Account number is masked in responses.
+model WorkerBankAccount {
+  id                  String                        @id @default(uuid(7)) @db.Uuid
+  workerId            String                        @map("worker_id") @db.Uuid
+  accountHolderName   String                        @map("account_holder_name")
+  bankName            String                        @map("bank_name")
+  accountNumber       String                        @map("account_number")
+  accountNumberMasked String                        @map("account_number_masked")
+  ifsc                String                        @map("ifsc")
+  verificationStatus  BankAccountVerificationStatus @default(UNVERIFIED) @map("verification_status")
+  isPrimary           Boolean                       @default(false) @map("is_primary")
+  verifiedAt          DateTime?                     @map("verified_at") @db.Timestamptz(6)
+  verifiedByUserId    String?                       @map("verified_by_user_id") @db.Uuid
+  isDeleted           Boolean                       @default(false) @map("is_deleted")
+  deletedAt           DateTime?                     @map("deleted_at") @db.Timestamptz(6)
+  createdAt           DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  worker              WorkerProfile                 @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  withdrawals         WorkerWithdrawal[]
+
+  @@index([workerId, isDeleted])
+  @@map("worker_bank_accounts")
+}
+
+/// A worker's financial wallet balance in integer minor units (DEC-05, Q-73).
+model WorkerWallet {
+  id                    String                 @id @default(uuid(7)) @db.Uuid
+  workerId              String                 @unique @map("worker_id") @db.Uuid
+  availableBalanceMinor Int                    @default(0) @map("available_balance_minor")
+  pendingBalanceMinor   Int                    @default(0) @map("pending_balance_minor")
+  currency              String                 @default("INR")
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  worker                WorkerProfile          @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  ledgerEntries         WorkerWalletLedger[]
+  withdrawals           WorkerWithdrawal[]
+
+  @@map("worker_wallets")
+}
+
+enum WalletLedgerType {
+  EARNING
+  EARNING_RELEASE
+  WITHDRAWAL_RESERVE
+  WITHDRAWAL_PAID
+  WITHDRAWAL_CANCELLED
+  WITHDRAWAL_FAILED
+  ADJUSTMENT
+}
+
+enum WalletLedgerStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+/// Immutable financial ledger entry for auditability.
+model WorkerWalletLedger {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  walletId       String             @map("wallet_id") @db.Uuid
+  workerId       String             @map("worker_id") @db.Uuid
+  type           WalletLedgerType
+  status         WalletLedgerStatus @default(COMPLETED)
+  amountMinor    Int                @map("amount_minor")
+  currency       String             @default("INR")
+  referenceType  String?            @map("reference_type")
+  referenceId    String?            @map("reference_id")
+  description    String?
+  idempotencyKey String?            @unique @map("idempotency_key")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  wallet         WorkerWallet       @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  @@index([workerId, createdAt])
+  @@map("worker_wallet_ledgers")
+}
+
+enum WorkerWithdrawalStatus {
+  REQUESTED
+  PROCESSING
+  PAID
+  FAILED
+  REJECTED
+  CANCELLED
+}
+
+/// A worker's withdrawal request and payout tracking.
+model WorkerWithdrawal {
+  id                String                 @id @default(uuid(7)) @db.Uuid
+  walletId          String                 @map("wallet_id") @db.Uuid
+  workerId          String                 @map("worker_id") @db.Uuid
+  bankAccountId     String                 @map("bank_account_id") @db.Uuid
+  amountMinor       Int                    @map("amount_minor")
+  currency          String                 @default("INR")
+  status            WorkerWithdrawalStatus @default(REQUESTED)
+  bankAccountMasked String                 @map("bank_account_masked")
+  idempotencyKey    String?                @unique @map("idempotency_key")
+  failureReason     String?                @map("failure_reason")
+  providerReference String?                @map("provider_reference")
+  processedAt       DateTime?              @map("processed_at") @db.Timestamptz(6)
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  wallet            WorkerWallet           @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  bankAccount       WorkerBankAccount      @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+
+  @@index([workerId, status, createdAt])
+  @@map("worker_withdrawals")
 }

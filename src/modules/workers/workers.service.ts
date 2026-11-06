@@ -8,7 +8,7 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { isUniqueViolation } from '../../common/errors/prisma-errors';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { assertIfMatch } from '../../common/concurrency/if-match';
-import { createdRange } from '../../common/time/india';
+import { createdRange, indiaToday, isRealDate } from '../../common/time/india';
 import { changedFieldNames } from '../../common/validation/fields';
 import { maskMobile, normalizeIndianMobile } from '../../common/validation/indian-mobile';
 import { assertLanguageSupported } from '../../common/validation/language';
@@ -234,9 +234,38 @@ export class WorkersService {
     userId: string,
     dto: CreateWorkerProfileDto,
   ): Promise<WorkerProfileResponse> {
+    let dob: Date | null = null;
+    if (dto.dateOfBirth) {
+      if (!isRealDate(dto.dateOfBirth)) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'dateOfBirth', messages: ['must be a real date (YYYY-MM-DD)'] }],
+        );
+      }
+      if (dto.dateOfBirth >= indiaToday()) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'dateOfBirth', messages: ['date of birth must be in the past'] }],
+        );
+      }
+      dob = new Date(`${dto.dateOfBirth}T00:00:00.000Z`);
+    }
+
     try {
       const created = await this.repository.transaction(async (tx) => {
-        const worker = await this.repository.create({ userId, name: dto.name }, tx);
+        const worker = await this.repository.create(
+          {
+            userId,
+            name: dto.name,
+            dateOfBirth: dob,
+            gender: dto.gender ?? null,
+          },
+          tx,
+        );
         await this.audit.record(
           {
             action: 'worker.profile_create',
@@ -407,9 +436,38 @@ export class WorkersService {
         HttpStatus.CONFLICT,
       );
     }
+    let dob: Date | null = null;
+    if (dto.dateOfBirth) {
+      if (!isRealDate(dto.dateOfBirth)) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'dateOfBirth', messages: ['must be a real date (YYYY-MM-DD)'] }],
+        );
+      }
+      if (dto.dateOfBirth >= indiaToday()) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'dateOfBirth', messages: ['date of birth must be in the past'] }],
+        );
+      }
+      dob = new Date(`${dto.dateOfBirth}T00:00:00.000Z`);
+    }
+
     try {
       const worker = await this.repository.transaction(async (tx) => {
-        const created = await this.repository.create({ userId: user.id, name: dto.name }, tx);
+        const created = await this.repository.create(
+          {
+            userId: user.id,
+            name: dto.name,
+            dateOfBirth: dob,
+            gender: dto.gender ?? null,
+          },
+          tx,
+        );
         await this.audit.record(
           {
             action: 'worker.admin_create',
@@ -759,6 +817,24 @@ export class WorkersService {
         [{ field: 'body', messages: ['at least one field must be provided'] }],
       );
     }
+    if (dto.dateOfBirth !== undefined && dto.dateOfBirth !== null) {
+      if (!isRealDate(dto.dateOfBirth)) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'dateOfBirth', messages: ['must be a real date (YYYY-MM-DD)'] }],
+        );
+      }
+      if (dto.dateOfBirth >= indiaToday()) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'dateOfBirth', messages: ['date of birth must be in the past'] }],
+        );
+      }
+    }
     if (dto.languages) {
       for (const language of dto.languages) {
         assertLanguageSupported(language, this.config.supportedLanguages, 'languages');
@@ -887,6 +963,8 @@ export class WorkersService {
       id: worker.id,
       name: worker.name,
       mobile: user?.mobile ?? '',
+      dateOfBirth: worker.dateOfBirth,
+      gender: worker.gender,
       onboardingStatus: worker.onboardingStatus,
       applicationReference: worker.applicationReference,
       submittedAt: worker.submittedAt,
@@ -935,6 +1013,11 @@ function auditActor(by: WorkerActor): { actorId: string; actorRole: string | nul
 function scalarUpdate(dto: UpdateWorkerProfileDto): ProfileScalarUpdate {
   const data: ProfileScalarUpdate = {};
   if (dto.name !== undefined) data.name = dto.name;
+  if (dto.dateOfBirth !== undefined) {
+    data.dateOfBirth =
+      dto.dateOfBirth === null ? null : new Date(`${dto.dateOfBirth}T00:00:00.000Z`);
+  }
+  if (dto.gender !== undefined) data.gender = dto.gender;
   if (dto.experienceMonths !== undefined) data.experienceMonths = dto.experienceMonths;
   if (dto.expectedSalary !== undefined) data.expectedSalary = dto.expectedSalary;
   if (dto.preferredLanguage !== undefined) data.preferredLanguage = dto.preferredLanguage;

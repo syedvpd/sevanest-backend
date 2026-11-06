@@ -134,6 +134,22 @@ export class CreateWorkerProfileDto {
   @Length(1, 200)
   @Matches(NAME, { message: "name may contain letters, spaces and . ' - only" })
   name!: string;
+
+  @ApiPropertyOptional({
+    example: '1995-08-15',
+    description: 'Date of birth (YYYY-MM-DD). Must be a valid calendar date in the past.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateOfBirth must be YYYY-MM-DD' })
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({
+    enum: ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'],
+    description: 'Worker gender.',
+  })
+  @IsOptional()
+  @IsIn(['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'])
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | 'PREFER_NOT_TO_SAY';
 }
 
 /** Staff creating the account and profile of a worker who is helped to register (assisted onboarding, FR-WON-007). */
@@ -227,6 +243,27 @@ export class UpdateWorkerProfileDto {
   @ValidateNested()
   @Type(() => PreviousEmployerDto)
   previousEmployer?: PreviousEmployerDto | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '1995-08-15',
+    description:
+      'Date of birth (YYYY-MM-DD). Must be a valid calendar date in the past. null clears it.',
+    type: String,
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateOfBirth must be YYYY-MM-DD' })
+  dateOfBirth?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'],
+    description: 'Worker gender. null clears it.',
+    type: String,
+  })
+  @IsOptional()
+  @IsIn(['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'])
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | 'PREFER_NOT_TO_SAY' | null;
 }
 
 export class SetCriminalDeclarationDto {
@@ -388,6 +425,14 @@ export class WorkerProfileResponse {
   })
   applicationReference!: string | null;
   @ApiProperty({ nullable: true, type: Date }) submittedAt!: Date | null;
+  @ApiProperty({ nullable: true, type: String, example: '1995-08-15' })
+  dateOfBirth!: string | null;
+  @ApiProperty({
+    nullable: true,
+    enum: ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'],
+    type: String,
+  })
+  gender!: string | null;
   @ApiProperty({ nullable: true, type: Number }) experienceMonths!: number | null;
   @ApiProperty({ nullable: true, type: Number }) expectedSalary!: number | null;
   @ApiProperty({ nullable: true, type: String }) preferredLanguage!: string | null;

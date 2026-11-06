@@ -200,3 +200,44 @@ Built:
 - Diagnostics: Enhanced `POST /api/v1/notifications/test-push` with top-level fields `diagnostic_id`, `firebase_initialized`, `registration_found`, `active_token_count`, `dispatch_attempted`, `firebase_accepted_count`, `firebase_failure_count`, and `result`.
 Evidence (local, this session): `npm run typecheck` 0 errors; `npm run lint` 0 errors (3 pre-existing warnings in `test/perf`); `npm run format:check` clean; `npm test` passed 54 of 55 suites (1 skipped), 525 passed, 8 skipped, 533 total, 0 failed. `dist/seed-launch` executed against active database (20 PUSH templates created).
 NOT verified / NOT done: Physical push arrival on mobile device (awaiting APK test button tap); integration tests against local Docker Redis (Docker unavailable).
+
+## 2026-11-05 Same-day interview slots: 60-minute notice removed (D-106)
+
+- Change: `SearchService.listSlots` (`src/modules/search/search.service.ts`) no longer adds 60 minutes to "now" when the requested date is today. The same-day filter is now `nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes()`, so a start time only has to be in the future; already-past times today are still excluded. Unchanged: hourly steps from the worker's availability window start, `SLOT_HORIZON_DAYS` (14), `INTERVIEW_SLOT_MINUTES` (60), the already-taken filter, and the advisory nature of `/slots` (creation still enforces only "in the future", Q-115).
+- Why: a live attempt to offer a 16:20 IST interview on 2026-11-05 failed. Root cause (`search.service.ts:190-198`): at 16:02 IST `earliest` was `now + 60`, so the first offered slot was 18:00, and the hourly grid built from an on-the-hour window start never contained `:20` at all. Owner approved removing the lead time (D-106).
+- Test: new `src/modules/search/search.service.slots.spec.ts` (4 cases, clock pinned to 16:01 IST 2026-11-05). With the fix: 4/4 pass. With `+ 60` temporarily restored: 1 failed / 3 passed with `Expected: "16:20", Received: "17:20"` (the reported symptom reproduced), then the fix was restored.
+- Evidence (local, this session): `npm run typecheck` 0 errors; `npm run lint` 0 errors (3 pre-existing warnings in `test/perf/perf-journeys.perf-spec.ts`); `npm run format:check` clean; `npm test` 581 passed / 8 skipped / 589 total, 57 suites passed / 1 skipped, 0 failed.
+- Data note: a new worker was seeded into the `.env` database (hosted Supabase) to make a 16:20 slot exist from 2026-11-06: user `d254bad2-ff0b-4ea2-b73f-597c365565f9`, worker `5813d199-7ee3-4474-bf97-12177aa05441`, `SEVA00000420` ("Aarti M."), FULL_TIME, window 09:20-21:20. One direct `UPDATE` of the display name and direct service-area inserts touched only that new row.
+- Interview state change: `01a1ab17-717a-74ad-a760-2225485c2a31` (worker Deepika Nair, customer Polo, booking `01a1ab17-6f86-76bc-b3fc-b777af38e033`) moved `REQUESTED -> CONFIRMED` at `2026-11-05T11:30:00Z` via `InterviewService.accept` with an ADMIN actor; booking `MATCHED -> INTERVIEW_TRIAL_SCHEDULED`, audit + outbox + idempotent replay verified.
+- NOT verified: the change is uncommitted and undeployed, so the live API the customer app calls still applies `+ 60`; no HTTP-level test of `/slots` was run (nothing listens on ports 3000-3010 locally); the seeded worker's visibility was checked in-process via `SearchService`, not through the deployed API. 16:20 on 2026-11-05 was not achieved - it was already inside the notice period when the change started.
+
+## 2026-11-06 Worker Wallet, Bank Accounts, Earnings Analytics, Payouts & DOB/Gender (Tracks A-E)
+
+Built:
+- Track A (Worker Wallet Summary): `GET /api/v1/workers/me/wallet/summary` returns calculated integer minor values (`availableBalanceMinor`, `pendingEarningsMinor`, `totalEarningsMinor`, `totalPaidMinor`, `currency`, `updatedAt`). Derives the authenticated worker from the JWT; never accepts client-supplied workerId; distinguishes available balance, pending earnings, total earnings (from counted wage references + wallet ledger credits), and total paid (directly disbursed wage payments + completed withdrawals). Never fabricates fake zero balances.
+- Track B (Bank Account Management): `GET`, `POST`, `PUT`, `DELETE /api/v1/workers/me/bank-accounts[/:accountId]`. Full CRUD with Indian IFSC code validation (`^[A-Z]{4}0[A-Z0-9]{6}$`), account number digit validation (9-18 digits), account number masking (`••••••••1234`) on all responses, automatic primary assignment on first account, atomic primary switch, and deletion guards (blocking deletion when in-flight withdrawals exist or deleting primary while other accounts exist).
+- Track C & C2 (Earnings Analytics & Transactions): `GET /api/v1/workers/me/wallet/analytics` supporting filters `THIS_WEEK`, `THIS_MONTH`, `LAST_MONTH`, `ALL_TIME`, and `CUSTOM` (with strict YYYY-MM-DD and range validation). Aggregates total earnings in minor units, completed shifts count from verified attendance (`status IN ('PRESENT', 'LATE')`), daily earnings breakdown, and category breakdown with friendly category names (`House Cleaning`, `Cooking & Meal Prep`, `Family Driver`, `Child Supervision`, `Elderly Care`) and exact percentage calculations. `GET /api/v1/workers/me/wallet/transactions` provides paginated ledger transactions with `CREDIT`/`DEBIT` and status filtering.
+- Track D & D2 (Withdrawals & Payouts): `POST /api/v1/workers/me/wallet/withdrawals` enforcing ₹100.00 (10000 minor units) minimum, checking available balance, atomically deducting wallet balance under PostgreSQL row lock (`SELECT ... FOR UPDATE`), writing immutable ledger entry (`WITHDRAWAL_RESERVE`), auditing, and idempotency key support. `GET /api/v1/workers/me/wallet/payouts` and `GET /api/v1/workers/me/wallet/payouts/:id` track payout status (`REQUESTED`, `PROCESSING`, `PAID`, `FAILED`, `REJECTED`, `CANCELLED`).
+- Track E (Worker DOB & Gender): Added `dateOfBirth` (`DATE?`) and `gender` (`WorkerGender?` enum: `MALE`, `FEMALE`, `OTHER`, `PREFER_NOT_TO_SAY`) to `WorkerProfile`. Validated `dateOfBirth` (format YYYY-MM-DD, impossible calendar date rejection, future date rejection). Exposed across profile creation, step-by-step updates (`PATCH /workers/me`), resume endpoint (`GET /workers/me` and alias `GET /workers/me/onboarding`), and admin views.
+- Database & Migrations: Added additive migration `prisma/migrations/20261117090000_worker_dob_gender_wallet_bank_accounts/migration.sql` creating `WorkerGender`, `BankAccountVerificationStatus`, `WalletLedgerType`, `WalletLedgerStatus`, `WorkerWithdrawalStatus` enums and `worker_bank_accounts`, `worker_wallets`, `worker_wallet_ledgers`, `worker_withdrawals` tables, with new nullable columns on `worker_profiles`. Migration ordering verified clean (`check:migrations` 0 errors).
+
+Evidence (local, this session):
+- `npm run prisma:validate`: passed cleanly (`The schema at prisma\schema.prisma is valid 🚀`).
+- `npm run check:migrations`: passed cleanly (`check-migration-order: ok (1 new migration(s) after origin/main)`).
+- `npm run typecheck`: passed with 0 errors.
+- `npx eslint "src/modules/wallet/**/*.ts" "src/modules/workers/**/*.ts"`: passed with 0 errors, 0 warnings.
+- `npx prettier --check`: all modified files clean.
+- Unit tests: `npm test` passed 62 of 63 suites (1 skipped), 617 passed, 8 skipped, 625 total, 0 failed (Time: 66.058 s).
+  - Dedicated new suites:
+    - `src/modules/workers/workers.dob-gender.spec.ts` (9/9 passed)
+    - `src/modules/wallet/wallet.bank-accounts.spec.ts` (10/10 passed)
+    - `src/modules/wallet/wallet.summary.spec.ts` (2/2 passed)
+    - `src/modules/wallet/wallet.analytics.spec.ts` (4/4 passed)
+    - `src/modules/wallet/wallet.withdrawals.spec.ts` (11/11 passed)
+- Production build: `npm run build` completed with code 0.
+
+NOT verified / NOT tested against live external systems:
+- Integration suite against local disposable PostgreSQL/Redis was NOT run because local Docker daemon is not active.
+- Real external payment gateway / payout rail disbursement: No live external payout provider is called (safe reservation model implemented; external automated payouts require provider integration decision).
+- Real SMS / FCM device notifications: In-memory/mock provider used in tests.
+- Nothing committed or pushed to git (all changes clean and uncommitted).

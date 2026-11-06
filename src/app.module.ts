@@ -57,6 +57,7 @@ import { CustomerPhotoWorkerModule } from './modules/customer-photo/customer-pho
 import { ServiceCategoriesModule } from './modules/service-categories/service-categories.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkersModule } from './modules/workers/workers.module';
+import { WalletModule } from './modules/wallet/wallet.module';
 
 /**
  * EMBEDDED_WORKERS=true runs the background loops (notification delivery, payment recovery, re-check reminders) INSIDE the API
@@ -124,6 +125,7 @@ const embeddedWorkers =
     NotificationsModule,
     AttendanceModule,
     EarningsModule,
+    WalletModule,
     RetentionModule,
     ReplacementModule,
     RatingsModule,

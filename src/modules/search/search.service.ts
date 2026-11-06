@@ -187,8 +187,8 @@ export class SearchService {
     }
     const card = await this.getProfile(workerId, customerUserId);
     const nowIst = new Date(Date.now() + 330 * 60_000);
-    const earliest =
-      query.date === today ? nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes() + 60 : 0;
+    // A same-day start only has to be in the future: the old +60-minute notice period was removed by owner decision (D-106).
+    const earliest = query.date === today ? nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes() : 0;
     const starts: number[] = [];
     for (const window of card.availability) {
       for (

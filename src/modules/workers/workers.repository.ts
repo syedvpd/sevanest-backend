@@ -12,6 +12,8 @@ const PROFILE_SELECT = {
   id: true,
   userId: true,
   name: true,
+  dateOfBirth: true,
+  gender: true,
   onboardingStatus: true,
   submittedAt: true,
   applicationReference: true,
@@ -47,6 +49,8 @@ export interface WorkerRecord {
   id: string;
   userId: string;
   name: string;
+  dateOfBirth: string | null;
+  gender: 'MALE' | 'FEMALE' | 'OTHER' | 'PREFER_NOT_TO_SAY' | null;
   onboardingStatus: WorkerOnboardingStatus;
   submittedAt: Date | null;
   /** SEVA + 8 digits, stamped at submission (D-90). */
@@ -78,6 +82,8 @@ function toRecord(row: ProfileRow): WorkerRecord {
     id: row.id,
     userId: row.userId,
     name: row.name,
+    dateOfBirth: row.dateOfBirth ? row.dateOfBirth.toISOString().slice(0, 10) : null,
+    gender: row.gender,
     onboardingStatus: row.onboardingStatus,
     submittedAt: row.submittedAt,
     applicationReference: row.applicationReference,
@@ -146,6 +152,8 @@ export type ProfileScalarUpdate = Partial<
   Pick<
     Prisma.WorkerProfileUncheckedUpdateInput,
     | 'name'
+    | 'dateOfBirth'
+    | 'gender'
     | 'experienceMonths'
     | 'expectedSalary'
     | 'preferredLanguage'
@@ -195,7 +203,12 @@ export class WorkersRepository {
   }
 
   async create(
-    data: { userId: string; name: string },
+    data: {
+      userId: string;
+      name: string;
+      dateOfBirth?: Date | null;
+      gender?: Prisma.WorkerProfileUncheckedCreateInput['gender'];
+    },
     tx: Prisma.TransactionClient,
   ): Promise<WorkerRecord> {
     return toRecord(await tx.workerProfile.create({ data, select: PROFILE_SELECT }));
