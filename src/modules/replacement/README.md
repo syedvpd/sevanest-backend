@@ -16,8 +16,20 @@ Engineered around **Continuous Household Service** and **Contract Continuity**:
 * **Replacement Request Submission:** Customers can initiate replacement requests for ongoing bookings with structured reason codes.
 * **Administrative Approval Workflow:** Operations specialists review requests (`/approve`, `/reject`) and coordinate with the customer.
 * **Alternative Candidate Matching:** Automatically identifies candidate replacements who match the original booking's category and schedule while excluding the current worker.
-* **Atomic Booking Swap:** Atomically transitions the original engagement to `REPLACED` while creating and confirming the substitute booking.
+* **Atomic Booking Swap:** Atomically transitions the original engagement to `REPLACED`, creates a successor booking in `MATCHED`, and completes the replacement request. The successor follows the normal booking lifecycle.
 * **Request Withdrawal:** Allows customers to cancel open replacement requests if circumstances change, returning the booking to normal `ACTIVE` status.
+
+### Find Another Worker after an interview
+
+When a customer invokes `POST /api/v1/bookings/{bookingId}/reopen-matching` from `INTERVIEW_TRIAL_COMPLETED`, Booking requires an enabled reason code from the six-code catalogue (`OTHER` also requires a reason description), and accepts optional supporting notes up to 500 characters. The durable request record links the original and successor bookings and stores requester, code, reason snapshot, notes, and timestamp. The customer response includes the submitted fields and Admin booking detail exposes them. Booking retains the original worker and interview/trial history, marks the historical booking `REPLACED`, and transactionally creates an unassigned `NEW_REQUEST` successor linked by `replacesBookingId`. Admin matches that successor through the normal booking workflow. A transactional outbox event informs the former worker without including reason or notes. From `INTERVIEW_TRIAL_SCHEDULED`, the endpoint still reopens the same booking to `MATCHED` without requiring those fields.
+
+The completed-interview path is protected by the original booking row lock and unique successor relation. It does not create an active-service `ReplacementRequest`, change prices, transfer prior payment, or issue an automatic refund.
+
+### Reason configuration and notes
+
+The six reason codes stay fixed. Admin can change their labels and enabled state through `/api/v1/admin/replacement-reasons`; disabled reasons are omitted from customer reference data and rejected on request creation. Supporting `notes` are limited to 500 characters.
+
+`REPLACEMENT_PLAN` remains in the fee catalogue for historical/configuration compatibility but is excluded from customer-payable fee kinds.
 
 ---
 
@@ -56,7 +68,7 @@ Customer / Admin selects new worker
 ┌────────────────────────────────────────────────────────┐
 │ 2. Atomic Transition & Reassignment                    │
 │    - Closes previous booking as REPLACED               │
-│    - Provisions new replacement booking                │
+│    - Provisions new replacement booking as MATCHED     │
 │    - Completes replacement request                     │
 │    - All executed in a single atomic transaction       │
 └────────────────────────────────────────────────────────┘
@@ -89,7 +101,7 @@ Searches for alternative verified workers matching the original booking requirem
 ---
 
 ### 5. `POST /api/v1/replacement-requests/:id/select`
-Selects the replacement worker, creates the successor booking, and completes the swap.
+Selects the replacement worker, creates the successor booking in `MATCHED`, and completes the swap. It does not copy payments or mark the successor confirmed.
 * **Payload:** `{ workerId: "new_worker_uuid" }`
 
 ---
@@ -115,6 +127,6 @@ The Replacement module links active engagements with matching:
 └─────────────────────────┘
 ```
 
-* **Booking State Machine Hook:** Transitions the booking between `ACTIVE`, `REPLACEMENT_REQUESTED`, and `REPLACED`.
+* **Booking State Machine Hook:** Transitions the booking between `ACTIVE`, `REPLACEMENT_REQUESTED`, and `REPLACED`. The successor starts `MATCHED` and continues through the standard booking steps.
 * **Matching Coordination:** Matching automatically filters out the previous worker so the customer is only presented with fresh alternatives.
 

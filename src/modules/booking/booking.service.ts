@@ -29,6 +29,8 @@ import {
   BookingAction,
   BookingActionDto,
   BookingDetailView,
+  FindAnotherWorkerResponse,
+  FindAnotherWorkerDto,
   BookingFilterQuery,
   BookingHistoryQuery,
   CUSTOMER_ALLOWED_ACTIONS,
@@ -69,6 +71,8 @@ export const BookingErrorCode = {
   NO_SLOT_PROPOSAL: 'NO_SLOT_PROPOSAL',
   WORKER_UNAVAILABLE: 'WORKER_UNAVAILABLE',
   REBOOK_NOT_ALLOWED: 'REBOOK_NOT_ALLOWED',
+  SUCCESSOR_ALREADY_EXISTS: 'SUCCESSOR_ALREADY_EXISTS',
+  REPLACEMENT_REASON_DISABLED: 'REPLACEMENT_REASON_DISABLED',
 } as const;
 
 /**
@@ -749,10 +753,20 @@ export class BookingService {
     const booking = await this.repository.findById(bookingId);
     if (!booking) throw this.notFound();
     const detail = await this.detail(booking, true);
+    const request = await this.repository.findFindAnotherWorkerRequest(booking.id);
     return {
       ...detail,
       customerUserId: booking.customerUserId,
       cancelledByUserId: booking.cancelledByUserId,
+      findAnotherWorkerRequest: request
+        ? {
+            reasonCode: request.reasonCode,
+            reason: request.reason,
+            notes: request.notes,
+            requestedAt: request.createdAt,
+            requestedByUserId: request.requestedByUserId,
+          }
+        : null,
     };
   }
 
@@ -785,6 +799,13 @@ export class BookingService {
       const booking = await this.repository.lock(bookingId, tx);
       if (!booking || !this.owns(booking, actor)) {
         throw this.notFound();
+      }
+      if (effectiveAction === 'reopen-matching' && booking.status === 'INTERVIEW_TRIAL_COMPLETED') {
+        throw new DomainException(
+          BookingErrorCode.INVALID_TRANSITION,
+          'Use the Find Another Worker workflow for a completed interview or trial',
+          HttpStatus.CONFLICT,
+        );
       }
       if (isWorkerConfirmWorker) {
         if (booking.status === 'INTERVIEW_TRIAL_COMPLETED') {
@@ -839,6 +860,219 @@ export class BookingService {
     });
     const fresh = (await this.repository.findById(result))!;
     return this.detail(fresh, actor.kind === 'ADMIN');
+  }
+
+  /**
+   * A scheduled interview can still be reopened on the same booking. After a completed interview or trial, this creates an
+   * unassigned successor for Admin matching, closes the original as REPLACED, and notifies the former worker via the outbox.
+   */
+  async reopenMatching(
+    bookingId: string,
+    dto: FindAnotherWorkerDto,
+    actor: BookingActor,
+  ): Promise<BookingDetailView | FindAnotherWorkerResponse> {
+    const result = await this.repository.transaction(async (tx) => {
+      const original = await this.repository.lock(bookingId, tx);
+      if (!original || !this.owns(original, actor)) throw this.notFound();
+
+      if (original.status === 'INTERVIEW_TRIAL_SCHEDULED') {
+        await this.interviews.cancelOpen(original.id, 'matching was re-opened', tx);
+        await this.move(
+          original,
+          { status: 'MATCHED', scheduleType: null, scheduledAt: null, outcomeNote: null },
+          actor,
+          tx,
+          { action: 'booking.reopen-matching' },
+        );
+        return { kind: 'REOPENED' as const, originalId: original.id };
+      }
+
+      if (original.status !== 'INTERVIEW_TRIAL_COMPLETED' || !original.workerId) {
+        throw new DomainException(
+          BookingErrorCode.INVALID_TRANSITION,
+          `A booking that is ${original.status} cannot find another worker`,
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (actor.kind !== 'CUSTOMER') {
+        throw new DomainException(
+          BookingErrorCode.ACTION_NOT_ALLOWED,
+          'The customer must submit the Find Another Worker request and select its reason',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      if (await this.repository.findSuccessor(original.id, tx)) {
+        throw new DomainException(
+          BookingErrorCode.SUCCESSOR_ALREADY_EXISTS,
+          'A successor booking already exists for this booking',
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      if (!dto.reasonCode) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'reasonCode', messages: ['reasonCode is required for Find Another Worker'] }],
+        );
+      }
+      if (dto.reasonCode === 'OTHER' && !dto.reason) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'Request validation failed',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'reason', messages: ['reason is required when the reason code is OTHER'] }],
+        );
+      }
+      const reasonSetting = await this.repository.lockReplacementReasonSetting(dto.reasonCode, tx);
+      if (!reasonSetting?.isEnabled) {
+        throw new DomainException(
+          BookingErrorCode.REPLACEMENT_REASON_DISABLED,
+          'This replacement reason is not available',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      const reasonText = dto.reason ?? reasonSetting.label;
+
+      const successor = await this.repository.create(
+        {
+          customerUserId: original.customerUserId,
+          categoryId: original.categoryId,
+          areaId: original.areaId,
+          engagement: original.engagement,
+          fromMinute: original.fromMinute,
+          toMinute: original.toMinute,
+          replacesBookingId: original.id,
+          workerId: null,
+          status: 'NEW_REQUEST',
+          addressId: original.addressId,
+          requestedStartDate: original.requestedStartDate,
+          budgetMinMinor: original.budgetMinMinor,
+          budgetMaxMinor: original.budgetMaxMinor,
+          budgetPeriod: original.budgetPeriod,
+          requirementNote: original.requirementNote,
+        },
+        tx,
+      );
+      const request = await this.repository.createFindAnotherWorkerRequest(
+        {
+          originalBookingId: original.id,
+          successorBookingId: successor.id,
+          requestedByUserId: actor.userId!,
+          reasonCode: dto.reasonCode,
+          reason: reasonText,
+          notes: dto.notes ?? null,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: 'booking.find_another_worker_request_submitted',
+          entityType: 'find_another_worker_request',
+          entityId: request.id,
+          actorId: actor.userId,
+          actorRole: actor.roles?.join(',') || actor.kind,
+          metadata: {
+            originalBookingId: original.id,
+            successorBookingId: successor.id,
+            reasonCode: request.reasonCode,
+            requestedAt: request.createdAt.toISOString(),
+          },
+        },
+        tx,
+      );
+      await this.repository.addEvent(
+        {
+          bookingId: successor.id,
+          fromStatus: null,
+          toStatus: 'NEW_REQUEST',
+          actorUserId: actor.userId,
+          actorKind: actor.kind,
+          note: 'Find Another Worker successor',
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: 'booking.successor_created',
+          entityType: 'booking',
+          entityId: successor.id,
+          actorId: actor.userId,
+          actorRole: actor.roles?.join(',') || actor.kind,
+          metadata: { replacesBookingId: original.id, flow: 'find-another-worker' },
+        },
+        tx,
+      );
+      await this.move(original, { status: 'REPLACED', replacementBeforeStart: true }, actor, tx, {
+        action: 'booking.find_another_worker',
+        note: `successor booking ${successor.id}`,
+      });
+      await this.alerts.raise(
+        {
+          dedupeKey: `BOOKING_NEEDS_MATCH:${successor.id}`,
+          type: 'BOOKING_NEEDS_MATCH',
+          severity: 'WARNING',
+          title: 'A customer asked staff to find another worker',
+          requiredPermission: PermissionCode.BOOKING_MANAGE,
+          entityType: 'booking',
+          entityId: successor.id,
+        },
+        tx,
+      );
+      const previousWorker = await this.workers.requireRefById(original.workerId);
+      await this.outbox.notify(
+        {
+          event: NotificationEvent.FIND_ANOTHER_WORKER,
+          recipients: [previousWorker.userId],
+          params: { bookingId: original.id, successorBookingId: successor.id },
+        },
+        tx,
+      );
+      return {
+        kind: 'SUCCESSOR' as const,
+        originalId: original.id,
+        successorId: successor.id,
+        request,
+      };
+    });
+
+    if (result.kind === 'REOPENED') {
+      return this.detail(
+        (await this.repository.findById(result.originalId))!,
+        actor.kind === 'ADMIN',
+      );
+    }
+    const [original, successor] = await Promise.all([
+      this.repository.findById(result.originalId),
+      this.repository.findById(result.successorId),
+    ]);
+    if (!original || !successor) throw this.notFound();
+    return {
+      originalBooking: {
+        id: original.id,
+        status: original.status,
+        workerId: original.workerId,
+        replacesBookingId: original.replacesBookingId,
+        createdAt: original.createdAt,
+        updatedAt: original.updatedAt,
+      },
+      request: {
+        reasonCode: result.request.reasonCode,
+        reason: result.request.reason,
+        notes: result.request.notes,
+        requestedAt: result.request.createdAt,
+        requestedByUserId: result.request.requestedByUserId,
+      },
+      successorBooking: {
+        id: successor.id,
+        status: successor.status,
+        workerId: successor.workerId,
+        replacesBookingId: successor.replacesBookingId,
+        createdAt: successor.createdAt,
+        updatedAt: successor.updatedAt,
+      },
+    };
   }
 
   /** For the interview / trial workflow (same module): one booking move with timeline, alerts and audit in the caller transaction. */

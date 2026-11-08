@@ -14,7 +14,16 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-responses';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiExtraModels,
+  ApiHeader,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
@@ -34,6 +43,8 @@ import {
   BOOKING_ACTIONS,
   BookingActionDto,
   BookingDetailView,
+  FindAnotherWorkerResponse,
+  FindAnotherWorkerDto,
   BookingFilterQuery,
   CustomerBookingDetailView,
   CustomerBookingView,
@@ -59,7 +70,7 @@ function assertIdempotencyKey(key: string | undefined): void {
 }
 
 const ACTION_DOC =
-  'Actions: accept (worker/admin), decline (worker/admin), match (admin), schedule, reopen-matching, interview-complete, confirm-worker, start, complete, cancel. Each is one permitted transition of the booking state model; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating an action whose result already holds changes nothing.';
+  'Actions: accept (worker/admin), decline (worker/admin), match (admin), schedule, reopen-matching, interview-complete, confirm-worker, start, complete, cancel. The dedicated reopen-matching endpoint keeps a scheduled interview on the same booking; after INTERVIEW_TRIAL_COMPLETED it creates a linked NEW_REQUEST successor for Admin matching, marks the original REPLACED and notifies the former worker. Each action is one permitted transition; 409 INVALID_TRANSITION otherwise, 403 ACTION_NOT_ALLOWED when the caller may never do it. Repeating with the same Idempotency-Key replays the original response.';
 
 /** The worker's feed of jobs waiting for an answer (PRD 6.3). */
 @ApiTags('Worker bookings')
@@ -92,6 +103,7 @@ export class WorkerOpportunitiesController {
 @ApiTags('Bookings')
 @ApiBearerAuth()
 @RequireUserType('CUSTOMER')
+@ApiExtraModels(BookingDetailView, FindAnotherWorkerResponse)
 @Controller({ path: 'bookings', version: '1' })
 export class BookingsController {
   constructor(private readonly bookings: BookingService) {}
@@ -204,10 +216,42 @@ export class BookingsController {
   }
 
   @Idempotent()
+  @Post(':bookingId/reopen-matching')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(BookingDetailView) },
+        { $ref: getSchemaPath(FindAnotherWorkerResponse) },
+      ],
+    },
+  })
+  @ApiOperation({
+    summary: 'Continue matching after an interview or trial',
+    description:
+      'Customer bearer token (CUSTOMER only). From INTERVIEW_TRIAL_SCHEDULED, reopens the same booking to MATCHED; reason fields may be omitted. From INTERVIEW_TRIAL_COMPLETED, reasonCode is required, must be enabled in GET /reference-data, and the request creates an unassigned NEW_REQUEST successor, closes the original as REPLACED, and returns both booking references plus the saved reason and notes. OTHER requires reason; notes are optional and up to 500 characters. Admin matches the successor. The previous worker notification contains no reason or notes. Idempotency-Key is supported.',
+  })
+  @ApiBody({ type: FindAnotherWorkerDto })
+  reopenMatching(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Body() dto: FindAnotherWorkerDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BookingDetailView | FindAnotherWorkerResponse> {
+    return this.bookings.reopenMatching(bookingId, dto ?? {}, {
+      kind: 'CUSTOMER',
+      userId: user.userId,
+    });
+  }
+
+  @Idempotent()
   @Post(':bookingId/:action')
   @ApiModelResponse(BookingDetailView)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Perform a booking action as the customer', description: ACTION_DOC })
+  @ApiOperation({
+    summary: 'Perform a booking action as the customer',
+    description: 'Customer bearer token (CUSTOMER only). ' + ACTION_DOC,
+  })
   act(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Param('action', new ParseEnumPipe(BOOKING_ACTIONS)) action: BookingAction,
@@ -278,7 +322,12 @@ export class WorkerBookingsController {
   @Post(':bookingId/:action')
   @ApiModelResponse(WorkerBookingView)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Perform a booking action as the worker', description: ACTION_DOC })
+  @ApiOperation({
+    summary: 'Perform a booking action as the worker',
+    description:
+      'Worker bearer token (WORKER only). Workers cannot call reopen-matching or Find Another Worker; that customer action returns 403 here. ' +
+      ACTION_DOC,
+  })
   async act(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Param('action', new ParseEnumPipe(BOOKING_ACTIONS)) action: BookingAction,
@@ -310,6 +359,7 @@ export class WorkerBookingsController {
 @ApiTags('Admin - Bookings')
 @ApiBearerAuth()
 @RequireUserType('ADMIN')
+@ApiExtraModels(AdminBookingView, FindAnotherWorkerResponse)
 @Controller({ path: 'admin/bookings', version: '1' })
 export class AdminBookingsController {
   constructor(
@@ -391,11 +441,47 @@ export class AdminBookingsController {
   }
 
   @Idempotent()
+  @Post(':bookingId/reopen-matching')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCode.BOOKING_MANAGE)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(AdminBookingView) },
+        { $ref: getSchemaPath(FindAnotherWorkerResponse) },
+      ],
+    },
+  })
+  @ApiOperation({
+    summary: 'Continue matching after an interview or trial on behalf of a customer',
+    description:
+      'Admin bearer token (ADMIN only); requires booking.manage. Scheduled interviews reopen on the same booking and may omit reason fields. A completed-interview Find Another Worker request must be initiated by the customer so they select and submit its enabled reason code; an Admin call for a completed interview returns 403. Admin matches the successor through normal booking actions.',
+  })
+  @ApiBody({ type: FindAnotherWorkerDto })
+  async reopenMatching(
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Body() dto: FindAnotherWorkerDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<AdminBookingView | FindAnotherWorkerResponse> {
+    const access = await this.users.getAccess(admin.userId);
+    const result = await this.bookings.reopenMatching(bookingId, dto ?? {}, {
+      kind: 'ADMIN',
+      userId: admin.userId,
+      roles: access.roles,
+    });
+    return 'originalBooking' in result ? result : this.bookings.adminGet(bookingId);
+  }
+
+  @Idempotent()
   @Post(':bookingId/:action')
   @ApiModelResponse(AdminBookingView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.BOOKING_MANAGE)
-  @ApiOperation({ summary: 'Perform a booking action as staff (audited)', description: ACTION_DOC })
+  @ApiOperation({
+    summary: 'Perform a booking action as staff (audited)',
+    description: 'Admin bearer token (ADMIN only); requires booking.manage. ' + ACTION_DOC,
+  })
   async act(
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Param('action', new ParseEnumPipe(BOOKING_ACTIONS)) action: BookingAction,

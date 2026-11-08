@@ -16,6 +16,7 @@ import {
   setRequiredChecks,
 } from '../support/workforce';
 import { BookingService } from '../../src/modules/booking/booking.service';
+import { withCustomerBookingAddress } from '../support/bookings';
 
 const UNKNOWN_ID = '00000000-0000-7000-8000-000000000000';
 const B = '/api/v1/bookings';
@@ -42,9 +43,14 @@ describe('Booking API (integration)', () => {
     await approveCheck(api, admin, worker, 'IDENTITY');
     return worker;
   };
-  const create = (body: object, caller: { accessToken: string } = customer, key?: string) => {
+  const create = async (
+    body: object,
+    caller: { accessToken: string; userId?: string; type?: string } = customer,
+    key?: string,
+  ) => {
+    const payload = await withCustomerBookingAddress(api, caller, body);
     const req = api.http().post(B).set('Authorization', `Bearer ${caller.accessToken}`);
-    return (key ? req.set('Idempotency-Key', key) : req).send(body);
+    return (key ? req.set('Idempotency-Key', key) : req).send(payload);
   };
   const act = (
     id: string,
@@ -303,12 +309,169 @@ describe('Booking API (integration)', () => {
       expect((await as(api, customer).get(`${B}/${second}`)).body.scheduledAt).toBeNull();
     });
 
-    it('lets the customer reopen matching after a schedule or an interview', async () => {
+    it('creates one successor after a completed interview and preserves the original assignment and history', async () => {
       const worker = await verifiedWorker();
       const id = await readyToConfirm(worker);
-      expect((await act(id, 'reopen-matching')).body.status).toBe('MATCHED');
+      const completedInterviewsBefore = await api.prisma.interviewTrial.findMany({
+        where: { bookingId: id, status: 'COMPLETED' },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(completedInterviewsBefore).toHaveLength(1);
+      const key = `find-another-worker-${Date.now()}`;
+      const requestBody = { reasonCode: 'ATTENDANCE', notes: 'Late twice' };
+      const reopened = await as(api, customer)
+        .post(`${B}/${id}/reopen-matching`)
+        .set('Idempotency-Key', key)
+        .send(requestBody);
+      expect(reopened.status).toBe(200);
+      expect(reopened.body).toMatchObject({
+        originalBooking: { id, status: 'REPLACED', workerId: worker.workerId },
+        successorBooking: {
+          status: 'NEW_REQUEST',
+          workerId: null,
+          replacesBookingId: id,
+        },
+        request: {
+          reasonCode: 'ATTENDANCE',
+          reason: 'Attendance or punctuality',
+          notes: 'Late twice',
+        },
+      });
+      const successorId = reopened.body.successorBooking.id as string;
+      expect(reopened.body.request).toMatchObject(requestBody);
+      const replay = await as(api, customer)
+        .post(`${B}/${id}/reopen-matching`)
+        .set('Idempotency-Key', key)
+        .send(requestBody);
+      expect(replay.status).toBe(200);
+      expect(replay.headers['idempotent-replay']).toBe('true');
+      expect(replay.body.successorBooking.id).toBe(successorId);
+      const successor = await api.prisma.booking.findUniqueOrThrow({ where: { id: successorId } });
+      expect(successor.workerId).toBeNull();
+      expect(successor.replacesBookingId).toBe(id);
+      const originalAfter = await api.prisma.booking.findUniqueOrThrow({ where: { id } });
+      expect(originalAfter.startDate).toBeNull();
+      expect(originalAfter.replacementBeforeStart).toBe(true);
+      const request = await api.prisma.findAnotherWorkerRequest.findUniqueOrThrow({
+        where: { originalBookingId: id },
+      });
+      expect(request).toMatchObject({
+        reasonCode: 'ATTENDANCE',
+        reason: 'Attendance or punctuality',
+        notes: 'Late twice',
+      });
+      const adminView = await as(api, admin).get(`${A}/${id}`).expect(200);
+      expect(adminView.body.findAnotherWorkerRequest).toMatchObject({
+        reasonCode: 'ATTENDANCE',
+        reason: 'Attendance or punctuality',
+        notes: 'Late twice',
+        requestedByUserId: customer.userId,
+      });
+      expect(await api.prisma.booking.count({ where: { replacesBookingId: id } })).toBe(1);
+      expect(
+        await api.prisma.interviewTrial.findMany({
+          where: { bookingId: id, status: 'COMPLETED' },
+          orderBy: { createdAt: 'asc' },
+        }),
+      ).toEqual(completedInterviewsBefore);
+      expect((await as(api, customer).get(`${B}/${id}`)).body.workerId).toBe(worker.workerId);
+
+      const outbox = await api.prisma.outboxEvent.findMany({
+        where: { payload: { path: ['params', 'successorBookingId'], equals: successorId } },
+      });
+      expect(outbox).toHaveLength(1);
+      expect(outbox[0].payload).toMatchObject({
+        event: 'FIND_ANOTHER_WORKER',
+        recipients: [worker.userId],
+        params: { bookingId: id, successorBookingId: successorId },
+      });
+      expect(JSON.stringify(outbox[0].payload)).not.toContain('Good fit');
+      expect(JSON.stringify(outbox[0].payload)).not.toContain('Late twice');
+      expect(
+        await api.prisma.auditLog.count({
+          where: { entityId: id, action: 'booking.find_another_worker' },
+        }),
+      ).toBe(1);
+
+      const secondKey = `find-another-worker-again-${Date.now()}`;
+      const repeated = await as(api, customer)
+        .post(`${B}/${id}/reopen-matching`)
+        .set('Idempotency-Key', secondKey)
+        .send(requestBody);
+      expect(repeated.status).toBe(409);
+      expect(await api.prisma.booking.count({ where: { replacesBookingId: id } })).toBe(1);
+      expect((await act(id, 'reopen-matching', {}, worker, W)).status).toBe(403);
+    });
+
+    it('still reopens a scheduled interview on the same booking', async () => {
+      const worker = await verifiedWorker();
+      const id = (await create(requirement({ workerId: worker.workerId }))).body.id as string;
       await act(id, 'schedule', { scheduleType: 'TRIAL', scheduledAt: future(72) }).expect(200);
-      expect((await act(id, 'reopen-matching')).body.status).toBe('MATCHED');
+      const reopened = await act(id, 'reopen-matching');
+      expect(reopened.body).toMatchObject({
+        status: 'MATCHED',
+        workerId: worker.workerId,
+        scheduleType: null,
+        scheduledAt: null,
+      });
+      expect(await api.prisma.booking.count({ where: { replacesBookingId: id } })).toBe(0);
+    });
+
+    it('limits the successor action to the booking owner or an authorized Admin', async () => {
+      const worker = await verifiedWorker();
+      const id = await readyToConfirm(worker);
+      const stranger = await loginWithOtp(api, { appType: 'CUSTOMER' });
+      expect((await act(id, 'reopen-matching', {}, stranger)).status).toBe(404);
+      const viewer = await loginAdminWithPermissions(api, ['booking.view']);
+      expect((await act(id, 'reopen-matching', {}, viewer, A)).status).toBe(403);
+      const manager = await loginAdminWithPermissions(api, ['booking.manage']);
+      const result = await as(api, manager)
+        .post(`${A}/${id}/reopen-matching`)
+        .send({ reasonCode: 'MISMATCH' });
+      expect(result.status).toBe(403);
+      expect(await api.prisma.booking.count({ where: { replacesBookingId: id } })).toBe(0);
+    });
+
+    it('requires enabled reasons and OTHER descriptions for completed-interview Find Another Worker', async () => {
+      const worker = await verifiedWorker();
+      const first = await readyToConfirm(worker);
+      expect((await as(api, customer).post(`${B}/${first}/reopen-matching`).send({})).status).toBe(
+        400,
+      );
+      const second = await readyToConfirm(await verifiedWorker());
+      expect(
+        (
+          await as(api, customer)
+            .post(`${B}/${second}/reopen-matching`)
+            .send({ reasonCode: 'OTHER' })
+        ).status,
+      ).toBe(400);
+      const third = await readyToConfirm(await verifiedWorker());
+      const setting = await api.prisma.replacementReasonSetting.findUniqueOrThrow({
+        where: { code: 'ATTENDANCE' },
+      });
+      await api.prisma.replacementReasonSetting.update({
+        where: { code: 'ATTENDANCE' },
+        data: { isEnabled: false },
+      });
+      try {
+        const disabled = await as(api, customer)
+          .post(`${B}/${third}/reopen-matching`)
+          .send({ reasonCode: 'ATTENDANCE' });
+        expect(disabled.status).toBe(422);
+        expect(await api.prisma.booking.count({ where: { replacesBookingId: third } })).toBe(0);
+      } finally {
+        await api.prisma.replacementReasonSetting.update({
+          where: { code: 'ATTENDANCE' },
+          data: { isEnabled: setting.isEnabled },
+        });
+      }
+      const fourth = await readyToConfirm(await verifiedWorker());
+      const tooLong = await as(api, customer)
+        .post(`${B}/${fourth}/reopen-matching`)
+        .send({ reasonCode: 'MISMATCH', notes: 'x'.repeat(501) });
+      expect(tooLong.status).toBe(400);
+      expect(await api.prisma.booking.count({ where: { replacesBookingId: fourth } })).toBe(0);
     });
 
     it('lets staff match an eligible worker onto a NEW_REQUEST and refuses an ineligible one', async () => {

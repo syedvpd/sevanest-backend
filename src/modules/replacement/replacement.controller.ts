@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   ParseUUIDPipe,
   Post,
   Query,
@@ -28,8 +29,10 @@ import {
   DecisionDto,
   ReplacementDetailView,
   ReplacementListQuery,
+  ReplacementReasonAdminView,
   ReplacementView,
   SelectReplacementWorkerDto,
+  UpdateReplacementReasonDto,
 } from './dto/replacement.dto';
 import { ReplacementActor, ReplacementService } from './replacement.service';
 
@@ -47,7 +50,7 @@ export class ReplacementsController {
   @ApiOperation({
     summary: 'Ask for a replacement of my active booking',
     description:
-      'The booking moves to REPLACEMENT_REQUESTED. 404 for a booking that is not mine, 422 REPLACEMENT_NOT_ELIGIBLE, 409 while a request is already open.',
+      'Customer bearer token (CUSTOMER only). The booking moves to REPLACEMENT_REQUESTED. 404 for a booking that is not mine, 422 REPLACEMENT_NOT_ELIGIBLE, 409 while a request is already open.',
   })
   create(
     @Body() dto: CreateReplacementDto,
@@ -58,7 +61,10 @@ export class ReplacementsController {
 
   @Get()
   @ApiPageResponse(ReplacementView)
-  @ApiOperation({ summary: 'My replacement requests, newest first (paginated)' })
+  @ApiOperation({
+    summary: 'My replacement requests, newest first (paginated)',
+    description: 'Customer bearer token (CUSTOMER only). Returns only requests made by the caller.',
+  })
   list(
     @Query() query: ReplacementListQuery,
     @CurrentUser() user: AuthenticatedUser,
@@ -71,7 +77,7 @@ export class ReplacementsController {
   @ApiOperation({
     summary: 'One of my requests with its status timeline (404 for anyone else)',
     description:
-      '`decisionMessage` is the customer-facing message; internal staff remarks are never returned. `timeline` is the persisted status history, oldest first.',
+      'Customer bearer token (CUSTOMER only). `decisionMessage` is the customer-facing message; internal staff remarks are never returned. `timeline` is the persisted status history, oldest first.',
   })
   get(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -85,7 +91,7 @@ export class ReplacementsController {
   @ApiOperation({
     summary: 'Workers I can choose from once the request is APPROVED',
     description:
-      'Same eligibility as selection, never the worker being replaced. 409 INVALID_TRANSITION unless the request is APPROVED; 404 for anyone else. Selection checks again, so a listed worker can still be refused with WORKER_NOT_ELIGIBLE (422) or WORKER_UNAVAILABLE (409).',
+      'Customer bearer token (CUSTOMER only). Same eligibility as selection, never the worker being replaced. 409 INVALID_TRANSITION unless the request is APPROVED; 404 for anyone else. Selection checks again, so a listed worker can still be refused with WORKER_NOT_ELIGIBLE (422) or WORKER_UNAVAILABLE (409).',
   })
   alternatives(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -99,7 +105,10 @@ export class ReplacementsController {
   @Post(':requestId/cancel')
   @ApiModelResponse(ReplacementView)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Withdraw an open request; the booking becomes ACTIVE again' })
+  @ApiOperation({
+    summary: 'Withdraw an open request; the booking becomes ACTIVE again',
+    description: 'Customer bearer token (CUSTOMER only). The caller must own the request.',
+  })
   cancel(
     @Param('requestId', ParseUUIDPipe) requestId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -114,7 +123,7 @@ export class ReplacementsController {
   @ApiOperation({
     summary: 'Choose the replacement worker once the request is approved',
     description:
-      'Creates the replacement booking (MATCHED, to continue through the normal lifecycle) and closes the old booking as REPLACED. The worker must be eligible and different from the current one. Repeating with the same worker changes nothing.',
+      'Customer bearer token (CUSTOMER only). Creates the replacement booking (MATCHED, to continue through the normal lifecycle) and closes the old booking as REPLACED. The worker must be eligible and different from the current one. Repeating with the same worker changes nothing.',
   })
   select(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -142,7 +151,10 @@ export class AdminReplacementsController {
   @Get()
   @ApiPageResponse(AdminReplacementView)
   @Permissions(PermissionCode.REPLACEMENT_VIEW)
-  @ApiOperation({ summary: 'All replacement requests (paginated, filter by status/booking)' })
+  @ApiOperation({
+    summary: 'All replacement requests (paginated, filter by status/booking)',
+    description: 'Admin bearer token (ADMIN only); requires replacement.view.',
+  })
   list(@Query() query: AdminReplacementListQuery): Promise<Page<AdminReplacementView>> {
     return this.replacements.adminList(query);
   }
@@ -152,6 +164,7 @@ export class AdminReplacementsController {
   @Permissions(PermissionCode.REPLACEMENT_VIEW)
   @ApiOperation({
     summary: 'One request with who asked, who decided and the worker being replaced',
+    description: 'Admin bearer token (ADMIN only); requires replacement.view.',
   })
   get(@Param('requestId', ParseUUIDPipe) requestId: string): Promise<AdminReplacementView> {
     return this.replacements.adminGet(requestId);
@@ -161,7 +174,10 @@ export class AdminReplacementsController {
   @ApiModelResponse(AdminReplacementView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.REPLACEMENT_MANAGE)
-  @ApiOperation({ summary: 'Approve eligibility (REQUESTED to APPROVED)' })
+  @ApiOperation({
+    summary: 'Approve eligibility (REQUESTED to APPROVED)',
+    description: 'Admin bearer token (ADMIN only); requires replacement.manage.',
+  })
   async approve(
     @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() dto: DecisionDto,
@@ -176,6 +192,7 @@ export class AdminReplacementsController {
   @Permissions(PermissionCode.REPLACEMENT_MANAGE)
   @ApiOperation({
     summary: 'Reject a request (remarks required); the booking becomes ACTIVE again',
+    description: 'Admin bearer token (ADMIN only); requires replacement.manage.',
   })
   async reject(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -196,6 +213,7 @@ export class AdminReplacementsController {
   @ApiOperation({
     summary:
       'Alternative workers for the booking requirement (excludes the current worker; audited)',
+    description: 'Admin bearer token (ADMIN only); requires replacement.view and matching.run.',
   })
   async candidates(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -211,10 +229,14 @@ export class AdminReplacementsController {
   }
 
   @Post(':requestId/select')
+  @Idempotent()
   @ApiModelResponse(ReplacementView)
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.REPLACEMENT_MANAGE)
-  @ApiOperation({ summary: 'Select the replacement worker on the customer behalf (audited)' })
+  @ApiOperation({
+    summary: 'Select the replacement worker on the customer behalf (audited)',
+    description: 'Admin bearer token (ADMIN only); requires replacement.manage.',
+  })
   async select(
     @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() dto: SelectReplacementWorkerDto,
@@ -226,5 +248,50 @@ export class AdminReplacementsController {
   private async actor(admin: AuthenticatedUser): Promise<ReplacementActor & { roles: string[] }> {
     const access = await this.users.getAccess(admin.userId);
     return { kind: 'ADMIN', userId: admin.userId, roles: access.roles };
+  }
+}
+
+/** Admin management for the fixed replacement reason catalogue. Codes are never created or deleted. */
+@ApiTags('Admin - Replacements')
+@ApiBearerAuth()
+@RequireUserType('ADMIN')
+@Controller({ path: 'admin/replacement-reasons', version: '1' })
+export class AdminReplacementReasonsController {
+  constructor(
+    private readonly replacements: ReplacementService,
+    private readonly users: UsersService,
+  ) {}
+
+  @Get()
+  @ApiModelResponse(ReplacementReasonAdminView, { isArray: true })
+  @Permissions(PermissionCode.REPLACEMENT_MANAGE)
+  @ApiOperation({
+    summary: 'List all fixed replacement reasons, including disabled codes',
+    description: 'Admin bearer token (ADMIN only); requires replacement.manage.',
+  })
+  list(): Promise<ReplacementReasonAdminView[]> {
+    return this.replacements.adminReasons();
+  }
+
+  @Patch(':code')
+  @Idempotent()
+  @ApiModelResponse(ReplacementReasonAdminView)
+  @Permissions(PermissionCode.REPLACEMENT_MANAGE)
+  @ApiOperation({
+    summary: 'Change a predefined reason label or enablement (audited)',
+    description:
+      'Only the six stable reason codes can be changed. Disabled reasons are omitted from public reference data and rejected for new requests.',
+  })
+  async update(
+    @Param('code') code: string,
+    @Body() dto: UpdateReplacementReasonDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<ReplacementReasonAdminView> {
+    const access = await this.users.getAccess(admin.userId);
+    return this.replacements.updateReason(code, dto, {
+      kind: 'ADMIN',
+      userId: admin.userId,
+      roles: access.roles,
+    });
   }
 }

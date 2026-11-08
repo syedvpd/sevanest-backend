@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsIn, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Matches,
+} from 'class-validator';
 import { PageQueryDto } from '../../../common/pagination/pagination';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -34,7 +43,7 @@ export class CreateReplacementDto {
   @ApiPropertyOptional({
     enum: REPLACEMENT_REASON_CODES,
     description:
-      'Fixed reason (Q-107); labels in GET /reference-data replacementReasons. Optional only for older clients: when omitted, "reason" is required and the code is OTHER.',
+      'Stable predefined code; enabled labels are in GET /reference-data replacementReasons. Optional only for older clients: when omitted, "reason" is required and the code is OTHER.',
   })
   @IsOptional()
   @IsIn(REPLACEMENT_REASON_CODES)
@@ -51,11 +60,11 @@ export class CreateReplacementDto {
   @Length(1, 1000)
   reason?: string;
 
-  @ApiPropertyOptional({ maxLength: 2000, description: 'Supporting notes.' })
+  @ApiPropertyOptional({ maxLength: 500, description: 'Supporting notes (up to 500 characters).' })
   @IsOptional()
   @Transform(trim)
   @IsString()
-  @Length(1, 2000)
+  @Length(1, 500)
   notes?: string;
 
   @ApiPropertyOptional({
@@ -66,6 +75,37 @@ export class CreateReplacementDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'neededFrom must be a date in YYYY-MM-DD form' })
   neededFrom?: string;
+}
+
+export class ReplacementReasonAdminView {
+  @ApiProperty({ enum: REPLACEMENT_REASON_CODES })
+  code!: ReplacementReasonCode;
+
+  @ApiProperty()
+  label!: string;
+
+  @ApiProperty()
+  isEnabled!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  updatedByUserId!: string | null;
+
+  @ApiProperty()
+  updatedAt!: Date;
+}
+
+export class UpdateReplacementReasonDto {
+  @ApiPropertyOptional({ maxLength: 60 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 60)
+  label?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
 }
 
 export class DecisionDto {

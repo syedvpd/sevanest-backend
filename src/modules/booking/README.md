@@ -93,6 +93,8 @@ Executes lifecycle transitions on a booking.
 * **Worker Actions:** `schedule`, `decline`, `start`.
 * **Admin Actions:** `match`, `reopen-matching`, `cancel`, `complete`.
 
+Completed-interview `reopen-matching` requires an enabled reason code; `OTHER` requires a reason description, and optional supporting notes are limited to 500 characters. The customer receives the saved request details, and Admin can see them on booking detail. The former worker notification contains no submitted reason or notes. Scheduled-interview reopen behavior remains unchanged and does not require those fields.
+
 ---
 
 ### 4. `GET /api/v1/workers/me/bookings`

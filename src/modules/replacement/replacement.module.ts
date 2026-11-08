@@ -4,7 +4,11 @@ import { MatchingModule } from '../matching/matching.module';
 import { SearchModule } from '../search/search.module';
 import { UsersModule } from '../users/users.module';
 import { WorkersModule } from '../workers/workers.module';
-import { AdminReplacementsController, ReplacementsController } from './replacement.controller';
+import {
+  AdminReplacementReasonsController,
+  AdminReplacementsController,
+  ReplacementsController,
+} from './replacement.controller';
 import { ActiveBookingReplacementPolicy, REPLACEMENT_POLICY } from './replacement.policy';
 import { ReplacementRepository } from './replacement.repository';
 import { ReplacementService } from './replacement.service';
@@ -16,7 +20,11 @@ import { ReplacementService } from './replacement.service';
  */
 @Module({
   imports: [BookingModule, MatchingModule, SearchModule, UsersModule, WorkersModule],
-  controllers: [ReplacementsController, AdminReplacementsController],
+  controllers: [
+    ReplacementsController,
+    AdminReplacementsController,
+    AdminReplacementReasonsController,
+  ],
   providers: [
     ReplacementRepository,
     ReplacementService,

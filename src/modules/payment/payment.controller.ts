@@ -104,7 +104,7 @@ export class PaymentsController {
         type: 'object',
         properties: {
           code: { type: 'string' },
-          kind: { type: 'string', enum: ['PLACEMENT', 'VERIFICATION', 'REPLACEMENT_PLAN'] },
+          kind: { type: 'string', enum: ['PLACEMENT', 'VERIFICATION'] },
           amountMinor: { type: 'number' },
           currency: { type: 'string' },
         },
@@ -112,9 +112,9 @@ export class PaymentsController {
     },
   })
   @ApiOperation({
-    summary: 'Extra fees I can pay against a booking (placement, verification, replacement plan)',
+    summary: 'Extra fees I can pay against a booking (placement or verification)',
     description:
-      'Only ACTIVE fees of those kinds are listed: with none configured the list is empty and the feature is off. Pay one with POST /fee-payments.',
+      'Only ACTIVE PLACEMENT and VERIFICATION fees are listed. REPLACEMENT_PLAN is not customer-payable. Pay a listed fee with POST /fee-payments.',
   })
   payableFees(): ReturnType<PaymentService['listPayableFees']> {
     return this.payments.listPayableFees();
@@ -315,9 +315,9 @@ export class AdminPaymentsController {
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCode.PAYMENT_REFUND)
   @ApiOperation({
-    summary: 'Refund a succeeded payment in full (reason required; repeating is safe)',
+    summary: 'Approve and initiate a full refund after Admin review (repeating is safe)',
     description:
-      'Who may refund and the cancellation fee rules are open (Q-17, Q-21): nothing is refunded automatically.',
+      'Review the payment and associated booking, then submit approval=APPROVE to explicitly approve and initiate the full refund in this same action. Requires payment.refund. The action and gateway outcome are audited. No second Admin approval is required.',
   })
   async refund(
     @Param('paymentId', ParseUUIDPipe) paymentId: string,
@@ -375,7 +375,7 @@ export class AdminPaymentsController {
   @ApiOperation({
     summary: 'Fee catalogue (empty until an administrator sets fees, Q-01); filter by kind',
     description:
-      'Each fee carries kind (BOOKING, PLACEMENT, VERIFICATION, REPLACEMENT_PLAN, SUBSCRIPTION, CANCELLATION) and updatedAt (the version for If-Match). SUBSCRIPTION and B2B models are catalogued only: nothing charges them in V1.',
+      'Each fee carries kind (BOOKING, PLACEMENT, VERIFICATION, REPLACEMENT_PLAN, SUBSCRIPTION, CANCELLATION) and updatedAt (the version for If-Match). REPLACEMENT_PLAN is not payable by customers. SUBSCRIPTION and B2B models are catalogued only: nothing charges them in V1.',
   })
   fees(@Query('kind') kind?: string): Promise<FeeView[]> {
     if (kind !== undefined && !(FEE_KINDS as readonly string[]).includes(kind)) {
@@ -406,7 +406,7 @@ export class AdminPaymentsController {
   @ApiOperation({
     summary: 'Add a fee to the catalogue (audited)',
     description:
-      '409 FEE_EXISTS. A PLACEMENT, VERIFICATION or REPLACEMENT_PLAN fee becomes payable by customers (POST /fee-payments) as soon as it is active.',
+      '409 FEE_EXISTS. Active PLACEMENT and VERIFICATION fees become payable by customers (POST /fee-payments). REPLACEMENT_PLAN remains nonpayable.',
   })
   async createFee(
     @Body() dto: CreateFeeDto,
@@ -479,7 +479,7 @@ export class AdminPaymentsController {
     summary:
       'Set any configured fee by code (placement, verification, replacement plan ...); audited with before and after',
     description:
-      'Create-or-replace upsert (use POST/PATCH /admin/fees for the catalogue). Fee values are configuration (PRD 10). BOOKING_FEE is charged by the booking flow; PLACEMENT, VERIFICATION and REPLACEMENT_PLAN fees are charged through POST /fee-payments; others are catalogued only. Send If-Match: * when the code does not exist yet.',
+      'Create-or-replace upsert (use POST/PATCH /admin/fees for the catalogue). Fee values are configuration (PRD 10). BOOKING_FEE is charged by the booking flow; PLACEMENT and VERIFICATION fees are charged through POST /fee-payments; REPLACEMENT_PLAN, SUBSCRIPTION and CANCELLATION are catalogued only. Send If-Match: * when the code does not exist yet.',
   })
   async setFee(
     @Param('code') code: string,

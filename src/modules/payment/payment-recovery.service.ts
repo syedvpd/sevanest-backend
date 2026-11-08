@@ -30,7 +30,8 @@ export interface RecoveryRun {
  *  - already paid, booking was CONFIRMED (not yet ACTIVE) and AUTO_REFUND_ON_CANCEL -> automatic full refund (REFUND_PENDING; the
  *                                       recovery worker calls the gateway; failures reach the payment-exception queue)
  *  - already paid otherwise (SUCCEEDED) -> a PAID_BOOKING_CANCELLED exception + staff alert + customer notice. NOT refunded here: the
- *                                       refund policy is open (Q-17/Q-21), so a person decides.
+ *                                       cancellation refund policy remains open (Q-21); a person with payment.refund uses the approved
+ *                                       single-Admin approval action (D-109) to initiate a full refund.
  *  - refund already in progress/done -> untouched.
  */
 @Injectable()

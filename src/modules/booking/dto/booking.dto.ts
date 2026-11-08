@@ -18,6 +18,10 @@ import { TIME_OF_DAY } from '../../availability/domain/time-windows';
 import { ENGAGEMENTS, type Engagement } from '../../search/search.types';
 import { PhotoLinkView } from '../../search/dto/search.dto';
 import {
+  REPLACEMENT_REASON_CODES,
+  type ReplacementReasonCode,
+} from '../../replacement/dto/replacement.dto';
+import {
   RATING_ELIGIBILITY_CODES,
   type RatingEligibilityCode,
 } from '../../../common/rating/rating-eligibility';
@@ -363,6 +367,47 @@ export class ProposeSlotDto {
   note?: string;
 }
 
+/** Required for a completed-interview Find Another Worker request; omitted fields remain valid for scheduled-interview reopen. */
+export class FindAnotherWorkerDto {
+  @ApiPropertyOptional({
+    enum: REPLACEMENT_REASON_CODES,
+    description:
+      'Required when the booking is INTERVIEW_TRIAL_COMPLETED; may be omitted when reopening a scheduled interview. Must be enabled in reference data.',
+  })
+  @IsOptional()
+  @IsIn(REPLACEMENT_REASON_CODES)
+  reasonCode?: ReplacementReasonCode;
+
+  @ApiPropertyOptional({
+    maxLength: 1000,
+    description: 'Reason description. Required when reasonCode is OTHER.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 1000)
+  reason?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 500,
+    description: 'Optional supporting notes (up to 500 characters).',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 500)
+  notes?: string;
+}
+
+export class FindAnotherWorkerRequestView {
+  @ApiProperty({ enum: REPLACEMENT_REASON_CODES }) reasonCode!: ReplacementReasonCode;
+  @ApiProperty({ description: 'Submitted reason description or the reason label snapshot.' })
+  reason!: string;
+  @ApiProperty({ nullable: true, type: String }) notes!: string | null;
+  @ApiProperty() requestedAt!: Date;
+  @ApiProperty() requestedByUserId!: string;
+}
+
 /** One booking of a replacement chain. */
 export class ChainEntryView {
   @ApiProperty() bookingId!: string;
@@ -379,6 +424,24 @@ export class ChainEntryView {
 export class BookingDetailView extends BookingView {
   @ApiProperty({ type: [TimelineEntry], description: 'Status timeline, oldest first (FR-BK-007).' })
   timeline!: TimelineEntry[];
+}
+
+export class FindAnotherWorkerBookingView {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: BOOKING_STATUSES }) status!: BookingStatusValue;
+  @ApiProperty({ nullable: true, type: String }) workerId!: string | null;
+  @ApiProperty({ nullable: true, type: String }) replacesBookingId!: string | null;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty() updatedAt!: Date;
+}
+
+export class FindAnotherWorkerResponse {
+  @ApiProperty({ type: FindAnotherWorkerRequestView })
+  request!: FindAnotherWorkerRequestView;
+  @ApiProperty({ type: FindAnotherWorkerBookingView })
+  originalBooking!: FindAnotherWorkerBookingView;
+  @ApiProperty({ type: FindAnotherWorkerBookingView })
+  successorBooking!: FindAnotherWorkerBookingView;
 }
 
 /** What a worker sees: the requirement summary only, never the customer (FRD FM-08). */
@@ -415,6 +478,8 @@ export class WorkerBookingView {
 export class AdminBookingView extends BookingDetailView {
   @ApiProperty() customerUserId!: string;
   @ApiProperty({ nullable: true, type: String }) cancelledByUserId!: string | null;
+  @ApiProperty({ type: FindAnotherWorkerRequestView, nullable: true })
+  findAnotherWorkerRequest!: FindAnotherWorkerRequestView | null;
 }
 
 /**

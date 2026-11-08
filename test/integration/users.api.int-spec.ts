@@ -528,7 +528,7 @@ describe('Users API (integration)', () => {
         expect((await get(ops, '/api/v1/admin/bookings')).status).toBe(200);
         expect((await get(ops, '/api/v1/admin/payments')).status).toBe(200);
         expect((await post(ops, approve)).status).toBe(403);
-        expect((await post(ops, refund, { reason: 'x' })).status).toBe(403);
+        expect((await post(ops, refund, { approval: 'APPROVE', reason: 'x' })).status).toBe(403);
         expect((await get(ops, '/api/v1/admin/roles')).status).toBe(403);
         expect((await get(ops, '/api/v1/admin/verification/queue')).status).toBe(403);
 

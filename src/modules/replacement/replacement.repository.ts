@@ -33,10 +33,49 @@ export interface ReplacementChange {
   completedAt?: Date;
 }
 
+export interface ReplacementReasonSettingRecord {
+  code: ReplacementReasonCode;
+  label: string;
+  isEnabled: boolean;
+  updatedByUserId: string | null;
+  updatedAt: Date;
+}
+
 /** The only place that touches the replacement table (Prisma model). */
 @Injectable()
 export class ReplacementRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  listReasonSettings(enabledOnly = false): Promise<ReplacementReasonSettingRecord[]> {
+    return this.prisma.replacementReasonSetting.findMany({
+      where: enabledOnly ? { isEnabled: true } : {},
+      orderBy: [{ code: 'asc' }],
+    });
+  }
+
+  findReasonSetting(
+    code: ReplacementReasonCode,
+    db: Db = this.prisma,
+  ): Promise<ReplacementReasonSettingRecord | null> {
+    return db.replacementReasonSetting.findUnique({ where: { code } });
+  }
+
+  async lockReasonSetting(
+    code: ReplacementReasonCode,
+    tx: Prisma.TransactionClient,
+  ): Promise<ReplacementReasonSettingRecord | null> {
+    const rows = await tx.$queryRaw<Array<{ code: string }>>`
+      SELECT code FROM replacement_reason_settings WHERE code = ${code}::"ReplacementReason" FOR UPDATE`;
+    return rows.length === 1 ? this.findReasonSetting(code, tx) : null;
+  }
+
+  updateReasonSetting(
+    code: ReplacementReasonCode,
+    data: { label?: string; isEnabled?: boolean; updatedByUserId: string },
+    tx: Prisma.TransactionClient,
+  ): Promise<ReplacementReasonSettingRecord> {
+    return tx.replacementReasonSetting.update({ where: { code }, data });
+  }
 
   transaction<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return this.prisma.$transaction(work);

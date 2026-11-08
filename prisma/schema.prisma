@@ -50,43 +50,44 @@ model User {
   customerProfile           CustomerProfile?
   workerProfile             WorkerProfile?
   adminProfile              AdminProfile?
-  verificationReviews       WorkerVerificationCheck[] @relation("VerificationReviewer")
-  verificationEvents        WorkerVerificationEvent[] @relation("VerificationEventActor")
-  verificationNotes         WorkerVerificationNote[]  @relation("VerificationNoteAuthor")
-  workersSignedOff          WorkerProfile[]           @relation("WorkerSignedOffBy")
-  workersActivated          WorkerProfile[]           @relation("WorkerActivatedBy")
-  customerPhotos            CustomerProfilePhoto[]    @relation("CustomerPhotos")
-  bookings                  Booking[]                 @relation("BookingCustomer")
-  bookingsCancelled         Booking[]                 @relation("BookingCancelledBy")
-  bookingEvents             BookingEvent[]            @relation("BookingEventActor")
-  payments                  Payment[]                 @relation("PaymentCustomer")
-  paymentsRefunded          Payment[]                 @relation("PaymentRefundedBy")
-  supportMessages           SupportMessage[]          @relation("SupportMessageAuthor")
-  alertsAcknowledged        AdminAlert[]              @relation("AlertAcknowledger")
-  alertsResolved            AdminAlert[]              @relation("AlertResolver")
-  blocksMade                UserBlock[]               @relation("BlockBlocker")
-  blocksReceived            UserBlock[]               @relation("BlockBlocked")
-  reportsMade               SafetyReport[]            @relation("ReportReporter")
-  reportsAbout              SafetyReport[]            @relation("ReportTarget")
-  legalAcceptances          LegalAcceptance[]         @relation("LegalAcceptanceUser")
-  deletionRequests          DeletionRequest[]         @relation("DeletionRequestUser")
-  paymentExceptionsResolved PaymentException[]        @relation("PaymentExceptionResolvedBy")
-  notifications             Notification[]            @relation("NotificationRecipient")
-  attendanceRecorded        AttendanceRecord[]        @relation("AttendanceRecorder")
-  attendanceEvents          AttendanceEvent[]         @relation("AttendanceEventActor")
-  workerPaymentsRecorded    WorkerPaymentReference[]  @relation("WorkerPaymentRecordedBy")
-  workersBlacklisted        WorkerProfile[]           @relation("WorkerBlacklistedBy")
-  deletionsRejected         DeletionRequest[]         @relation("DeletionRequestRejectedBy")
-  replacementsRequested     ReplacementRequest[]      @relation("ReplacementRequester")
-  replacementsDecided       ReplacementRequest[]      @relation("ReplacementDecider")
+  verificationReviews       WorkerVerificationCheck[]  @relation("VerificationReviewer")
+  verificationEvents        WorkerVerificationEvent[]  @relation("VerificationEventActor")
+  verificationNotes         WorkerVerificationNote[]   @relation("VerificationNoteAuthor")
+  workersSignedOff          WorkerProfile[]            @relation("WorkerSignedOffBy")
+  workersActivated          WorkerProfile[]            @relation("WorkerActivatedBy")
+  customerPhotos            CustomerProfilePhoto[]     @relation("CustomerPhotos")
+  bookings                  Booking[]                  @relation("BookingCustomer")
+  bookingsCancelled         Booking[]                  @relation("BookingCancelledBy")
+  findAnotherWorkerRequests FindAnotherWorkerRequest[] @relation("FindAnotherWorkerRequester")
+  bookingEvents             BookingEvent[]             @relation("BookingEventActor")
+  payments                  Payment[]                  @relation("PaymentCustomer")
+  paymentsRefunded          Payment[]                  @relation("PaymentRefundedBy")
+  supportMessages           SupportMessage[]           @relation("SupportMessageAuthor")
+  alertsAcknowledged        AdminAlert[]               @relation("AlertAcknowledger")
+  alertsResolved            AdminAlert[]               @relation("AlertResolver")
+  blocksMade                UserBlock[]                @relation("BlockBlocker")
+  blocksReceived            UserBlock[]                @relation("BlockBlocked")
+  reportsMade               SafetyReport[]             @relation("ReportReporter")
+  reportsAbout              SafetyReport[]             @relation("ReportTarget")
+  legalAcceptances          LegalAcceptance[]          @relation("LegalAcceptanceUser")
+  deletionRequests          DeletionRequest[]          @relation("DeletionRequestUser")
+  paymentExceptionsResolved PaymentException[]         @relation("PaymentExceptionResolvedBy")
+  notifications             Notification[]             @relation("NotificationRecipient")
+  attendanceRecorded        AttendanceRecord[]         @relation("AttendanceRecorder")
+  attendanceEvents          AttendanceEvent[]          @relation("AttendanceEventActor")
+  workerPaymentsRecorded    WorkerPaymentReference[]   @relation("WorkerPaymentRecordedBy")
+  workersBlacklisted        WorkerProfile[]            @relation("WorkerBlacklistedBy")
+  deletionsRejected         DeletionRequest[]          @relation("DeletionRequestRejectedBy")
+  replacementsRequested     ReplacementRequest[]       @relation("ReplacementRequester")
+  replacementsDecided       ReplacementRequest[]       @relation("ReplacementDecider")
   customerNotesAuthored     CustomerNote[]
-  ratingsGiven              Rating[]                  @relation("RatingCustomer")
-  ratingsModerated          Rating[]                  @relation("RatingModerator")
-  ticketsCreated            SupportTicket[]           @relation("TicketCreator")
-  ticketsAssigned           SupportTicket[]           @relation("TicketAssignee")
-  ticketsClosed             SupportTicket[]           @relation("TicketCloser")
-  ticketEvents              SupportTicketEvent[]      @relation("TicketEventActor")
-  shortlist                 CustomerShortlistItem[]   @relation("CustomerShortlist")
+  ratingsGiven              Rating[]                   @relation("RatingCustomer")
+  ratingsModerated          Rating[]                   @relation("RatingModerator")
+  ticketsCreated            SupportTicket[]            @relation("TicketCreator")
+  ticketsAssigned           SupportTicket[]            @relation("TicketAssignee")
+  ticketsClosed             SupportTicket[]            @relation("TicketCloser")
+  ticketEvents              SupportTicketEvent[]       @relation("TicketEventActor")
+  shortlist                 CustomerShortlistItem[]    @relation("CustomerShortlist")
 
   @@index([type, status])
   @@map("users")
@@ -250,24 +251,24 @@ model CustomerProfile {
 /// Database-enforced invariants (see migration): at most one default per customer, a default must be active, and
 /// latitude/longitude are both set or both null and within range.
 model CustomerAddress {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  customerId String   @map("customer_id") @db.Uuid
-  line       String
-  area       String
-  city       String
-  pincode    String
+  id             String   @id @default(uuid(7)) @db.Uuid
+  customerId     String   @map("customer_id") @db.Uuid
+  line           String
+  area           String
+  city           String
+  pincode        String
   /// Optional presentation fields the customer app asked for (label such as Home/Office, second address line, state).
-  label      String?
-  line2      String?
-  state      String?
-  latitude   Decimal? @db.Decimal(9, 6)
-  longitude  Decimal? @db.Decimal(9, 6)
+  label          String?
+  line2          String?
+  state          String?
+  latitude       Decimal? @db.Decimal(9, 6)
+  longitude      Decimal? @db.Decimal(9, 6)
   isDefault      Boolean  @default(false) @map("is_default")
   isActive       Boolean  @default(true) @map("is_active")
   /// S3 object key of the address photo (D-103). Null when no photo is on file.
   photoObjectKey String?  @map("photo_object_key")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
   bookings Booking[]
@@ -728,59 +729,63 @@ enum InterviewStatus {
 
 /// A customer requirement and, once matched, the worker engaged for it. Timings are minutes after local midnight (India) like Availability.
 model Booking {
-  id                 String               @id @default(uuid(7)) @db.Uuid
-  customerUserId     String               @map("customer_user_id") @db.Uuid
-  workerId           String?              @map("worker_id") @db.Uuid
-  categoryId         String               @map("category_id") @db.Uuid
-  areaId             String               @map("area_id") @db.Uuid
-  engagement         EngagementPreference
-  fromMinute         Int                  @map("from_minute") @db.SmallInt
-  toMinute           Int                  @map("to_minute") @db.SmallInt
-  status             BookingStatus        @default(NEW_REQUEST)
-  scheduleType       ScheduleType?        @map("schedule_type")
-  scheduledAt        DateTime?            @map("scheduled_at") @db.Timestamptz(6)
-  outcomeNote        String?              @map("outcome_note")
-  startDate          DateTime?            @map("start_date") @db.Date
-  cancelReason       String?              @map("cancel_reason")
-  cancelledAt        DateTime?            @map("cancelled_at") @db.Timestamptz(6)
-  cancelledByUserId  String?              @map("cancelled_by_user_id") @db.Uuid
+  id                     String               @id @default(uuid(7)) @db.Uuid
+  customerUserId         String               @map("customer_user_id") @db.Uuid
+  workerId               String?              @map("worker_id") @db.Uuid
+  categoryId             String               @map("category_id") @db.Uuid
+  areaId                 String               @map("area_id") @db.Uuid
+  engagement             EngagementPreference
+  fromMinute             Int                  @map("from_minute") @db.SmallInt
+  toMinute               Int                  @map("to_minute") @db.SmallInt
+  status                 BookingStatus        @default(NEW_REQUEST)
+  /// True only when a completed-interview Find Another Worker closes the booking before service start.
+  replacementBeforeStart Boolean              @default(false) @map("replacement_before_start")
+  scheduleType           ScheduleType?        @map("schedule_type")
+  scheduledAt            DateTime?            @map("scheduled_at") @db.Timestamptz(6)
+  outcomeNote            String?              @map("outcome_note")
+  startDate              DateTime?            @map("start_date") @db.Date
+  cancelReason           String?              @map("cancel_reason")
+  cancelledAt            DateTime?            @map("cancelled_at") @db.Timestamptz(6)
+  cancelledByUserId      String?              @map("cancelled_by_user_id") @db.Uuid
   /// Set on a booking created by the Replacement workflow: the booking it replaces.
-  replacesBookingId  String?              @unique @map("replaces_booking_id") @db.Uuid
+  replacesBookingId      String?              @unique @map("replaces_booking_id") @db.Uuid
   /// What the customer asked for at request time (PRD 5.2): where, from when, budget, free-text requirement. Budget period is a label only (Q-39).
-  addressId          String?              @map("address_id") @db.Uuid
-  requestedStartDate DateTime?            @map("requested_start_date") @db.Date
-  budgetMinMinor     Int?                 @map("budget_min_minor")
-  budgetMaxMinor     Int?                 @map("budget_max_minor")
-  budgetPeriod       String?              @map("budget_period")
-  requirementNote    String?              @map("requirement_note")
+  addressId              String?              @map("address_id") @db.Uuid
+  requestedStartDate     DateTime?            @map("requested_start_date") @db.Date
+  budgetMinMinor         Int?                 @map("budget_min_minor")
+  budgetMaxMinor         Int?                 @map("budget_max_minor")
+  budgetPeriod           String?              @map("budget_period")
+  requirementNote        String?              @map("requirement_note")
   /// Worker response to a MATCHED opportunity (PRD 6.3 accept/decline). respond_by is set from configuration when matching, null = no deadline.
-  workerRespondedAt  DateTime?            @map("worker_responded_at") @db.Timestamptz(6)
-  respondBy          DateTime?            @map("respond_by") @db.Timestamptz(6)
+  workerRespondedAt      DateTime?            @map("worker_responded_at") @db.Timestamptz(6)
+  respondBy              DateTime?            @map("respond_by") @db.Timestamptz(6)
   /// A different interview/trial time proposed by the worker, waiting for the customer (state does not change). Cleared when answered.
-  proposedSlotAt     DateTime?            @map("proposed_slot_at") @db.Timestamptz(6)
-  proposedSlotNote   String?              @map("proposed_slot_note")
-  idempotencyKey     String?              @map("idempotency_key")
-  requestHash        String?              @map("request_hash")
-  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  proposedSlotAt         DateTime?            @map("proposed_slot_at") @db.Timestamptz(6)
+  proposedSlotNote       String?              @map("proposed_slot_note")
+  idempotencyKey         String?              @map("idempotency_key")
+  requestHash            String?              @map("request_hash")
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  address             CustomerAddress?         @relation(fields: [addressId], references: [id], onDelete: Restrict)
-  customer            User                     @relation("BookingCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
-  cancelledBy         User?                    @relation("BookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
-  worker              WorkerProfile?           @relation(fields: [workerId], references: [id], onDelete: Restrict)
-  category            ServiceCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  area                ServiceArea              @relation(fields: [areaId], references: [id], onDelete: Restrict)
-  replaces            Booking?                 @relation("BookingReplacement", fields: [replacesBookingId], references: [id], onDelete: Restrict)
-  replacedBy          Booking?                 @relation("BookingReplacement")
-  events              BookingEvent[]
-  payments            Payment[]
-  attendance          AttendanceRecord[]
-  replacementRequests ReplacementRequest[]     @relation("ReplacementOriginal")
-  replacementFor      ReplacementRequest?      @relation("ReplacementNew")
-  rating              Rating?
-  tickets             SupportTicket[]
-  interviews          InterviewTrial[]
-  paymentReferences   WorkerPaymentReference[]
+  address                  CustomerAddress?          @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  customer                 User                      @relation("BookingCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  cancelledBy              User?                     @relation("BookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  worker                   WorkerProfile?            @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  category                 ServiceCategory           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  area                     ServiceArea               @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  replaces                 Booking?                  @relation("BookingReplacement", fields: [replacesBookingId], references: [id], onDelete: Restrict)
+  replacedBy               Booking?                  @relation("BookingReplacement")
+  events                   BookingEvent[]
+  payments                 Payment[]
+  attendance               AttendanceRecord[]
+  replacementRequests      ReplacementRequest[]      @relation("ReplacementOriginal")
+  replacementFor           ReplacementRequest?       @relation("ReplacementNew")
+  findAnotherWorkerRequest FindAnotherWorkerRequest? @relation("FindAnotherWorkerOriginal")
+  findAnotherWorkerFrom    FindAnotherWorkerRequest? @relation("FindAnotherWorkerSuccessor")
+  rating                   Rating?
+  tickets                  SupportTicket[]
+  interviews               InterviewTrial[]
+  paymentReferences        WorkerPaymentReference[]
 
   @@unique([customerUserId, idempotencyKey])
   @@index([customerUserId, createdAt])
@@ -849,44 +854,44 @@ model FeeConfig {
 }
 
 model Payment {
-  id                    String        @id @default(uuid(7)) @db.Uuid
-  bookingId             String        @map("booking_id") @db.Uuid
-  customerUserId        String        @map("customer_user_id") @db.Uuid
-  feeCode               String        @map("fee_code")
-  amountMinor           Int           @map("amount_minor")
-  currency              String
-  status                PaymentStatus @default(CREATED)
-  providerOrderId       String?       @unique @map("provider_order_id")
-  providerPaymentId     String?       @unique @map("provider_payment_id")
+  id                     String        @id @default(uuid(7)) @db.Uuid
+  bookingId              String        @map("booking_id") @db.Uuid
+  customerUserId         String        @map("customer_user_id") @db.Uuid
+  feeCode                String        @map("fee_code")
+  amountMinor            Int           @map("amount_minor")
+  currency               String
+  status                 PaymentStatus @default(CREATED)
+  providerOrderId        String?       @unique @map("provider_order_id")
+  providerPaymentId      String?       @unique @map("provider_payment_id")
   /// Data the client SDK needs to open the checkout. Public provider data only, never a secret.
-  checkoutPayload       Json?         @map("checkout_payload")
-  receiptNumber         String?       @unique @map("receipt_number")
-  paidAt                DateTime?     @map("paid_at") @db.Timestamptz(6)
-  failureReason         String?       @map("failure_reason")
+  checkoutPayload        Json?         @map("checkout_payload")
+  receiptNumber          String?       @unique @map("receipt_number")
+  paidAt                 DateTime?     @map("paid_at") @db.Timestamptz(6)
+  failureReason          String?       @map("failure_reason")
   /// Gateway error code of the last failed attempt (for example BAD_REQUEST_ERROR); null otherwise.
-  failureCode           String?       @map("failure_code")
+  failureCode            String?       @map("failure_code")
   /// How the customer paid, as the gateway reports it: upi, card, netbanking, wallet, emi. Display only.
-  paymentMethod         String?       @map("payment_method")
+  paymentMethod          String?       @map("payment_method")
   /// Masked detail of the method (card network and last 4, masked UPI id, bank or wallet code). Never a full number.
-  paymentMethodDetail   String?       @map("payment_method_detail")
-  refundReason          String?       @map("refund_reason")
-  refundProviderId      String?       @map("refund_provider_id")
-  refundedAt            DateTime?     @map("refunded_at") @db.Timestamptz(6)
-  refundedByUserId      String?       @map("refunded_by_user_id") @db.Uuid
+  paymentMethodDetail    String?       @map("payment_method_detail")
+  refundReason           String?       @map("refund_reason")
+  refundProviderId       String?       @map("refund_provider_id")
+  refundedAt             DateTime?     @map("refunded_at") @db.Timestamptz(6)
+  refundedByUserId       String?       @map("refunded_by_user_id") @db.Uuid
   /// Recovery bookkeeping (reconciliation sweeper). `reconcileNextAt` set = the payment (or its refund, or the order of a cancelled
   /// booking) is waiting for an authoritative check; null = nothing to check. A worker claims a row by pushing `reconcileClaimedUntil`
   /// into the future, so two workers never process the same payment and a crashed worker's claim simply expires.
-  reconcileAttempts     Int           @default(0) @map("reconcile_attempts")
-  reconcileNextAt       DateTime?     @map("reconcile_next_at") @db.Timestamptz(6)
-  reconcileClaimedUntil DateTime?     @map("reconcile_claimed_until") @db.Timestamptz(6)
-  reconcileLastAt       DateTime?     @map("reconcile_last_at") @db.Timestamptz(6)
+  reconcileAttempts      Int           @default(0) @map("reconcile_attempts")
+  reconcileNextAt        DateTime?     @map("reconcile_next_at") @db.Timestamptz(6)
+  reconcileClaimedUntil  DateTime?     @map("reconcile_claimed_until") @db.Timestamptz(6)
+  reconcileLastAt        DateTime?     @map("reconcile_last_at") @db.Timestamptz(6)
   /// Stable code of the last check outcome (e.g. NO_GATEWAY_ACTIVITY, PROVIDER_UNAVAILABLE). Never provider payloads.
-  reconcileLastNote     String?       @map("reconcile_last_note")
+  reconcileLastNote      String?       @map("reconcile_last_note")
   /// Durable marker set before calling the provider. If no order id was persisted, retries only look up the stable receipt; they never
   /// issue another create request for this attempt because the first response may have been lost.
   orderCreationStartedAt DateTime?     @map("order_creation_started_at") @db.Timestamptz(6)
-  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   booking    Booking            @relation(fields: [bookingId], references: [id], onDelete: Restrict)
   customer   User               @relation("PaymentCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
@@ -1363,12 +1368,12 @@ model CustomerProfilePhoto {
 /// rendition keys. One row per admin account, created on first write. Photo keys are server-generated object keys; the
 /// signed URL is issued on read. Empty for admins who have never saved a name or photo.
 model AdminProfile {
-  userId        String    @id @map("user_id") @db.Uuid
-  fullName      String?   @map("full_name")
-  photoCardKey  String?   @unique @map("photo_card_key")
-  photoLargeKey String?   @unique @map("photo_large_key")
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  userId        String   @id @map("user_id") @db.Uuid
+  fullName      String?  @map("full_name")
+  photoCardKey  String?  @unique @map("photo_card_key")
+  photoLargeKey String?  @unique @map("photo_large_key")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1675,6 +1680,37 @@ model RatingTag {
   @@map("rating_tags")
 }
 
+/// Admin-managed labels and enablement for the fixed replacement reason codes. Requests keep their stable code and reason text snapshot.
+model ReplacementReasonSetting {
+  code            ReplacementReason @id
+  label           String            @db.VarChar(60)
+  isEnabled       Boolean           @default(true) @map("is_enabled")
+  updatedByUserId String?           @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("replacement_reason_settings")
+}
+
+/// Immutable customer reason and notes for the completed-interview Find Another Worker flow (D-110).
+model FindAnotherWorkerRequest {
+  id                 String            @id @default(uuid(7)) @db.Uuid
+  originalBookingId  String            @unique @map("original_booking_id") @db.Uuid
+  successorBookingId String            @unique @map("successor_booking_id") @db.Uuid
+  requestedByUserId  String            @map("requested_by_user_id") @db.Uuid
+  reasonCode         ReplacementReason @map("reason_code")
+  reason             String            @db.VarChar(1000)
+  notes              String?           @db.VarChar(500)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  originalBooking  Booking @relation("FindAnotherWorkerOriginal", fields: [originalBookingId], references: [id], onDelete: Restrict)
+  successorBooking Booking @relation("FindAnotherWorkerSuccessor", fields: [successorBookingId], references: [id], onDelete: Restrict)
+  requestedBy      User    @relation("FindAnotherWorkerRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([requestedByUserId, createdAt])
+  @@map("find_another_worker_requests")
+}
+
 enum WorkerGender {
   MALE
   FEMALE
@@ -1707,8 +1743,8 @@ model WorkerBankAccount {
   createdAt           DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  worker              WorkerProfile                 @relation(fields: [workerId], references: [id], onDelete: Restrict)
-  withdrawals         WorkerWithdrawal[]
+  worker      WorkerProfile      @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  withdrawals WorkerWithdrawal[]
 
   @@index([workerId, isDeleted])
   @@map("worker_bank_accounts")
@@ -1716,17 +1752,17 @@ model WorkerBankAccount {
 
 /// A worker's financial wallet balance in integer minor units (DEC-05, Q-73).
 model WorkerWallet {
-  id                    String                 @id @default(uuid(7)) @db.Uuid
-  workerId              String                 @unique @map("worker_id") @db.Uuid
-  availableBalanceMinor Int                    @default(0) @map("available_balance_minor")
-  pendingBalanceMinor   Int                    @default(0) @map("pending_balance_minor")
-  currency              String                 @default("INR")
-  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  workerId              String   @unique @map("worker_id") @db.Uuid
+  availableBalanceMinor Int      @default(0) @map("available_balance_minor")
+  pendingBalanceMinor   Int      @default(0) @map("pending_balance_minor")
+  currency              String   @default("INR")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  worker                WorkerProfile          @relation(fields: [workerId], references: [id], onDelete: Restrict)
-  ledgerEntries         WorkerWalletLedger[]
-  withdrawals           WorkerWithdrawal[]
+  worker        WorkerProfile        @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  ledgerEntries WorkerWalletLedger[]
+  withdrawals   WorkerWithdrawal[]
 
   @@map("worker_wallets")
 }
@@ -1762,7 +1798,7 @@ model WorkerWalletLedger {
   idempotencyKey String?            @unique @map("idempotency_key")
   createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  wallet         WorkerWallet       @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  wallet WorkerWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
 
   @@index([workerId, createdAt])
   @@map("worker_wallet_ledgers")
@@ -1794,8 +1830,8 @@ model WorkerWithdrawal {
   createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  wallet            WorkerWallet           @relation(fields: [walletId], references: [id], onDelete: Restrict)
-  bankAccount       WorkerBankAccount      @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  wallet      WorkerWallet      @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  bankAccount WorkerBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
 
   @@index([workerId, status, createdAt])
   @@map("worker_withdrawals")

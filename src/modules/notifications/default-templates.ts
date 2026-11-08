@@ -77,6 +77,11 @@ export const DEFAULT_IN_APP_TEMPLATES: ReadonlyArray<{
     body: 'Your replacement request is now {{status}}.',
   },
   {
+    event: 'FIND_ANOTHER_WORKER',
+    title: 'Matching will continue',
+    body: 'This opportunity has closed while the customer looks for another worker.',
+  },
+  {
     event: 'TICKET_UPDATE',
     title: 'Support update',
     body: 'Your support request is now {{status}}.',

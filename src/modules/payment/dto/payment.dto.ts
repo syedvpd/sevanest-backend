@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -40,7 +41,7 @@ export const FEE_KINDS = [
 ] as const;
 export type FeeKindValue = (typeof FEE_KINDS)[number];
 /** Kinds a customer can pay through POST /fee-payments once an ACTIVE fee of that kind exists. */
-export const PAYABLE_FEE_KINDS = ['PLACEMENT', 'VERIFICATION', 'REPLACEMENT_PLAN'] as const;
+export const PAYABLE_FEE_KINDS = ['PLACEMENT', 'VERIFICATION'] as const;
 
 /** The only documented fee: the booking/platform fee (FR-BK-004). Other fee types are open (Q-01). */
 export const BOOKING_FEE_CODE = 'BOOKING_FEE';
@@ -61,7 +62,7 @@ export class CreateFeePaymentDto {
   @ApiProperty({
     example: 'PLACEMENT_FEE',
     description:
-      'Code of an ACTIVE PLACEMENT, VERIFICATION or REPLACEMENT_PLAN fee. The amount is never sent: it comes from the fee configuration.',
+      'Code of an ACTIVE PLACEMENT or VERIFICATION fee. The amount is never sent: it comes from the fee configuration.',
   })
   @Matches(/^[A-Z][A-Z0-9_]{1,49}$/)
   feeCode!: string;
@@ -84,6 +85,14 @@ export class VerifyPaymentDto {
 }
 
 export class RefundDto {
+  @ApiProperty({
+    enum: ['APPROVE'],
+    description:
+      'Explicitly approves and initiates this full refund in one action after reviewing its payment and booking.',
+  })
+  @IsIn(['APPROVE'])
+  approval!: 'APPROVE';
+
   @ApiProperty({ maxLength: 1000 })
   @Transform(trim)
   @IsString()

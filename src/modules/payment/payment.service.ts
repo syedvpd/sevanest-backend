@@ -429,7 +429,7 @@ export class PaymentService {
   }
 
   /**
-   * DEC-11: the fees a customer can pay against a booking (PLACEMENT, VERIFICATION, REPLACEMENT_PLAN). A kind is offered only while an
+   * DEC-11: the fees a customer can pay against a booking (PLACEMENT, VERIFICATION). A kind is offered only while an
    * ACTIVE fee of that kind exists, so with no fee configured the list is empty and the feature is simply off.
    */
   async listPayableFees(): Promise<
@@ -445,7 +445,7 @@ export class PaymentService {
   }
 
   /**
-   * Starts (or resumes) the payment of a PLACEMENT / VERIFICATION / REPLACEMENT_PLAN fee against my booking. Same state machine, idempotency
+   * Starts (or resumes) the payment of a PLACEMENT / VERIFICATION fee against my booking. Same state machine, idempotency
    * and recovery as the booking fee; the amount always comes from the active fee configuration (the client cannot send one); a successful
    * payment of such a fee does not move the booking. One open payment per (booking, fee).
    */
@@ -910,7 +910,7 @@ export class PaymentService {
     );
   }
 
-  /** Full refund of a succeeded payment (partial refunds and who may refund are open, Q-17/Q-21). Repeating is safe. */
+  /** One authorized Admin explicitly approves and initiates a full refund in one action. Repeating is safe. */
   async refund(paymentId: string, dto: RefundDto, admin: PaymentActor): Promise<AdminPaymentView> {
     const payment = await this.repository.transaction(async (tx) => {
       const locked = await this.repository.lock(paymentId, tx);
@@ -937,22 +937,24 @@ export class PaymentService {
           },
           tx,
         );
-        await this.audit.record(
-          {
-            action: 'payment.refund_request',
-            entityType: 'payment',
-            entityId: locked.id,
-            actorId: admin.userId,
-            actorRole: admin.roles.join(',') || null,
-            metadata: {
-              from: locked.status,
-              to: 'REFUND_PENDING',
-              amountMinor: locked.amountMinor,
-            },
-          },
-          tx,
-        );
       }
+      await this.audit.record(
+        {
+          action: 'payment.refund_approved',
+          entityType: 'payment',
+          entityId: locked.id,
+          actorId: admin.userId,
+          actorRole: admin.roles.join(',') || null,
+          metadata: {
+            approval: 'APPROVED',
+            reason: dto.reason,
+            from: locked.status,
+            to: 'REFUND_PENDING',
+            amountMinor: locked.amountMinor,
+          },
+        },
+        tx,
+      );
       return locked;
     });
     // No transaction is held across the gateway call.
@@ -960,6 +962,24 @@ export class PaymentService {
     try {
       refund = await this.initiateRefund(payment);
     } catch (error) {
+      await this.repository.transaction((tx) =>
+        this.audit.record(
+          {
+            action: 'payment.refund_gateway_result',
+            entityType: 'payment',
+            entityId: payment.id,
+            actorId: admin.userId,
+            actorRole: admin.roles.join(',') || null,
+            metadata: {
+              source: 'admin',
+              outcome: 'ERROR',
+              resultCode: 'PAYMENT_PROVIDER_UNAVAILABLE',
+              amountMinor: payment.amountMinor,
+            },
+          },
+          tx,
+        ),
+      );
       throw this.providerFailure(error, PaymentErrorCode.PAYMENT_PROVIDER_UNAVAILABLE);
     }
     await this.repository.transaction(async (tx) => {
@@ -1621,6 +1641,24 @@ export class PaymentService {
     tx: Prisma.TransactionClient,
   ): Promise<void> {
     if (locked.status !== 'REFUND_PENDING') return;
+    if (context.source === 'admin') {
+      await this.audit.record(
+        {
+          action: 'payment.refund_gateway_result',
+          entityType: 'payment',
+          entityId: locked.id,
+          actorId: context.actor?.userId ?? null,
+          actorRole: context.actor?.roles.join(',') || null,
+          metadata: {
+            source: context.source,
+            outcome: refund.outcome,
+            providerRefundId: refund.providerRefundId,
+            amountMinor: locked.amountMinor,
+          },
+        },
+        tx,
+      );
+    }
     if (refund.outcome === 'PENDING') {
       await this.repository.update(locked.id, { refundProviderId: refund.providerRefundId }, tx);
       return;
@@ -1649,6 +1687,8 @@ export class PaymentService {
           from: 'REFUND_PENDING',
           to: done ? 'REFUNDED' : 'REFUND_FAILED',
           source: context.source,
+          providerRefundId: refund.providerRefundId,
+          amountMinor: locked.amountMinor,
         },
       },
       tx,

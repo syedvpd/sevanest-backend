@@ -5,6 +5,7 @@
 The **Payment Module** manages financial transactions, platform fee collections, and refund workflows across SevaNest. It interfaces with external payment gateways (e.g., Razorpay) to process household booking fees, enforce cryptographically verified webhook settlement, and deliver digital payment receipts.
 
 Engineered around **Zero-Discrepancy Invariants** and **Cryptographic Verification**:
+
 1. **Authoritative Webhook Settlement:** Client-side "payment success" reports are treated as tentative hints; a payment is confirmed strictly when the backend validates the gateway's HMAC SHA-256 webhook signature against the raw body buffer.
 2. **Idempotent Transaction Events:** Every payment gateway notification is recorded in an append-only `payment_events` table with deduplication keys, preventing double-credits.
 3. **Automated Booking Confirmation:** Successful payment processing atomically confirms the associated booking and triggers customer receipt generation in one database transaction.
@@ -13,12 +14,12 @@ Engineered around **Zero-Discrepancy Invariants** and **Cryptographic Verificati
 
 ## 2. Core Features & Capabilities
 
-* **Payment Gateway Abstraction:** Seamless adapter architecture supporting major gateways (Razorpay, Cashfree, PayU) with unified error handling.
-* **Cryptographic Webhook Verification:** Real-time processing of signed webhook events with replay-attack protection and raw body signature validation.
-* **Platform Fee Administration:** Dynamic configuration of booking fees per category and engagement model without code modifications.
-* **Automated Receipt Generation:** Instant digital receipts available as structured JSON payloads and downloadable PDF documents.
-* **Full & Partial Refunds:** Administrative refund processing with mandatory reason tracking and gateway synchronization.
-* **Scheduled Reconciliation:** Diagnostic tools to query gateway settlement statuses and resolve stranded payment sessions.
+- **Payment Gateway Abstraction:** Seamless adapter architecture supporting major gateways (Razorpay, Cashfree, PayU) with unified error handling.
+- **Cryptographic Webhook Verification:** Real-time processing of signed webhook events with replay-attack protection and raw body signature validation.
+- **Platform Fee Administration:** Dynamic configuration of booking fees per category and engagement model without code modifications.
+- **Automated Receipt Generation:** Instant digital receipts available as structured JSON payloads and downloadable PDF documents.
+- **Full & Partial Refunds:** Administrative refund processing with mandatory reason tracking and gateway synchronization.
+- **Scheduled Reconciliation:** Diagnostic tools to query gateway settlement statuses and resolve stranded payment sessions.
 
 ---
 
@@ -72,36 +73,46 @@ Payment Gateway Webhook
 ## 4. API Endpoints & Contracts
 
 ### 1. `POST /api/v1/payments`
+
 Initializes a payment order for a booking in `PENDING_PAYMENT` state.
-* **Payload:** `{ bookingId: "booking_uuid" }`
-* **Response:** `{ paymentId, amount, currency: "INR", gatewayOrderId, keyId }`
+
+- **Payload:** `{ bookingId: "booking_uuid" }`
+- **Response:** `{ paymentId, amount, currency: "INR", gatewayOrderId, keyId }`
 
 ---
 
 ### 2. `POST /api/v1/payments/:id/verify`
+
 Allows the customer mobile client to report completed checkout for immediate server-side gateway verification.
 
 ---
 
 ### 3. `GET /api/v1/payments` & `GET /api/v1/payments/:id`
+
 Retrieves customer payment histories, settlement states, and refund details.
 
 ---
 
 ### 4. `GET /api/v1/payments/:id/receipt/pdf`
+
 Generates and downloads a digital PDF payment receipt.
 
 ---
 
 ### 5. `POST /api/v1/webhooks/payments`
+
 Public webhook endpoint for incoming payment gateway callbacks (authenticated via HMAC signature).
 
 ---
 
 ### 6. `POST /api/v1/admin/payments/:id/refund`
-Processes an authorized customer refund through the payment gateway.
-* **Authorization:** Administrative JWT (`payment.refund` permission).
-* **Payload:** `{ reason: "Customer requested cancellation within trial window" }`
+
+Reviews the payment and associated booking, then explicitly approves and initiates the full refund through the payment gateway in the same action.
+
+- **Authorization:** Administrative JWT (`payment.refund` permission).
+- **Payload:** `{ approval: "APPROVE", reason: "Customer requested cancellation within trial window" }`
+- **Approval:** One authorized Admin action; no second Admin is required. The payment enters `REFUND_PENDING` before the gateway call. The gateway result is recorded as `REFUND_PENDING`, `REFUNDED`, or `REFUND_FAILED`.
+- **Audit:** Approval records the acting Admin, approval marker, reason, amount, and status transition. A separate gateway-result audit records outcome, provider refund reference, amount, and timestamp. Existing idempotency remains enabled.
 
 ---
 
@@ -126,8 +137,8 @@ The Payment module coordinates closely with Bookings and Notifications:
 └─────────────────────────┘
 ```
 
-* **Booking Orchestration:** Payment success automatically unlocks the booking schedule and transitions the engagement to `CONFIRMED`.
-* **Receipt Delivery:** Successful transactions trigger the Notifications module to dispatch confirmation SMS messages and PDF download links to the customer.
+- **Booking Orchestration:** Payment success automatically unlocks the booking schedule and transitions the engagement to `CONFIRMED`.
+- **Receipt Delivery:** Successful transactions trigger the Notifications module to dispatch confirmation SMS messages and PDF download links to the customer.
 
 ## 6. Provider Order Creation Recovery
 

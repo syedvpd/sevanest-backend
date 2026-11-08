@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { AppConfigService } from '../../src/config/app-config.service';
 import { ProviderError } from '../../src/integrations/provider-error';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp } from '../support/api-app';
-import { inDays, makeBooking } from '../support/bookings';
+import { inDays, makeBooking, withCustomerBookingAddress } from '../support/bookings';
 import {
   as,
   categoryId,
@@ -89,7 +89,10 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
       const paymentId = (await as(api, me).get(`/api/v1/payments?bookingId=${b6.id}`).expect(200))
         .body.data[0].id;
       await as(api, admin)
-        .post(`/api/v1/admin/payments/${paymentId}/refund`, { reason: 'Test refund' })
+        .post(`/api/v1/admin/payments/${paymentId}/refund`, {
+          approval: 'APPROVE',
+          reason: 'Test refund',
+        })
         .expect(200);
       expect(
         (await api.prisma.payment.findUniqueOrThrow({ where: { id: paymentId } })).status,
@@ -525,14 +528,17 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
       const busy = await complete(await makeBooking(api, admin, me, area.id, 'ACTIVE'));
       const rival = await newCustomer();
       const taken = await as(api, rival)
-        .post(B, {
-          category: 'HOUSE_MAID',
-          areaId: area.id,
-          engagement: 'PART_TIME',
-          availableFrom: '09:00',
-          availableTo: '12:00',
-          workerId: busy.worker.workerId,
-        })
+        .post(
+          B,
+          await withCustomerBookingAddress(api, rival, {
+            category: 'HOUSE_MAID',
+            areaId: area.id,
+            engagement: 'PART_TIME',
+            availableFrom: '09:00',
+            availableTo: '12:00',
+            workerId: busy.worker.workerId,
+          }),
+        )
         .expect(201);
       await as(api, rival)
         .post(`${B}/${taken.body.id}/schedule`, {
@@ -574,13 +580,16 @@ describe('Customer history, rating, rebook and worker identity (integration)', (
       await name(done, 'Ramesh Kumar');
       const matched = await makeBooking(api, admin, me, area.id, 'MATCHED');
       const open = await as(api, me)
-        .post(B, {
-          category: 'HOUSE_MAID',
-          areaId: area.id,
-          engagement: 'PART_TIME',
-          availableFrom: '09:00',
-          availableTo: '12:00',
-        })
+        .post(
+          B,
+          await withCustomerBookingAddress(api, me, {
+            category: 'HOUSE_MAID',
+            areaId: area.id,
+            engagement: 'PART_TIME',
+            availableFrom: '09:00',
+            availableTo: '12:00',
+          }),
+        )
         .expect(201);
 
       const detail = (await as(api, me).get(`${B}/${done.id}`).expect(200)).body;

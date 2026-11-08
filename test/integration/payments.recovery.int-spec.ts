@@ -258,7 +258,7 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       const paid = await api.prisma.payment.findFirstOrThrow({ where: { bookingId: booking.id } });
       const refunder = await loginAdminWithPermissions(api, ['payment.refund']);
       await as(api, refunder)
-        .post(`${A}/payments/${paid.id}/refund`, { reason: 'we cancelled' })
+        .post(`${A}/payments/${paid.id}/refund`, { approval: 'APPROVE', reason: 'we cancelled' })
         .expect(200);
       await cancel(booking.id).expect(200);
       expect((await payment(paid.id)).status).toBe('REFUNDED');
@@ -624,6 +624,7 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       gateway().refundOutcome = 'PENDING';
       try {
         const res = await as(api, refunder).post(`${A}/payments/${paid.id}/refund`, {
+          approval: 'APPROVE',
           reason: 'we cancelled',
         });
         expect(res.status).toBe(200);
@@ -647,7 +648,7 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       expect(done.refundedAt).not.toBeNull();
       // Exactly one refund exists at the gateway, however often the request and the sweeper ran.
       await as(api, refunder)
-        .post(`${A}/payments/${paid.id}/refund`, { reason: 'again' })
+        .post(`${A}/payments/${paid.id}/refund`, { approval: 'APPROVE', reason: 'again' })
         .expect(409);
       expect(
         gateway().refunds.filter((r) => r.providerPaymentId === paid.providerPaymentId),
@@ -660,6 +661,7 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       gateway().outage = true;
       try {
         const res = await as(api, refunder).post(`${A}/payments/${paid.id}/refund`, {
+          approval: 'APPROVE',
           reason: 'we cancelled',
         });
         expect(res.status).toBe(503);
@@ -669,6 +671,15 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       const stuck = await payment(paid.id);
       expect(stuck.status).toBe('REFUND_PENDING');
       expect(stuck.reconcileNextAt).not.toBeNull();
+      expect(
+        await api.prisma.auditLog.count({
+          where: {
+            entityId: paid.id,
+            action: 'payment.refund_gateway_result',
+            metadata: { path: ['outcome'], equals: 'ERROR' },
+          },
+        }),
+      ).toBe(1);
       expect(
         gateway().refunds.filter((r) => r.providerPaymentId === paid.providerPaymentId),
       ).toHaveLength(0);
@@ -716,7 +727,7 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       gateway().refundOutcome = 'PENDING';
       try {
         await as(api, refunder)
-          .post(`${A}/payments/${paid.id}/refund`, { reason: 'we cancelled' })
+          .post(`${A}/payments/${paid.id}/refund`, { approval: 'APPROVE', reason: 'we cancelled' })
           .expect(200);
       } finally {
         gateway().refundOutcome = 'SUCCEEDED';
@@ -744,7 +755,7 @@ describe('Payment recovery and cancellation consistency (integration)', () => {
       gateway().refundOutcome = 'PENDING';
       try {
         await as(api, refunder)
-          .post(`${A}/payments/${paid.id}/refund`, { reason: 'we cancelled' })
+          .post(`${A}/payments/${paid.id}/refund`, { approval: 'APPROVE', reason: 'we cancelled' })
           .expect(200);
       } finally {
         gateway().refundOutcome = 'SUCCEEDED';

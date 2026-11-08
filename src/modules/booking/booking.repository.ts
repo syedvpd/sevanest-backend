@@ -4,6 +4,7 @@ import { PrismaService } from '../../infrastructure/database/prisma.service';
 import { workerBusyCondition, type BusyRequest } from '../../common/scheduling/worker-busy';
 import type { Engagement } from '../search/search.types';
 import type { BookingStatusValue, ScheduleTypeValue } from './dto/booking.dto';
+import type { ReplacementReasonCode } from '../replacement/dto/replacement.dto';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -38,6 +39,7 @@ export interface BookingRecord {
   fromMinute: number;
   toMinute: number;
   status: BookingStatusValue;
+  replacementBeforeStart?: boolean;
   scheduleType: ScheduleTypeValue | null;
   scheduledAt: Date | null;
   outcomeNote: string | null;
@@ -74,6 +76,17 @@ export interface BookingEventRecord {
   createdAt: Date;
 }
 
+export interface FindAnotherWorkerRequestRecord {
+  id: string;
+  originalBookingId: string;
+  successorBookingId: string;
+  requestedByUserId: string;
+  reasonCode: ReplacementReasonCode;
+  reason: string;
+  notes: string | null;
+  createdAt: Date;
+}
+
 type Row = Prisma.BookingGetPayload<object>;
 
 function toRecord(row: Row): BookingRecord {
@@ -87,6 +100,7 @@ function toRecord(row: Row): BookingRecord {
     fromMinute: row.fromMinute,
     toMinute: row.toMinute,
     status: row.status,
+    replacementBeforeStart: row.replacementBeforeStart,
     scheduleType: row.scheduleType,
     scheduledAt: row.scheduledAt,
     outcomeNote: row.outcomeNote,
@@ -116,6 +130,7 @@ function toRecord(row: Row): BookingRecord {
 
 export interface BookingChange {
   status: BookingStatusValue;
+  replacementBeforeStart?: boolean;
   workerId?: string | null;
   scheduleType?: ScheduleTypeValue | null;
   scheduledAt?: Date | null;
@@ -206,6 +221,41 @@ export class BookingRepository {
     return row ? toRecord(row) : null;
   }
 
+  async findSuccessor(
+    originalBookingId: string,
+    db: Db = this.prisma,
+  ): Promise<BookingRecord | null> {
+    const row = await db.booking.findUnique({ where: { replacesBookingId: originalBookingId } });
+    return row ? toRecord(row) : null;
+  }
+
+  async lockReplacementReasonSetting(
+    code: ReplacementReasonCode,
+    tx: Prisma.TransactionClient,
+  ): Promise<{ label: string; isEnabled: boolean } | null> {
+    const rows = await tx.$queryRaw<Array<{ code: string }>>`
+      SELECT code FROM replacement_reason_settings WHERE code = ${code}::"ReplacementReason" FOR UPDATE`;
+    if (rows.length !== 1) return null;
+    return tx.replacementReasonSetting.findUnique({
+      where: { code },
+      select: { label: true, isEnabled: true },
+    });
+  }
+
+  createFindAnotherWorkerRequest(
+    input: Omit<FindAnotherWorkerRequestRecord, 'id' | 'createdAt'>,
+    tx: Prisma.TransactionClient,
+  ): Promise<FindAnotherWorkerRequestRecord> {
+    return tx.findAnotherWorkerRequest.create({ data: input });
+  }
+
+  findFindAnotherWorkerRequest(
+    originalBookingId: string,
+    db: Db = this.prisma,
+  ): Promise<FindAnotherWorkerRequestRecord | null> {
+    return db.findAnotherWorkerRequest.findUnique({ where: { originalBookingId } });
+  }
+
   async findByIdempotencyKey(
     customerUserId: string,
     key: string,
@@ -236,6 +286,7 @@ export class BookingRepository {
       where: { id },
       data: {
         status: change.status,
+        replacementBeforeStart: change.replacementBeforeStart,
         workerId: change.workerId,
         scheduleType: change.scheduleType,
         scheduledAt: change.scheduledAt,

@@ -54,7 +54,7 @@ describe('QA - reports against independent SQL (integration)', () => {
     const payment = await api.prisma.payment.findFirstOrThrow({ where: { bookingId: active.id } });
     const refunder = await loginAdminWithPermissions(api, ['payment.refund']);
     await as(api, refunder)
-      .post(`/api/v1/admin/payments/${payment.id}/refund`, { reason: 'qa' })
+      .post(`/api/v1/admin/payments/${payment.id}/refund`, { approval: 'APPROVE', reason: 'qa' })
       .expect(200);
   }, 120_000);
 

@@ -9,7 +9,7 @@ import { INTERVIEW_STATUS_LABELS } from '../booking/dto/interview.dto';
 import { LegalService } from '../legal/legal.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ENGAGEMENTS } from '../search/search.types';
-import { REPLACEMENT_REASONS } from '../replacement/dto/replacement.dto';
+import { ReplacementService } from '../replacement/replacement.service';
 import { REPORT_REASONS } from '../safety/safety.dto';
 import { TICKET_PRIORITIES } from '../support/dto/support.dto';
 
@@ -151,6 +151,7 @@ export class MetaController {
     private readonly config: AppConfigService,
     private readonly legal: LegalService,
     private readonly platform: PlatformConfigService,
+    private readonly replacements: ReplacementService,
   ) {}
 
   @Get('app-config')
@@ -221,7 +222,7 @@ export class MetaController {
       budgetPeriods: BUDGET_PERIODS,
       reportReasons: REPORT_REASONS,
       ticketPriorities: TICKET_PRIORITIES,
-      replacementReasons: REPLACEMENT_REASONS,
+      replacementReasons: await this.replacements.activeReasons(),
       ratingScaleMax: this.config.ratingScaleMax,
       ratingReviewMax: this.config.ratingReviewMax,
       ratingTags: await this.platform.activeTags(),

@@ -524,24 +524,60 @@ describe('Payment API (integration)', () => {
       const refunder = await loginAdminWithPermissions(api, ['payment.refund']);
       const viewer = await loginAdminWithPermissions(api, ['payment.view']);
       expect(
-        (await as(api, viewer).post(`${A}/payments/${started.id}/refund`, { reason: 'x' })).status,
+        (
+          await as(api, viewer).post(`${A}/payments/${started.id}/refund`, {
+            approval: 'APPROVE',
+            reason: 'x',
+          })
+        ).status,
       ).toBe(403);
       expect(
-        (await as(api, customer).post(`${A}/payments/${started.id}/refund`, { reason: 'x' }))
-          .status,
+        (
+          await as(api, customer).post(`${A}/payments/${started.id}/refund`, {
+            approval: 'APPROVE',
+            reason: 'x',
+          })
+        ).status,
       ).toBe(403);
       expect((await as(api, refunder).post(`${A}/payments/${started.id}/refund`, {})).status).toBe(
         400,
       );
-      const res = await as(api, refunder).post(`${A}/payments/${started.id}/refund`, {
+      expect(
+        (
+          await as(api, refunder).post(`${A}/payments/${started.id}/refund`, {
+            reason: 'No approval',
+          })
+        ).status,
+      ).toBe(400);
+      const approvalKey = `refund-approval-${Date.now()}`;
+      const approvalBody = {
+        approval: 'APPROVE',
         reason: 'Service cancelled by us',
-      });
+      };
+      const res = await as(api, refunder)
+        .post(`${A}/payments/${started.id}/refund`)
+        .set('Idempotency-Key', approvalKey)
+        .send(approvalBody);
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         status: 'REFUNDED',
         refundReason: 'Service cancelled by us',
         refundedByUserId: refunder.userId,
       });
+      const replay = await as(api, refunder)
+        .post(`${A}/payments/${started.id}/refund`)
+        .set('Idempotency-Key', approvalKey)
+        .send(approvalBody);
+      expect(replay.status).toBe(200);
+      expect(replay.headers['idempotent-replay']).toBe('true');
+      expect(
+        (
+          await as(api, refunder)
+            .post(`${A}/payments/${started.id}/refund`)
+            .set('Idempotency-Key', approvalKey)
+            .send({ approval: 'APPROVE', reason: 'Different approved reason' })
+        ).body.code,
+      ).toBe('IDEMPOTENCY_KEY_REUSED');
       expect(
         gateway().refunds.filter((r) => r.providerPaymentId === reported.providerPaymentId),
       ).toHaveLength(1);
@@ -549,12 +585,30 @@ describe('Payment API (integration)', () => {
         'REFUNDED',
       );
       expect(
-        (await as(api, refunder).post(`${A}/payments/${started.id}/refund`, { reason: 'again' }))
-          .status,
+        (
+          await as(api, refunder).post(`${A}/payments/${started.id}/refund`, {
+            approval: 'APPROVE',
+            reason: 'again',
+          })
+        ).status,
       ).toBe(409);
       expect(
         await api.prisma.auditLog.count({
           where: { entityId: started.id, action: 'payment.refunded' },
+        }),
+      ).toBe(1);
+      expect(
+        await api.prisma.auditLog.count({
+          where: {
+            entityId: started.id,
+            action: 'payment.refund_approved',
+            actorId: refunder.userId,
+          },
+        }),
+      ).toBe(1);
+      expect(
+        await api.prisma.auditLog.count({
+          where: { entityId: started.id, action: 'payment.refund_gateway_result' },
         }),
       ).toBe(1);
     });
@@ -564,14 +618,19 @@ describe('Payment API (integration)', () => {
       const started = (await startPayment(booking.id)).body as Started;
       const refunder = await loginAdminWithPermissions(api, ['payment.refund']);
       expect(
-        (await as(api, refunder).post(`${A}/payments/${started.id}/refund`, { reason: 'x' }))
-          .status,
+        (
+          await as(api, refunder).post(`${A}/payments/${started.id}/refund`, {
+            approval: 'APPROVE',
+            reason: 'x',
+          })
+        ).status,
       ).toBe(409);
       const reported = gateway().completeCheckout(started.checkout.orderId, 'SUCCEEDED');
       await as(api, customer).post(`${P}/${started.id}/verify`, reported).expect(200);
       gateway().refundOutcome = 'FAILED';
       try {
         const failed = await as(api, refunder).post(`${A}/payments/${started.id}/refund`, {
+          approval: 'APPROVE',
           reason: 'try',
         });
         expect(failed.body.status).toBe('REFUND_FAILED');
@@ -579,6 +638,7 @@ describe('Payment API (integration)', () => {
         gateway().refundOutcome = 'SUCCEEDED';
       }
       const retry = await as(api, refunder).post(`${A}/payments/${started.id}/refund`, {
+        approval: 'APPROVE',
         reason: 'try again',
       });
       expect(retry.body.status).toBe('REFUNDED');

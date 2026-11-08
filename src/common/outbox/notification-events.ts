@@ -13,6 +13,8 @@ export const NotificationEvent = {
   VERIFICATION_APPROVED: 'VERIFICATION_APPROVED',
   VERIFICATION_REJECTED: 'VERIFICATION_REJECTED',
   REPLACEMENT_UPDATE: 'REPLACEMENT_UPDATE',
+  /** Worker: this booking closed while the customer starts another matching attempt. */
+  FIND_ANOTHER_WORKER: 'FIND_ANOTHER_WORKER',
   TICKET_UPDATE: 'TICKET_UPDATE',
   RECHECK_DUE: 'RECHECK_DUE',
   /** Worker: the final verification sign-off was given (D-90). */
@@ -70,6 +72,7 @@ export const EVENT_PARAMS: Record<NotificationEventCode, readonly string[]> = {
   WORKER_VERIFIED: ['applicationReference'],
   WORKER_ACTIVATED: ['applicationReference'],
   REPLACEMENT_UPDATE: ['bookingId', 'replacementId', 'status'],
+  FIND_ANOTHER_WORKER: ['bookingId', 'successorBookingId'],
   TICKET_UPDATE: ['ticketId', 'status'],
   RECHECK_DUE: ['checkType'],
   PAYMENT_UNDER_REVIEW: ['bookingId', 'paymentId'],

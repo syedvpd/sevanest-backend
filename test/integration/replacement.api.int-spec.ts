@@ -102,6 +102,10 @@ describe('Replacement API (integration)', () => {
       const res = await request(notActive.id);
       expect(res.status).toBe(422);
       expect(res.body.code).toBe('REPLACEMENT_NOT_ELIGIBLE');
+      const pendingPayment = await makeBooking(api, admin, customer, area.id, 'PENDING_PAYMENT');
+      const pendingRes = await request(pendingPayment.id);
+      expect(pendingRes.status).toBe(422);
+      expect(pendingRes.body.code).toBe('REPLACEMENT_NOT_ELIGIBLE');
       expect(await bookingStatus(b.id)).toBe('ACTIVE');
     });
 
@@ -112,6 +116,32 @@ describe('Replacement API (integration)', () => {
       expect(results.filter((r) => r.status === 409)).toHaveLength(4);
       expect(await api.prisma.replacementRequest.count({ where: { bookingId: b.id } })).toBe(1);
       expect((await request(b.id)).status).toBe(409);
+    });
+
+    it('replays a keyed create, rejects a changed payload, and serializes concurrent retries', async () => {
+      const b = await active();
+      const key = `replacement-create-${Date.now()}`;
+      const first = await request(b.id).set('Idempotency-Key', key);
+      const replay = await request(b.id).set('Idempotency-Key', key);
+      expect(first.status).toBe(201);
+      expect(replay.status).toBe(201);
+      expect(replay.body.id).toBe(first.body.id);
+      expect(replay.headers['idempotent-replay']).toBe('true');
+
+      const changed = await request(b.id, customer, { reason: 'Different reason' }).set(
+        'Idempotency-Key',
+        key,
+      );
+      expect(changed.status).toBe(422);
+      expect(changed.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+
+      const other = await active();
+      const concurrentKey = `replacement-concurrent-${Date.now()}`;
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => request(other.id).set('Idempotency-Key', concurrentKey)),
+      );
+      expect(results.every((r) => [201, 409].includes(r.status))).toBe(true);
+      expect(await api.prisma.replacementRequest.count({ where: { bookingId: other.id } })).toBe(1);
     });
 
     it('asks the eligibility policy, which is the one place a future rule goes', async () => {
@@ -227,12 +257,24 @@ describe('Replacement API (integration)', () => {
   describe('selecting the replacement', () => {
     it('creates the replacement booking, closes the old one as REPLACED, and notifies', async () => {
       const { b, id } = await approved();
+      const paymentsBefore = await api.prisma.payment.findMany({
+        where: { bookingId: b.id },
+        orderBy: { id: 'asc' },
+        select: { id: true, bookingId: true, amountMinor: true, status: true, refundedAt: true },
+      });
       const other = await alternative();
       const res = await as(api, customer).post(`${R}/${id}/select`, { workerId: other.workerId });
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('COMPLETED');
       expect(res.body.replacementBookingId).toBeTruthy();
       expect(await bookingStatus(b.id)).toBe('REPLACED');
+      expect(
+        await api.prisma.payment.findMany({
+          where: { bookingId: b.id },
+          orderBy: { id: 'asc' },
+          select: { id: true, bookingId: true, amountMinor: true, status: true, refundedAt: true },
+        }),
+      ).toEqual(paymentsBefore);
       const created = (
         await as(api, customer).get(`/api/v1/bookings/${res.body.replacementBookingId}`)
       ).body;
@@ -279,6 +321,33 @@ describe('Replacement API (integration)', () => {
       expect(
         (await as(api, customer).post(`${R}/${id}/select`, { workerId: another.workerId })).status,
       ).toBe(409);
+    });
+
+    it('replays keyed selection and rejects a different worker with the same key', async () => {
+      const { b, id } = await approved();
+      const firstWorker = await alternative();
+      const anotherWorker = await alternative();
+      const key = `replacement-select-${Date.now()}`;
+      const first = await as(api, customer)
+        .post(`${R}/${id}/select`)
+        .set('Idempotency-Key', key)
+        .send({ workerId: firstWorker.workerId });
+      const replay = await as(api, customer)
+        .post(`${R}/${id}/select`)
+        .set('Idempotency-Key', key)
+        .send({ workerId: firstWorker.workerId });
+      expect(first.status).toBe(200);
+      expect(replay.status).toBe(200);
+      expect(replay.headers['idempotent-replay']).toBe('true');
+      expect(replay.body.replacementBookingId).toBe(first.body.replacementBookingId);
+
+      const changed = await as(api, customer)
+        .post(`${R}/${id}/select`)
+        .set('Idempotency-Key', key)
+        .send({ workerId: anotherWorker.workerId });
+      expect(changed.status).toBe(422);
+      expect(changed.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+      expect(await api.prisma.booking.count({ where: { replacesBookingId: b.id } })).toBe(1);
     });
 
     it('lets only one of many parallel selections win', async () => {
@@ -328,9 +397,20 @@ describe('Replacement API (integration)', () => {
         (await as(api, stranger).post(`${R}/${id}/select`, { workerId: other.workerId })).status,
       ).toBe(404);
       const manager = await loginAdminWithPermissions(api, ['replacement.manage']);
-      const res = await as(api, manager).post(`${A}/${id}/select`, { workerId: other.workerId });
+      const key = `replacement-admin-select-${Date.now()}`;
+      const res = await as(api, manager)
+        .post(`${A}/${id}/select`)
+        .set('Idempotency-Key', key)
+        .send({ workerId: other.workerId });
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('COMPLETED');
+      const replay = await as(api, manager)
+        .post(`${A}/${id}/select`)
+        .set('Idempotency-Key', key)
+        .send({ workerId: other.workerId });
+      expect(replay.status).toBe(200);
+      expect(replay.headers['idempotent-replay']).toBe('true');
+      expect(replay.body.replacementBookingId).toBe(res.body.replacementBookingId);
       const audit = await api.prisma.auditLog.findFirstOrThrow({
         where: { entityId: id, action: 'replacement.complete' },
       });
@@ -352,6 +432,49 @@ describe('Replacement API (integration)', () => {
       ).toBe(1);
       const stranger = await loginWithOtp(api, { appType: 'CUSTOMER' });
       expect((await as(api, stranger).post(`${R}/${id}/cancel`)).status).toBe(404);
+    });
+
+    it('replays keyed cancellation and rejects reusing that key on another request', async () => {
+      const firstRequest = (await request((await active()).id)).body.id as string;
+      const secondRequest = (await request((await active()).id)).body.id as string;
+      const key = `replacement-cancel-${Date.now()}`;
+      const first = await as(api, customer)
+        .post(`${R}/${firstRequest}/cancel`)
+        .set('Idempotency-Key', key);
+      const replay = await as(api, customer)
+        .post(`${R}/${firstRequest}/cancel`)
+        .set('Idempotency-Key', key);
+      expect(first.status).toBe(200);
+      expect(replay.status).toBe(200);
+      expect(replay.headers['idempotent-replay']).toBe('true');
+      expect(replay.body.status).toBe('CANCELLED');
+
+      const reused = await as(api, customer)
+        .post(`${R}/${secondRequest}/cancel`)
+        .set('Idempotency-Key', key);
+      expect(reused.status).toBe(422);
+      expect(reused.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+      expect(
+        await api.prisma.auditLog.count({
+          where: { entityId: firstRequest, action: 'replacement.cancel' },
+        }),
+      ).toBe(1);
+
+      const concurrentRequest = (await request((await active()).id)).body.id as string;
+      const concurrentKey = `replacement-cancel-parallel-${Date.now()}`;
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          as(api, customer)
+            .post(`${R}/${concurrentRequest}/cancel`)
+            .set('Idempotency-Key', concurrentKey),
+        ),
+      );
+      expect(results.every((r) => [200, 409].includes(r.status))).toBe(true);
+      expect(
+        await api.prisma.auditLog.count({
+          where: { entityId: concurrentRequest, action: 'replacement.cancel' },
+        }),
+      ).toBe(1);
     });
 
     it('cannot withdraw a finished request', async () => {
@@ -566,7 +689,7 @@ describe('Replacement API (integration)', () => {
   });
 
   describe('reason codes and reference data (Q-107)', () => {
-    it('publishes the fixed reasons and stores the chosen code', async () => {
+    it('publishes enabled configured reasons and stores a stable code and label snapshot', async () => {
       const ref = await api.http().get('/api/v1/reference-data').expect(200);
       const reasons = (ref.body.data ?? ref.body).replacementReasons as Array<{
         code: string;
@@ -593,9 +716,24 @@ describe('Replacement API (integration)', () => {
         where: { id: res.body.id },
       });
       expect(row.reasonCode).toBe('ATTENDANCE');
+      expect(row.reason).toBe(reasons.find((x) => x.code === 'ATTENDANCE')!.label);
+
+      for (const code of [
+        'WORK_QUALITY',
+        'BEHAVIOUR',
+        'ATTENDANCE',
+        'MISMATCH',
+        'WORKER_UNAVAILABLE',
+        'OTHER',
+      ]) {
+        const next = await active();
+        const accepted = await request(next.id, customer, { reasonCode: code });
+        expect(accepted.status).toBe(201);
+        await as(api, customer).post(`${R}/${accepted.body.id}/cancel`).expect(200);
+      }
     });
 
-    it('keeps older clients working and rejects unknown codes, OTHER without detail and long notes', async () => {
+    it('keeps legacy clients working, validates known codes, and enforces the 500-character notes limit', async () => {
       const b = await active();
       const legacy = await request(b.id);
       expect(legacy.status).toBe(201);
@@ -605,7 +743,7 @@ describe('Replacement API (integration)', () => {
         { reasonCode: 'NOPE' },
         { reasonCode: 'OTHER' },
         {},
-        { reasonCode: 'BEHAVIOUR', notes: 'x'.repeat(2001) },
+        { reasonCode: 'BEHAVIOUR', notes: 'x'.repeat(501) },
       ]) {
         const res = await as(api, customer).post(R, { bookingId: b.id, ...body });
         expect([res.status, body]).toEqual([400, body]);
@@ -613,9 +751,69 @@ describe('Replacement API (integration)', () => {
       const ok = await as(api, customer).post(R, {
         bookingId: b.id,
         reasonCode: 'BEHAVIOUR',
-        notes: 'x'.repeat(2000),
+        notes: 'x'.repeat(500),
       });
       expect(ok.status).toBe(201);
+    });
+
+    it('lets replacement managers relabel and disable only predefined codes without rewriting history', async () => {
+      const manager = await loginAdminWithPermissions(api, ['replacement.manage']);
+      const viewer = await loginAdminWithPermissions(api, ['replacement.view']);
+      const original = (
+        await api.prisma.replacementReasonSetting.findUniqueOrThrow({
+          where: { code: 'ATTENDANCE' },
+        })
+      ).label;
+      expect((await as(api, viewer).get('/api/v1/admin/replacement-reasons')).status).toBe(403);
+      const listed = await as(api, manager).get('/api/v1/admin/replacement-reasons').expect(200);
+      expect(listed.body).toHaveLength(6);
+      expect(listed.body.map((item: { code: string }) => item.code)).toEqual([
+        'WORK_QUALITY',
+        'BEHAVIOUR',
+        'ATTENDANCE',
+        'MISMATCH',
+        'WORKER_UNAVAILABLE',
+        'OTHER',
+      ]);
+
+      await as(api, manager)
+        .patch('/api/v1/admin/replacement-reasons/ATTENDANCE')
+        .send({ label: 'Reliability', isEnabled: true })
+        .expect(200);
+      const b = await active();
+      const created = await as(api, customer)
+        .post(R, { bookingId: b.id, reasonCode: 'ATTENDANCE' })
+        .expect(201);
+      expect(created.body.reason).toBe('Reliability');
+      await as(api, manager)
+        .patch('/api/v1/admin/replacement-reasons/ATTENDANCE')
+        .send({ label: 'Attendance or punctuality', isEnabled: false })
+        .expect(200);
+      const disabledRef = await as(api, customer).get('/api/v1/reference-data');
+      expect((disabledRef.body.data ?? disabledRef.body).replacementReasons).not.toContainEqual(
+        expect.objectContaining({ code: 'ATTENDANCE' }),
+      );
+      const other = await active();
+      const disabled = await as(api, customer).post(R, {
+        bookingId: other.id,
+        reasonCode: 'ATTENDANCE',
+      });
+      expect([disabled.status, disabled.body.code]).toEqual([422, 'REPLACEMENT_REASON_DISABLED']);
+      const history = await api.prisma.replacementRequest.findUniqueOrThrow({
+        where: { id: created.body.id },
+      });
+      expect(history.reasonCode).toBe('ATTENDANCE');
+      expect(history.reason).toBe('Reliability');
+      await as(api, manager)
+        .patch('/api/v1/admin/replacement-reasons/ATTENDANCE')
+        .send({ label: original, isEnabled: true })
+        .expect(200);
+      expect((await as(api, manager).get(`/api/v1/admin/replacement-reasons`)).status).toBe(200);
+      expect(
+        await api.prisma.auditLog.count({
+          where: { entityId: 'ATTENDANCE', action: 'replacement.reason.update' },
+        }),
+      ).toBeGreaterThanOrEqual(3);
     });
 
     it('keeps internal remarks away from customers but visible to staff, with audit history', async () => {

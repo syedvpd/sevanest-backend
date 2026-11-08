@@ -24,11 +24,17 @@ import {
   REPLACEMENT_REASONS,
   ReplacementDetailView,
   ReplacementListQuery,
+  ReplacementReasonAdminView,
   ReplacementTimelineEntry,
+  UpdateReplacementReasonDto,
   ReplacementView,
 } from './dto/replacement.dto';
 import { REPLACEMENT_POLICY, type ReplacementPolicy } from './replacement.policy';
-import { ReplacementRecord, ReplacementRepository } from './replacement.repository';
+import {
+  ReplacementReasonSettingRecord,
+  ReplacementRecord,
+  ReplacementRepository,
+} from './replacement.repository';
 
 export const ReplacementErrorCode = {
   REPLACEMENT_NOT_FOUND: 'REPLACEMENT_NOT_FOUND',
@@ -36,6 +42,8 @@ export const ReplacementErrorCode = {
   REPLACEMENT_ALREADY_OPEN: 'REPLACEMENT_ALREADY_OPEN',
   INVALID_TRANSITION: 'INVALID_TRANSITION',
   SAME_WORKER: 'SAME_WORKER',
+  REPLACEMENT_REASON_DISABLED: 'REPLACEMENT_REASON_DISABLED',
+  REPLACEMENT_REASON_NOT_FOUND: 'REPLACEMENT_REASON_NOT_FOUND',
 } as const;
 
 export interface ReplacementActor {
@@ -116,7 +124,6 @@ export class ReplacementService implements OnModuleInit {
         [{ field: 'neededFrom', messages: ['neededFrom must be a real date, today or later'] }],
       );
     }
-    const reasonText = dto.reason ?? REPLACEMENT_REASONS.find((r) => r.code === reasonCode)!.label;
     const verdict = await this.policy.evaluate(booking);
     if (!verdict.eligible) {
       throw new DomainException(
@@ -128,6 +135,15 @@ export class ReplacementService implements OnModuleInit {
     try {
       const created = await this.repository.transaction(async (tx) => {
         await this.bookings.requestReplacement(booking.id, customerUserId, tx);
+        const reasonSetting = await this.repository.lockReasonSetting(reasonCode, tx);
+        if (!reasonSetting || !reasonSetting.isEnabled) {
+          throw new DomainException(
+            ReplacementErrorCode.REPLACEMENT_REASON_DISABLED,
+            'This replacement reason is not available',
+            HttpStatus.UNPROCESSABLE_ENTITY,
+          );
+        }
+        const reasonText = dto.reason ?? reasonSetting.label;
         const request = await this.repository.create(
           {
             bookingId: booking.id,
@@ -172,6 +188,69 @@ export class ReplacementService implements OnModuleInit {
       data: items.map((r) => this.view(r)),
       meta: { page: query.page, limit: query.limit, total },
     };
+  }
+
+  async activeReasons(): Promise<Array<{ code: string; label: string }>> {
+    return (await this.repository.listReasonSettings(true))
+      .sort(
+        (a, b) =>
+          REPLACEMENT_REASONS.findIndex((item) => item.code === a.code) -
+          REPLACEMENT_REASONS.findIndex((item) => item.code === b.code),
+      )
+      .map(({ code, label }) => ({ code, label }));
+  }
+
+  async adminReasons(): Promise<ReplacementReasonAdminView[]> {
+    return this.orderReasons(await this.repository.listReasonSettings());
+  }
+
+  async updateReason(
+    code: string,
+    dto: UpdateReplacementReasonDto,
+    admin: ReplacementActor,
+  ): Promise<ReplacementReasonAdminView> {
+    const reasonCode = REPLACEMENT_REASONS.find((reason) => reason.code === code)?.code;
+    if (!reasonCode) {
+      throw new DomainException(
+        ReplacementErrorCode.REPLACEMENT_REASON_NOT_FOUND,
+        'Replacement reason not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (dto.label === undefined && dto.isEnabled === undefined) {
+      throw new DomainException(ErrorCode.BAD_REQUEST, 'Nothing to change', HttpStatus.BAD_REQUEST);
+    }
+    const updated = await this.repository.transaction(async (tx) => {
+      const existing = await this.repository.lockReasonSetting(reasonCode, tx);
+      if (!existing) {
+        throw new DomainException(
+          ReplacementErrorCode.REPLACEMENT_REASON_NOT_FOUND,
+          'Replacement reason not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      const reason = await this.repository.updateReasonSetting(
+        reasonCode,
+        { ...dto, updatedByUserId: admin.userId },
+        tx,
+      );
+      await this.audit.record(
+        {
+          action: 'replacement.reason.update',
+          entityType: 'replacement_reason',
+          entityId: reasonCode,
+          actorId: admin.userId,
+          actorRole: admin.roles?.join(',') || admin.kind,
+          metadata: {
+            before: { label: existing.label, isEnabled: existing.isEnabled },
+            after: { label: reason.label, isEnabled: reason.isEnabled },
+          },
+        },
+        tx,
+      );
+      return reason;
+    });
+    return this.reasonView(updated);
   }
 
   async getMine(customerUserId: string, id: string): Promise<ReplacementDetailView> {
@@ -536,6 +615,23 @@ export class ReplacementService implements OnModuleInit {
       decidedAt: r.decidedAt,
       completedAt: r.completedAt,
     };
+  }
+
+  private reasonView(reason: ReplacementReasonSettingRecord): ReplacementReasonAdminView {
+    return {
+      code: reason.code,
+      label: reason.label,
+      isEnabled: reason.isEnabled,
+      updatedByUserId: reason.updatedByUserId,
+      updatedAt: reason.updatedAt,
+    };
+  }
+
+  private orderReasons(reasons: ReplacementReasonSettingRecord[]): ReplacementReasonAdminView[] {
+    const order = new Map(REPLACEMENT_REASONS.map((reason, index) => [reason.code, index]));
+    return reasons
+      .sort((a, b) => (order.get(a.code) ?? 0) - (order.get(b.code) ?? 0))
+      .map((reason) => this.reasonView(reason));
   }
 
   private async adminView(r: ReplacementRecord): Promise<AdminReplacementView> {
