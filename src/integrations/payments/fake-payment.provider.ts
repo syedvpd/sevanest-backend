@@ -13,6 +13,8 @@ import type {
 
 interface FakeOrder {
   amountMinor: number;
+  currency: string;
+  reference: string;
   payments: Map<string, ProviderPaymentOutcome>;
 }
 
@@ -33,6 +35,8 @@ export class FakePaymentProvider implements PaymentProvider {
   }> = [];
   /** Test switches. */
   failNextCreateOrder = false;
+  /** Simulates a successful remote create whose response is lost before the caller can persist the order id. */
+  failNextCreateOrderAfterPersist = false;
   refundOutcome: ProviderPaymentOutcome = 'SUCCEEDED';
   /** When set, every lookup/refund call fails like an unreachable gateway (retryable). */
   outage = false;
@@ -53,16 +57,40 @@ export class FakePaymentProvider implements PaymentProvider {
     }
     this.createdOrders.push(input);
     const providerOrderId = `order_fake_${++this.orderSeq}_${Date.now()}`;
-    this.orders.set(providerOrderId, { amountMinor: input.amountMinor, payments: new Map() });
-    return Promise.resolve({
+    const order = {
+      amountMinor: input.amountMinor,
+      currency: input.currency,
+      reference: input.reference,
+      payments: new Map<string, ProviderPaymentOutcome>(),
+    };
+    this.orders.set(providerOrderId, order);
+    if (this.failNextCreateOrderAfterPersist) {
+      this.failNextCreateOrderAfterPersist = false;
+      return Promise.reject(new ProviderError('payment', 'gateway response lost', true));
+    }
+    return Promise.resolve(this.orderView(providerOrderId, order));
+  }
+
+  findOrderByReference(reference: string): Promise<ProviderOrder | null> {
+    if (this.outage)
+      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
+    const found = [...this.orders.entries()].find(([, order]) => order.reference === reference);
+    return Promise.resolve(found ? this.orderView(found[0], found[1]) : null);
+  }
+
+  private orderView(providerOrderId: string, order: FakeOrder): ProviderOrder {
+    return {
       providerOrderId,
+      reference: order.reference,
+      amountMinor: order.amountMinor,
+      currency: order.currency,
       checkoutPayload: {
         gateway: 'fake',
         orderId: providerOrderId,
-        amount: input.amountMinor,
-        currency: input.currency,
+        amount: order.amountMinor,
+        currency: order.currency,
       },
-    });
+    };
   }
 
   verifyPayment(input: {

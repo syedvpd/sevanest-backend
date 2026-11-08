@@ -30,8 +30,14 @@ describe('Payment API (integration)', () => {
   const gateway = () => fakeGateway(api);
   const pending = (): Promise<TestBooking> =>
     makeBooking(api, admin, customer, area.id, 'PENDING_PAYMENT');
-  const startPayment = (bookingId: string, caller: { accessToken: string } = customer) =>
-    as(api, caller).post('/api/v1/payments', { bookingId });
+  const startPayment = (
+    bookingId: string,
+    caller: { accessToken: string } = customer,
+    idempotencyKey?: string,
+  ) => {
+    const request = as(api, caller).post('/api/v1/payments', { bookingId });
+    return idempotencyKey ? request.set('Idempotency-Key', idempotencyKey) : request;
+  };
   const bookingStatus = async (id: string) =>
     (await as(api, customer).get(`/api/v1/bookings/${id}`)).body.status as string;
   const webhook = (event: Parameters<ReturnType<typeof fakeGateway>['webhook']>[0]) => {
@@ -187,6 +193,37 @@ describe('Payment API (integration)', () => {
       expect([200, 201]).toContain(retry.status);
       expect(retry.body.status).toBe('PENDING');
       expect(await api.prisma.payment.count({ where: { bookingId: booking.id } })).toBe(1);
+    });
+
+    it('recovers an order when the provider created it but the create response was lost', async () => {
+      const booking = await pending();
+      gateway().failNextCreateOrderAfterPersist = true;
+      const lost = await startPayment(booking.id, customer, 'payment-order-recovery-001');
+      expect(lost.status).toBe(503);
+
+      const retry = await startPayment(booking.id, customer, 'payment-order-recovery-001');
+      expect([200, 201]).toContain(retry.status);
+      expect(retry.body.status).toBe('PENDING');
+      expect(retry.body.checkout.orderId).toMatch(/^order_fake_/);
+      expect(
+        gateway().createdOrders.filter((order) => order.reference === retry.body.id),
+      ).toHaveLength(1);
+      expect(await api.prisma.payment.count({ where: { bookingId: booking.id } })).toBe(1);
+    });
+
+    it('serializes different idempotency keys for the same booking into one provider order', async () => {
+      const booking = await pending();
+      const results = await Promise.all([
+        startPayment(booking.id, customer, 'payment-order-race-key-001'),
+        startPayment(booking.id, customer, 'payment-order-race-key-002'),
+      ]);
+      expect(results.some((result) => [200, 201].includes(result.status))).toBe(true);
+      const payment = await api.prisma.payment.findFirstOrThrow({
+        where: { bookingId: booking.id },
+      });
+      expect(
+        gateway().createdOrders.filter((order) => order.reference === payment.id),
+      ).toHaveLength(1);
     });
   });
 

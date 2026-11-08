@@ -13,12 +13,15 @@ export interface CreateProviderOrderInput {
   currency: string;
   /** Our internal reference, echoed back by the provider for reconciliation. */
   reference: string;
-  /** Makes provider-side creation safe to retry. */
+  /** Stable retry key for provider APIs that expose a dedicated idempotency contract. */
   idempotencyKey: string;
 }
 
 export interface ProviderOrder {
   providerOrderId: string;
+  reference: string;
+  amountMinor: number;
+  currency: string;
   /** Opaque data the client SDK / hosted checkout needs. */
   checkoutPayload: Record<string, unknown>;
 }
@@ -63,6 +66,8 @@ export interface ProviderWebhookEvent extends ProviderPaymentDetails {
 
 export interface PaymentProvider {
   createOrder(input: CreateProviderOrderInput): Promise<ProviderOrder>;
+  /** Find a previously-created order by the stable merchant reference, without creating a new order. */
+  findOrderByReference(reference: string): Promise<ProviderOrder | null>;
   /** Server-side verification of a client-reported payment. The client's "success" is only a hint (BEA p7). */
   verifyPayment(input: {
     providerOrderId: string;

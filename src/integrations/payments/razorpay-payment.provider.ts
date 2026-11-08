@@ -37,6 +37,13 @@ interface RzpPayment {
   error_description?: unknown;
 }
 
+interface RzpOrder {
+  id?: unknown;
+  receipt?: unknown;
+  amount?: unknown;
+  currency?: unknown;
+}
+
 const str = (v: unknown): string | undefined =>
   typeof v === 'string' && v.trim() ? v.trim() : undefined;
 
@@ -119,18 +126,22 @@ export class RazorpayPaymentProvider implements PaymentProvider {
       receipt: input.reference.slice(0, 40),
       notes: { reference: input.reference },
     });
-    const id = (body as { id?: unknown } | null)?.id;
-    if (typeof id !== 'string') throw new ProviderError('razorpay', 'order was not created', false);
-    return {
-      providerOrderId: id,
-      checkoutPayload: {
-        gateway: 'razorpay',
-        keyId: this.settings.keyId,
-        orderId: id,
-        amount: input.amountMinor,
-        currency: input.currency,
-      },
-    };
+    return this.toOrder(body, input.reference);
+  }
+
+  /** Recover the order for a stable internal payment reference after an ambiguous create response. */
+  async findOrderByReference(reference: string): Promise<ProviderOrder | null> {
+    const query = new URLSearchParams({ receipt: reference, count: '100' });
+    const body = await this.call('GET', `/v1/orders?${query.toString()}`);
+    const items = (body as { items?: unknown } | null)?.items;
+    if (!Array.isArray(items)) {
+      throw new ProviderError('razorpay', 'unexpected orders list', true);
+    }
+    const matches = (items as RzpOrder[]).filter((order) => order.receipt === reference);
+    if (matches.length > 1) {
+      throw new ProviderError('razorpay', 'multiple orders share the payment reference', false);
+    }
+    return matches.length === 1 ? this.toOrder(matches[0], reference) : null;
   }
 
   async verifyPayment(input: {
@@ -311,6 +322,31 @@ export class RazorpayPaymentProvider implements PaymentProvider {
       amountMinor: p.amount,
       currency: typeof p.currency === 'string' ? p.currency : undefined,
       ...razorpayDetails(p),
+    };
+  }
+
+  private toOrder(raw: unknown, expectedReference: string): ProviderOrder {
+    const order = raw as RzpOrder | null;
+    if (
+      typeof order?.id !== 'string' ||
+      order.receipt !== expectedReference ||
+      typeof order.amount !== 'number' ||
+      typeof order.currency !== 'string'
+    ) {
+      throw new ProviderError('razorpay', 'unexpected order details', true);
+    }
+    return {
+      providerOrderId: order.id,
+      reference: expectedReference,
+      amountMinor: order.amount,
+      currency: order.currency,
+      checkoutPayload: {
+        gateway: 'razorpay',
+        keyId: this.settings.keyId,
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+      },
     };
   }
 

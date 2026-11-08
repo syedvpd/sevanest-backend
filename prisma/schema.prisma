@@ -882,6 +882,9 @@ model Payment {
   reconcileLastAt       DateTime?     @map("reconcile_last_at") @db.Timestamptz(6)
   /// Stable code of the last check outcome (e.g. NO_GATEWAY_ACTIVITY, PROVIDER_UNAVAILABLE). Never provider payloads.
   reconcileLastNote     String?       @map("reconcile_last_note")
+  /// Durable marker set before calling the provider. If no order id was persisted, retries only look up the stable receipt; they never
+  /// issue another create request for this attempt because the first response may have been lost.
+  orderCreationStartedAt DateTime?     @map("order_creation_started_at") @db.Timestamptz(6)
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 

@@ -41,7 +41,16 @@ describe('RazorpayPaymentProvider', () => {
   const provider = new RazorpayPaymentProvider(settings);
 
   it('creates an order with HTTP Basic auth and returns public checkout data only', async () => {
-    reply = () => ({ status: 200, body: { id: 'order_1', status: 'created' } });
+    reply = () => ({
+      status: 200,
+      body: {
+        id: 'order_1',
+        receipt: 'pay-uuid',
+        amount: 49900,
+        currency: 'INR',
+        status: 'created',
+      },
+    });
     const order = await provider.createOrder({
       amountMinor: 49900,
       currency: 'INR',
@@ -49,6 +58,11 @@ describe('RazorpayPaymentProvider', () => {
       idempotencyKey: 'pay-uuid',
     });
     expect(order.providerOrderId).toBe('order_1');
+    expect(order).toMatchObject({
+      reference: 'pay-uuid',
+      amountMinor: 49900,
+      currency: 'INR',
+    });
     expect(order.checkoutPayload).toEqual({
       gateway: 'razorpay',
       keyId: settings.keyId,
@@ -66,6 +80,59 @@ describe('RazorpayPaymentProvider', () => {
       amount: 49900,
       currency: 'INR',
       receipt: 'pay-uuid',
+    });
+  });
+
+  describe('order recovery by merchant reference', () => {
+    it('recovers the existing order by its unique receipt without creating another', async () => {
+      reply = () => ({
+        status: 200,
+        body: {
+          items: [
+            {
+              id: 'order_existing',
+              receipt: 'pay-uuid',
+              amount: 49900,
+              currency: 'INR',
+              status: 'created',
+            },
+          ],
+        },
+      });
+
+      await expect(provider.findOrderByReference('pay-uuid')).resolves.toMatchObject({
+        providerOrderId: 'order_existing',
+        reference: 'pay-uuid',
+        amountMinor: 49900,
+        currency: 'INR',
+      });
+      expect(calls[0].url).toBe('https://rzp.test/v1/orders?receipt=pay-uuid&count=100');
+      expect(calls[0].init.method).toBe('GET');
+    });
+
+    it('returns null only after a successful empty lookup', async () => {
+      reply = () => ({ status: 200, body: { items: [] } });
+      await expect(provider.findOrderByReference('pay-uuid')).resolves.toBeNull();
+    });
+
+    it('fails closed when the order listing is malformed or ambiguous', async () => {
+      reply = () => ({ status: 200, body: {} });
+      await expect(provider.findOrderByReference('pay-uuid')).rejects.toThrow(
+        'unexpected orders list',
+      );
+
+      reply = () => ({
+        status: 200,
+        body: {
+          items: [
+            { id: 'order_1', receipt: 'pay-uuid', amount: 49900, currency: 'INR' },
+            { id: 'order_2', receipt: 'pay-uuid', amount: 49900, currency: 'INR' },
+          ],
+        },
+      });
+      await expect(provider.findOrderByReference('pay-uuid')).rejects.toThrow(
+        'multiple orders share the payment reference',
+      );
     });
   });
 

@@ -38,6 +38,7 @@ export interface PaymentRecord {
   reconcileAttempts: number;
   reconcileNextAt: Date | null;
   reconcileLastNote: string | null;
+  orderCreationStartedAt: Date | null;
   createdAt: Date;
 }
 
@@ -114,6 +115,7 @@ function toRecord(row: Row): PaymentRecord {
     reconcileAttempts: row.reconcileAttempts,
     reconcileNextAt: row.reconcileNextAt,
     reconcileLastNote: row.reconcileLastNote,
+    orderCreationStartedAt: row.orderCreationStartedAt,
     createdAt: row.createdAt,
   };
 }
@@ -173,6 +175,7 @@ export interface PaymentChange {
   reconcileClaimedUntil?: Date | null;
   reconcileLastAt?: Date;
   reconcileLastNote?: string | null;
+  orderCreationStartedAt?: Date | null;
 }
 
 /** The only place in the application that touches the payment tables (Prisma models). */

@@ -129,3 +129,20 @@ The Payment module coordinates closely with Bookings and Notifications:
 * **Booking Orchestration:** Payment success automatically unlocks the booking schedule and transitions the engagement to `CONFIRMED`.
 * **Receipt Delivery:** Successful transactions trigger the Notifications module to dispatch confirmation SMS messages and PDF download links to the customer.
 
+## 6. Provider Order Creation Recovery
+
+Every payment row is persisted before a provider order is requested. Before the first Razorpay create call, the backend records an
+`orderCreationStartedAt` marker and schedules lookup recovery. The payment UUID is the stable Razorpay `receipt` reference. If the
+create response is lost or the local write of the returned order id fails, retries and the payment recovery worker query
+`GET /v1/orders?receipt=<payment-id>` and attach the matching order. They do not issue another create request for an attempt whose
+marker is already set. This also serializes concurrent requests across API instances through PostgreSQL row locks.
+
+Razorpay documents a receipt filter on Fetch All Orders and requires a unique receipt, but its Create Order documentation does not
+document a general idempotency header. Therefore this flow does not claim exactly-once behavior from an undocumented provider
+feature. If an attempted order is not discoverable, the backend keeps the attempt in `CREATED`, performs bounded lookup retries, and
+raises a payment exception for manual reconciliation instead of creating another order. Existing open rows without an order are
+backfilled as lookup-only attempts by the additive migration. A later payment attempt after a payment reaches `FAILED` still uses a
+separate payment record and its own stable receipt.
+
+This recovery path is covered by mocked provider tests. Razorpay staging behavior, provider list consistency, and migration application
+against a fresh disposable database remain unverified.

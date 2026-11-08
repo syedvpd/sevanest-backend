@@ -20,6 +20,10 @@ export class DisabledPaymentProvider implements PaymentProvider {
     return Promise.resolve().then(() => this.fail());
   }
 
+  findOrderByReference(): Promise<ProviderOrder | null> {
+    return Promise.resolve().then(() => this.fail());
+  }
+
   verifyPayment(): Promise<ProviderPayment> {
     return Promise.resolve().then(() => this.fail());
   }

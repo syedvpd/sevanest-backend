@@ -418,6 +418,13 @@ export class PaymentService {
     if (!payment.providerOrderId) {
       payment = await this.openOrder(payment);
     }
+    if (!payment.providerOrderId) {
+      throw new DomainException(
+        PaymentErrorCode.BOOKING_NOT_PAYABLE,
+        'This booking is no longer waiting for payment',
+        HttpStatus.CONFLICT,
+      );
+    }
     return { ...this.view(payment), checkout: this.checkout(payment.checkoutPayload) };
   }
 
@@ -522,6 +529,13 @@ export class PaymentService {
     }
     if (!payment.providerOrderId) {
       payment = await this.openOrder(payment);
+    }
+    if (!payment.providerOrderId) {
+      throw new DomainException(
+        PaymentErrorCode.BOOKING_NOT_PAYABLE,
+        'This booking is no longer payable',
+        HttpStatus.CONFLICT,
+      );
     }
     return { ...this.view(payment), checkout: this.checkout(payment.checkoutPayload) };
   }
@@ -772,6 +786,9 @@ export class PaymentService {
   async reconcileNow(paymentId: string, opts: { actor?: PaymentActor } = {}): Promise<string> {
     const payment = await this.repository.findById(paymentId);
     if (!payment) return 'NOT_FOUND';
+    if (payment.status === 'CREATED' && payment.orderCreationStartedAt) {
+      return this.reconcileOrderCreation(payment, opts);
+    }
     if (payment.status === 'REFUND_PENDING') return this.reconcileRefund(payment, opts);
     if (payment.status !== 'PENDING' && payment.status !== 'FAILED') {
       await this.clearSchedule(payment.id);
@@ -819,6 +836,31 @@ export class PaymentService {
       !remote.some((r) => r.outcome !== 'PENDING');
     await this.markChecked(payment.id, note, concern, 'RECONCILIATION_EXHAUSTED', opts.actor);
     return note;
+  }
+
+  /** A create attempt with no persisted provider id is ambiguous: lookup only, never issue another create request. */
+  private async reconcileOrderCreation(
+    payment: PaymentRecord,
+    opts: { actor?: PaymentActor },
+  ): Promise<string> {
+    let order: Awaited<ReturnType<PaymentProvider['findOrderByReference']>>;
+    try {
+      order = await this.provider.findOrderByReference(payment.id);
+    } catch (error) {
+      return this.checkFailed(payment, error, opts, 'RECONCILIATION_EXHAUSTED');
+    }
+    if (!order) {
+      await this.markChecked(
+        payment.id,
+        'ORDER_NOT_FOUND_BY_REFERENCE',
+        true,
+        'RECONCILIATION_EXHAUSTED',
+        opts.actor,
+      );
+      return 'ORDER_NOT_FOUND';
+    }
+    await this.persistProviderOrder(payment, order);
+    return 'ORDER_RECOVERED';
   }
 
   /**
@@ -1135,33 +1177,127 @@ export class PaymentService {
   // --- internals ---------------------------------------------------------------------------------------------
 
   private async openOrder(payment: PaymentRecord): Promise<PaymentRecord> {
+    let order: Awaited<ReturnType<PaymentProvider['findOrderByReference']>> = null;
+    let createAllowed = false;
     try {
-      const order = await this.provider.createOrder({
-        amountMinor: payment.amountMinor,
-        currency: payment.currency,
-        reference: payment.id,
-        idempotencyKey: payment.id,
-      });
+      // A lookup error is not evidence that no order exists. Fail closed before claiming or issuing a create request.
+      order = await this.provider.findOrderByReference(payment.id);
       await this.repository.transaction(async (tx) => {
-        const locked = (await this.repository.lock(payment.id, tx))!;
-        if (locked.providerOrderId) return;
+        // Keep lock order consistent with settlement and cancellation: booking first, payment second. The durable marker is committed
+        // before the provider call, so a concurrent request or a process restart can only look up this attempt, never create it again.
+        await this.bookings.lockBooking(payment.bookingId, tx);
+        const locked = await this.repository.lock(payment.id, tx);
+        if (
+          !locked ||
+          locked.providerOrderId ||
+          locked.status !== 'CREATED' ||
+          locked.orderCreationStartedAt ||
+          order
+        )
+          return;
         await this.repository.update(
           locked.id,
           {
-            status: 'PENDING',
-            providerOrderId: order.providerOrderId,
-            checkoutPayload: order.checkoutPayload,
-            // The first authoritative check is booked now, so a lost callback is found even if nothing else ever happens.
+            orderCreationStartedAt: new Date(),
             reconcileAttempts: 0,
             reconcileNextAt: new Date(Date.now() + RECOVERY.firstCheckDelayMs),
+            reconcileClaimedUntil: null,
           },
           tx,
         );
+        createAllowed = true;
       });
+
+      // A concurrent request or a prior process may have claimed/created the order after the preflight lookup.
+      if (!order && !createAllowed) order = await this.provider.findOrderByReference(payment.id);
+      if (!order && createAllowed) {
+        order = await this.provider.createOrder({
+          amountMinor: payment.amountMinor,
+          currency: payment.currency,
+          reference: payment.id,
+          idempotencyKey: payment.id,
+        });
+      }
+      if (!order) {
+        throw new ProviderError(
+          'payment',
+          'order creation is unresolved; refusing another create',
+          true,
+        );
+      }
+      await this.persistProviderOrder(payment, order);
     } catch (error) {
+      // A provider 4xx is an explicit rejection, so a later request may safely start a fresh create. Network/5xx and database errors
+      // remain marked as ambiguous and are lookup-only on every retry.
+      if (error instanceof ProviderError && !error.retryable) {
+        await this.clearOrderCreationAttempt(payment.id).catch(() => undefined);
+      }
       throw this.providerFailure(error, PaymentErrorCode.PAYMENT_PROVIDER_UNAVAILABLE);
     }
     return (await this.repository.findById(payment.id))!;
+  }
+
+  private async persistProviderOrder(
+    payment: PaymentRecord,
+    order: NonNullable<Awaited<ReturnType<PaymentProvider['findOrderByReference']>>>,
+  ): Promise<void> {
+    if (
+      order.reference !== payment.id ||
+      order.amountMinor !== payment.amountMinor ||
+      order.currency !== payment.currency
+    ) {
+      throw new ProviderError('payment', 'order does not match the payment attempt', true);
+    }
+    await this.repository.transaction(async (tx) => {
+      await this.bookings.lockBooking(payment.bookingId, tx);
+      const locked = await this.repository.lock(payment.id, tx);
+      if (!locked) return;
+      if (locked.providerOrderId) {
+        if (locked.providerOrderId !== order.providerOrderId) {
+          throw new ProviderError(
+            'payment',
+            'payment is linked to a different provider order',
+            false,
+          );
+        }
+        return;
+      }
+      const status = locked.status === 'CREATED' ? 'PENDING' : locked.status;
+      await this.repository.update(
+        locked.id,
+        {
+          status,
+          providerOrderId: order.providerOrderId,
+          checkoutPayload: order.checkoutPayload,
+          orderCreationStartedAt: null,
+          reconcileAttempts: 0,
+          reconcileClaimedUntil: null,
+          reconcileNextAt:
+            status === 'PENDING'
+              ? new Date(Date.now() + RECOVERY.firstCheckDelayMs)
+              : status === 'FAILED'
+                ? (locked.reconcileNextAt ?? new Date(Date.now() + RECOVERY.tailFirstDelayMs))
+                : null,
+        },
+        tx,
+      );
+    });
+  }
+
+  private async clearOrderCreationAttempt(paymentId: string): Promise<void> {
+    await this.repository.transaction(async (tx) => {
+      const payment = await this.repository.lock(paymentId, tx);
+      if (!payment || payment.providerOrderId) return;
+      await this.repository.update(
+        paymentId,
+        {
+          orderCreationStartedAt: null,
+          reconcileNextAt: null,
+          reconcileClaimedUntil: null,
+        },
+        tx,
+      );
+    });
   }
 
   /**
@@ -1667,9 +1803,12 @@ export class PaymentService {
     await this.repository.transaction(async (tx) => {
       const payment = await this.repository.lock(paymentId, tx);
       if (!payment) return;
+      const orderCreationUnresolved =
+        payment.status === 'CREATED' && payment.orderCreationStartedAt !== null;
       if (
         FINAL_FOR_RECOVERY.has(payment.status) ||
-        !['PENDING', 'FAILED', 'REFUND_PENDING'].includes(payment.status)
+        (!['PENDING', 'FAILED', 'REFUND_PENDING'].includes(payment.status) &&
+          !orderCreationUnresolved)
       ) {
         await this.repository.update(
           paymentId,
