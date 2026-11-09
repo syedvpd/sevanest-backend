@@ -441,39 +441,6 @@ export class AdminBookingsController {
   }
 
   @Idempotent()
-  @Post(':bookingId/reopen-matching')
-  @HttpCode(HttpStatus.OK)
-  @Permissions(PermissionCode.BOOKING_MANAGE)
-  @ApiResponse({
-    status: HttpStatus.OK,
-    schema: {
-      oneOf: [
-        { $ref: getSchemaPath(AdminBookingView) },
-        { $ref: getSchemaPath(FindAnotherWorkerResponse) },
-      ],
-    },
-  })
-  @ApiOperation({
-    summary: 'Continue matching after an interview or trial on behalf of a customer',
-    description:
-      'Admin bearer token (ADMIN only); requires booking.manage. Scheduled interviews reopen on the same booking and may omit reason fields. A completed-interview Find Another Worker request must be initiated by the customer so they select and submit its enabled reason code; an Admin call for a completed interview returns 403. Admin matches the successor through normal booking actions.',
-  })
-  @ApiBody({ type: FindAnotherWorkerDto })
-  async reopenMatching(
-    @Param('bookingId', ParseUUIDPipe) bookingId: string,
-    @Body() dto: FindAnotherWorkerDto,
-    @CurrentUser() admin: AuthenticatedUser,
-  ): Promise<AdminBookingView | FindAnotherWorkerResponse> {
-    const access = await this.users.getAccess(admin.userId);
-    const result = await this.bookings.reopenMatching(bookingId, dto ?? {}, {
-      kind: 'ADMIN',
-      userId: admin.userId,
-      roles: access.roles,
-    });
-    return 'originalBooking' in result ? result : this.bookings.adminGet(bookingId);
-  }
-
-  @Idempotent()
   @Post(':bookingId/:action')
   @ApiModelResponse(AdminBookingView)
   @HttpCode(HttpStatus.OK)

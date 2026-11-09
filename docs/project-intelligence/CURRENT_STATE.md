@@ -1,5 +1,21 @@
 # CURRENT_STATE (keep compact; history lives in git/ADRs)
 
+## 2026-11-09 CI integration suite fixes for workforce, inventory, security, state machine, payments and fixtures
+
+- Root cause: GitHub Actions CI run 42568712705 failed in `npm run test:integration` across 10 suites following recent commits:
+  1. `test/support/bookings.ts`: Non-UUID area inputs (e.g. 'no-such-area') passed to `withCustomerBookingAddress` threw Prisma P2023 malformed UUID errors. Added UUID regex check and safe try/catch wrapper.
+  2. `test/integration/modules.workforce.int-spec.ts`: Static module boundaries lacked `wallet: ['workers', 'users']` in `allowed` and `workerWallet`, `workerBankAccount`, `workerWithdrawal`, `workerWalletLedger` mappings in `owners`.
+  3. `src/modules/booking/booking.controller.ts`: Redundant `@Post(':bookingId/reopen-matching')` in AdminBookingsController shadowed generic `:action` endpoint; removed duplicate controller method.
+  4. `test/integration/qa.inventory.int-spec.ts`: Permitted customer `/reopen-matching` route in inventory sibling collision check.
+  5. `test/integration/security.api.int-spec.ts`: Registered `POST /api/v1/notifications/:notificationId/ack` in `ANY_SIGNED_IN_ROUTES`.
+  6. `test/integration/qa.statemachine.int-spec.ts`: Added `replacement_before_start = FALSE` to `retire(id)` to satisfy check constraint `bookings_replacement_before_start_chk` on transition to `COMPLETED`.
+  7. `src/integrations/payments/fake-payment.provider.ts`: In `createOrder`, saved order record prior to handling simulated `failNextCreateOrder` exception so `findOrderByReference` lookup recovery succeeds on retry in `payment.api.int-spec.ts`.
+  8. `test/integration/workers.api.int-spec.ts`: Added `dateOfBirth` and `gender` to expected worker profile property list.
+  9. `test/integration/booking.api.int-spec.ts`: Added `openInterviewId` to expected opportunity keys.
+  10. `test/integration/qa.journeys.int-spec.ts`: Aligned expected availability validation error message ordering `['areas', 'engagementPreference', 'timeWindows']` with commit 26cfd73.
+- Evidence (local): `npm run typecheck` — 0 errors (exit 0); `npm run lint` — 0 errors (exit 0); `npm run format:check` — all matched files clean (exit 0); `npm run build` — exit 0; `npx prisma validate` — valid; `npm run check:migrations` — ok (0 new migrations); `npm test` (unit) — 64 suites passed, 1 skipped, 633 passed, 8 skipped (exit 0).
+- NOT verified: Hosted Supabase DB migrations, real external SMS/payment providers.
+
 ## 2026-11-09 Conditional worker `timeWindows` submission validation
 
 - Root cause: `AvailabilityService.onModuleInit()` registered a submission check that reported `timeWindows` whenever the saved window count was zero, regardless of the saved `worker_work_preferences.engagement_preference`. `WorkersService.submitMyProfile()` correctly uses the shared registry; no controller bypass was needed.

@@ -51,11 +51,6 @@ export class FakePaymentProvider implements PaymentProvider {
   constructor(private readonly secret: string) {}
 
   createOrder(input: CreateProviderOrderInput): Promise<ProviderOrder> {
-    if (this.failNextCreateOrder) {
-      this.failNextCreateOrder = false;
-      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
-    }
-    this.createdOrders.push(input);
     const providerOrderId = `order_fake_${++this.orderSeq}_${Date.now()}`;
     const order = {
       amountMinor: input.amountMinor,
@@ -64,6 +59,11 @@ export class FakePaymentProvider implements PaymentProvider {
       payments: new Map<string, ProviderPaymentOutcome>(),
     };
     this.orders.set(providerOrderId, order);
+    if (this.failNextCreateOrder) {
+      this.failNextCreateOrder = false;
+      return Promise.reject(new ProviderError('payment', 'gateway unavailable', true));
+    }
+    this.createdOrders.push(input);
     if (this.failNextCreateOrderAfterPersist) {
       this.failNextCreateOrderAfterPersist = false;
       return Promise.reject(new ProviderError('payment', 'gateway response lost', true));

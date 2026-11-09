@@ -131,6 +131,7 @@ describe('Booking API (integration)', () => {
           'category',
           'engagement',
           'id',
+          'openInterviewId',
           'proposedSlotAt',
           'proposedSlotNote',
           'requestedStartDate',

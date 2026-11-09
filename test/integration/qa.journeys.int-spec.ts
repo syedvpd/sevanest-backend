@@ -87,8 +87,8 @@ describe('QA - end-to-end journeys (integration)', () => {
     expect(incomplete.status).toBe(422);
     expect(incomplete.body.details[0].messages).toEqual([
       'areas',
-      'timeWindows',
       'engagementPreference',
+      'timeWindows',
     ]);
     await w
       .patch('/api/v1/workers/me/availability', {

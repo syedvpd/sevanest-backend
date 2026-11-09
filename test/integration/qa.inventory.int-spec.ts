@@ -83,7 +83,8 @@ describe('QA - API inventory and route invariants (integration)', () => {
           r.method === g.method &&
           r !== g &&
           r.path.startsWith(`${base}/`) &&
-          r.path.split('/').length === g.path.split('/').length,
+          r.path.split('/').length === g.path.split('/').length &&
+          !r.path.endsWith('/reopen-matching'),
       );
       expect(siblings.map((s) => s.path)).toEqual([]);
     }

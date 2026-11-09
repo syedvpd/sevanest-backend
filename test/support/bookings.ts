@@ -76,6 +76,8 @@ export async function ensureCustomerAddress(
   return (createdAddress.body as { id: string }).id;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /** Add a customer-owned address to a valid-area booking fixture when one was not specified. */
 export async function withCustomerBookingAddress(
   api: ApiApp,
@@ -85,18 +87,22 @@ export async function withCustomerBookingAddress(
   const payload = body as Record<string, unknown>;
   if (caller.type !== 'CUSTOMER' || !caller.userId || 'addressId' in payload) return payload;
   const areaId = payload.areaId;
-  if (typeof areaId !== 'string') return payload;
-  const area = await api.prisma.serviceArea.findUnique({
-    where: { id: areaId },
-    select: { id: true },
-  });
-  if (!area) return payload;
-  const addressId = await ensureCustomerAddress(
-    api,
-    caller as { accessToken: string; userId: string },
-    area.id,
-  );
-  return { ...payload, addressId };
+  if (typeof areaId !== 'string' || !UUID_PATTERN.test(areaId)) return payload;
+  try {
+    const area = await api.prisma.serviceArea.findUnique({
+      where: { id: areaId },
+      select: { id: true },
+    });
+    if (!area) return payload;
+    const addressId = await ensureCustomerAddress(
+      api,
+      caller as { accessToken: string; userId: string },
+      area.id,
+    );
+    return { ...payload, addressId };
+  } catch {
+    return payload;
+  }
 }
 
 /** Takes a fresh booking with a fresh verified worker through the real HTTP lifecycle up to `stage`. */

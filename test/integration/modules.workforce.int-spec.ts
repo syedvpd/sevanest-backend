@@ -94,6 +94,7 @@ describe('Module boundaries (static)', () => {
     ];
     allowed.payment = ['booking', 'users', 'alerts'];
     allowed.support = ['booking', 'users', 'workers', 'alerts'];
+    allowed.wallet = ['workers', 'users'];
     const violations: string[] = [];
     for (const [file, content] of text) {
       const owner = moduleOf(file);
@@ -159,6 +160,10 @@ describe('Module boundaries (static)', () => {
       adminAlert: 'alerts',
       legalAcceptance: 'legal',
       deletionRequest: 'legal',
+      workerWallet: 'wallet',
+      workerBankAccount: 'wallet',
+      workerWithdrawal: 'wallet',
+      workerWalletLedger: 'wallet',
     };
     const violations: string[] = [];
     for (const [file, content] of text) {

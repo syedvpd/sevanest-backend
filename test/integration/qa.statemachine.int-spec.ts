@@ -198,7 +198,7 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
     (await api.prisma.booking.findUniqueOrThrow({ where: { id } })).status;
   const retire = (id: string) =>
     api.prisma
-      .$executeRaw`UPDATE bookings SET status = 'COMPLETED', start_date = coalesce(start_date, current_date), worker_id = coalesce(worker_id, ${worker.workerId}::uuid), cancel_reason = NULL, cancelled_at = NULL, cancelled_by_user_id = NULL, scheduled_at = NULL, schedule_type = NULL WHERE id = ${id}::uuid`;
+      .$executeRaw`UPDATE bookings SET status = 'COMPLETED', replacement_before_start = FALSE, start_date = coalesce(start_date, current_date), worker_id = coalesce(worker_id, ${worker.workerId}::uuid), cancel_reason = NULL, cancelled_at = NULL, cancelled_by_user_id = NULL, scheduled_at = NULL, schedule_type = NULL WHERE id = ${id}::uuid`;
 
   it('behaves exactly as the FRD model says for every state, action and actor (297 combinations)', async () => {
     const wrong: string[] = [];
