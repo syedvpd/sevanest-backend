@@ -336,3 +336,21 @@ Evidence (local):
 
 Git: Committed as `d8f5139` ("fix(ci): export withCustomerBookingAddress and clean up test lint directives") and pushed to `origin/main` upon explicit user request.
 NOT verified locally: `npm run test:integration` and `npm run test:e2e` were not run locally due to absence of local Docker daemon for PostgreSQL/Redis services; these run inside GitHub Actions CI.
+
+## 2026-11-09 CI/CD Integration Suite Fixes (Resolution of Run 42559337813)
+
+Built: Fixed 4 integration test suite failures discovered in GitHub Actions CI run 42559337813:
+1. `qa.inventory.int-spec.ts`: Removed duplicate route `GET /api/v1/workers/me/onboarding` from `WorkersController` (was duplicating `WorkerOnboardingController.get`).
+2. `contract.openapi.int-spec.ts`: Added `DeleteWorkerBankAccountResponse` DTO and `@ApiModelResponse(DeleteWorkerBankAccountResponse)` to `deleteBankAccount` in `WalletController`, resolving the missing 200 response schema for `DELETE /api/v1/workers/me/bank-accounts/{accountId}`.
+3. `security.api.int-spec.ts`: Added `'POST /api/v1/notifications/test-push'` to `ANY_SIGNED_IN_ROUTES` and added self-service profile routes (`GET /api/v1/admin/me/profile`, `PATCH /api/v1/admin/me/profile`, `POST /api/v1/admin/me/profile-photo`) to `ADMIN_WITHOUT_PERMISSION`.
+4. `qa.statemachine.int-spec.ts`: Updated `SPEC['confirm-worker'].actors` to include `'WORKER'`, added `{ reasonCode: 'WORK_QUALITY' }` to `bodyFor('reopen-matching')` per D-109/D-110, handled worker confirm-worker on MATCHED (200/MATCHED), and accounted for Admin 403 restriction on completed-interview reopen-matching per D-109/D-110.
+
+Evidence (local):
+- `npx prisma validate`: Exit 0 (Schema valid)
+- `npm run lint`: Exit 0 (0 errors, 0 warnings across all files)
+- `npm run format:check`: Exit 0 (Prettier clean)
+- `npm run typecheck`: Exit 0
+- `npm run build`: Exit 0
+- `npm run check:migrations`: Exit 0
+- `npm test`: Exit 0 (64 suites passed, 628 tests passed)
+NOT verified locally: `test:integration` and `test:e2e` run in CI with disposable postgres/redis services.

@@ -161,6 +161,11 @@ export class WorkerBankAccountResponse {
   updatedAt!: Date;
 }
 
+export class DeleteWorkerBankAccountResponse {
+  @ApiProperty({ example: true })
+  success!: boolean;
+}
+
 // --- Track C: Analytics ---
 
 export const AnalyticsPeriods = [

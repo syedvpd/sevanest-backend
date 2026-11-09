@@ -46,6 +46,7 @@ const ANY_SIGNED_IN_ROUTES = [
   'POST /api/v1/notifications/read-all',
   'POST /api/v1/notifications/:notificationId/read',
   'POST /api/v1/notifications/:notificationId/unread',
+  'POST /api/v1/notifications/test-push',
   'GET /api/v1/legal/status',
   'POST /api/v1/legal/accept',
   'GET /api/v1/me/deletion-request',
@@ -54,11 +55,15 @@ const ANY_SIGNED_IN_ROUTES = [
 ];
 /**
  * Admin routes without @Permissions: the dashboard shows each section only to a holder of that section's own permission;
- * the password change acts only on the caller's own account and re-verifies the current password.
+ * the password change acts only on the caller's own account and re-verifies the current password;
+ * admin self-service profile endpoints are scoped to the authenticated admin's own record.
  */
 const ADMIN_WITHOUT_PERMISSION = [
   'GET /api/v1/admin/dashboard',
+  'GET /api/v1/admin/me/profile',
+  'PATCH /api/v1/admin/me/profile',
   'POST /api/v1/admin/account/password',
+  'POST /api/v1/admin/me/profile-photo',
 ];
 
 const key = (r: Pick<RouteInfo, 'method' | 'path'>): string => `${r.method} ${r.path}`;

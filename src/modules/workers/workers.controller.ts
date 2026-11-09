@@ -71,17 +71,6 @@ export class WorkersController {
     return this.workers.getMyProfile(user.userId);
   }
 
-  @Get('onboarding')
-  @ApiModelResponse(WorkerProfileResponse)
-  @ApiOperation({
-    summary: 'Get my profile for onboarding resume (alias for GET /workers/me)',
-    description:
-      '`missingForSubmission` lists what is still needed, so the app can resume at the first unfinished step.',
-  })
-  getOnboarding(@CurrentUser() user: AuthenticatedUser): Promise<WorkerProfileResponse> {
-    return this.workers.getMyProfile(user.userId);
-  }
-
   @Patch()
   @ApiModelResponse(WorkerProfileResponse)
   @ApiOperation({

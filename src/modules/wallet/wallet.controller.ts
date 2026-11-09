@@ -19,6 +19,7 @@ import { ApiModelResponse, ApiPageResponse } from '../../common/swagger/api-resp
 import {
   CreateWithdrawalDto,
   CreateWorkerBankAccountDto,
+  DeleteWorkerBankAccountResponse,
   PayoutListQueryDto,
   UpdateWorkerBankAccountDto,
   WalletAnalyticsQueryDto,
@@ -94,6 +95,7 @@ export class WalletController {
 
   @Delete('bank-accounts/:accountId')
   @HttpCode(HttpStatus.OK)
+  @ApiModelResponse(DeleteWorkerBankAccountResponse)
   @ApiOperation({
     summary: 'Deactivate / delete bank account',
     description:

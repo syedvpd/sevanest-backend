@@ -79,7 +79,7 @@ const SPEC: Record<Action, { actors: Actor[]; moves: Array<[State, State]> }> = 
     moves: [['INTERVIEW_TRIAL_SCHEDULED', 'INTERVIEW_TRIAL_COMPLETED']],
   },
   'confirm-worker': {
-    actors: ['CUSTOMER', 'ADMIN'],
+    actors: ['CUSTOMER', 'ADMIN', 'WORKER'],
     moves: [['INTERVIEW_TRIAL_COMPLETED', 'PENDING_PAYMENT']],
   },
   start: { actors: ['CUSTOMER', 'WORKER', 'ADMIN'], moves: [['CONFIRMED', 'ACTIVE']] },
@@ -179,7 +179,7 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
       'confirm-worker': { startDate: new Date().toISOString().slice(0, 10) },
       cancel: { reason: 'matrix' },
       decline: {},
-      'reopen-matching': {},
+      'reopen-matching': { reasonCode: 'WORK_QUALITY' },
       start: {},
       complete: {},
     })[action];
@@ -223,6 +223,20 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
           // A worker does not hold a booking that has no worker: ownership is checked before the state.
           if (actor === 'WORKER' && state === 'NEW_REQUEST' && spec.actors.includes('WORKER')) {
             expectedStatus = 404;
+            expectedState = state;
+          }
+          // Worker confirm-worker on MATCHED acts as acceptance of the opportunity (stays MATCHED)
+          if (actor === 'WORKER' && state === 'MATCHED' && action === 'confirm-worker') {
+            expectedStatus = 200;
+            expectedState = 'MATCHED';
+          }
+          // Admin cannot submit Find Another Worker (reopen-matching on completed interview) on customer's behalf (D-109)
+          if (
+            actor === 'ADMIN' &&
+            state === 'INTERVIEW_TRIAL_COMPLETED' &&
+            action === 'reopen-matching'
+          ) {
+            expectedStatus = 403;
             expectedState = state;
           }
           const id = await bookingIn(state);
