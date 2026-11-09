@@ -817,8 +817,14 @@ export class BookingService {
       if (isWorkerConfirmWorker) {
         if (booking.status === 'MATCHED') {
           effectiveAction = 'accept';
-        } else {
+        } else if (booking.status === 'INTERVIEW_TRIAL_COMPLETED') {
           effectiveAction = 'confirm-worker';
+        } else {
+          throw new DomainException(
+            BookingErrorCode.ACTION_NOT_ALLOWED,
+            'This action is not available to you',
+            HttpStatus.FORBIDDEN,
+          );
         }
       }
       // A worker re-confirming an already-answered booking is a harmless no-op.

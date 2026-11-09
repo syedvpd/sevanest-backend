@@ -230,6 +230,16 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
             expectedStatus = 200;
             expectedState = 'MATCHED';
           }
+          // Worker confirm-worker is only permitted on MATCHED and INTERVIEW_TRIAL_COMPLETED; all other statuses return 403 (c5651a0)
+          if (
+            actor === 'WORKER' &&
+            action === 'confirm-worker' &&
+            state !== 'MATCHED' &&
+            state !== 'INTERVIEW_TRIAL_COMPLETED'
+          ) {
+            expectedStatus = 403;
+            expectedState = state;
+          }
           // Admin cannot submit Find Another Worker (reopen-matching on completed interview) on customer's behalf (D-109)
           if (
             actor === 'ADMIN' &&

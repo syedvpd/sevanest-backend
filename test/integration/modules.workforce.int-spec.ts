@@ -513,9 +513,11 @@ describe('Workforce journey and contract (integration)', () => {
       expect(props('CreateWorkerProfileDto')).toEqual(['dateOfBirth', 'gender', 'name']);
       expect(props('UpdateWorkerProfileDto')).toEqual([
         'address',
+        'dateOfBirth',
         'emergencyContact',
         'expectedSalary',
         'experienceMonths',
+        'gender',
         'languages',
         'name',
         'preferredLanguage',

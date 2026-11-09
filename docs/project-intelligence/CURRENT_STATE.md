@@ -1,5 +1,19 @@
 # CURRENT_STATE (keep compact; history lives in git/ADRs)
 
+## 2026-11-09 CI integration suite final alignment (worker confirm-worker 403 permissions & workforce DTO)
+
+- Root cause: GitHub Actions CI run 42578959500 had 72/75 suites passing (1130/1133 tests passed), with only 3 suites failing:
+  1. `test/integration/modules.workforce.int-spec.ts`: `UpdateWorkerProfileDto` expected properties was missing `dateOfBirth` and `gender`.
+  2. `test/integration/worker.confirm-worker.int-spec.ts` (line 98) & `test/integration/worker.opportunity-accept-403.int-spec.ts` (line 95): Worker `confirm-worker` on non-MATCHED statuses expected 403 `ACTION_NOT_ALLOWED` per commit c5651a0 ("Worker confirm-worker on any other status still returns 403 ACTION_NOT_ALLOWED"), but received 409 due to general transition evaluation.
+  3. `test/integration/qa.statemachine.int-spec.ts`: State machine expected status for worker `confirm-worker` lacked the non-MATCHED/non-INTERVIEW_TRIAL_COMPLETED 403 condition.
+- Fix:
+  1. `src/modules/booking/booking.service.ts`: Restored explicit 403 `ACTION_NOT_ALLOWED` throw for `isWorkerConfirmWorker` when booking status is neither `MATCHED` nor `INTERVIEW_TRIAL_COMPLETED`.
+  2. `test/integration/qa.statemachine.int-spec.ts`: Added state machine rule setting `expectedStatus = 403` for worker `confirm-worker` when state is neither `MATCHED` nor `INTERVIEW_TRIAL_COMPLETED`.
+  3. `test/integration/modules.workforce.int-spec.ts`: Added `'dateOfBirth'` and `'gender'` to `props('UpdateWorkerProfileDto')` expected properties.
+  4. `src/modules/booking/worker.opportunity-adversarial.spec.ts`: Aligned test assertions for worker `confirm-worker` on non-MATCHED statuses to expect 403 `ACTION_NOT_ALLOWED` / `HttpStatus.FORBIDDEN`.
+- Evidence (local): `npm run typecheck` — 0 errors (exit 0); `npm run lint` / `npx eslint` on modified files — 0 errors (exit 0); `npx prettier --check` on modified files — clean (exit 0); `npm test` — 64 suites passed, 1 skipped, 633 tests passed, 8 skipped (exit 0); `npm run test:e2e` — 2 suites passed, 27 tests passed (exit 0); `npm run build` — exit 0; `npm run check:migrations` — ok (exit 0).
+- NOT verified: Hosted Supabase DB migrations, real external SMS/payment providers.
+
 ## 2026-11-09 CI integration suite final 5 fixes (workforce boundaries, state machine, idempotency fixtures)
 
 - Root cause: GitHub Actions CI run 42575036946 dropped failures from 10 suites to 5 suites (70/75 passed):
