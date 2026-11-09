@@ -256,7 +256,7 @@ describe('Gap closing (integration)', () => {
 
     it('treats a replay with a changed detail as a different request', async () => {
       const key = `k-${unique()}`;
-      const body = requirement({ startDate: tomorrow(5), requirementNote: 'one' });
+      const body = requirement({ addressId, startDate: tomorrow(5), requirementNote: 'one' });
       const first = await as(api, customer).post(B, body).set('Idempotency-Key', key);
       expect(first.status).toBe(201);
       const again = await api

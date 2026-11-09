@@ -801,6 +801,13 @@ export class BookingService {
         throw this.notFound();
       }
       if (effectiveAction === 'reopen-matching' && booking.status === 'INTERVIEW_TRIAL_COMPLETED') {
+        if (actor.kind !== 'CUSTOMER') {
+          throw new DomainException(
+            BookingErrorCode.ACTION_NOT_ALLOWED,
+            'The customer must submit the Find Another Worker request and select its reason',
+            HttpStatus.FORBIDDEN,
+          );
+        }
         throw new DomainException(
           BookingErrorCode.INVALID_TRANSITION,
           'Use the Find Another Worker workflow for a completed interview or trial',
@@ -808,26 +815,10 @@ export class BookingService {
         );
       }
       if (isWorkerConfirmWorker) {
-        if (booking.status === 'INTERVIEW_TRIAL_COMPLETED') {
+        if (booking.status === 'MATCHED') {
+          effectiveAction = 'accept';
+        } else {
           effectiveAction = 'confirm-worker';
-        } else if (booking.status !== 'MATCHED') {
-          throw new DomainException(
-            BookingErrorCode.ACTION_NOT_ALLOWED,
-            'This action is not available to you',
-            HttpStatus.FORBIDDEN,
-          );
-        }
-      }
-      // confirm-worker needs its start date validated (prepare() above ran with 'accept').
-      if (effectiveAction === 'confirm-worker') {
-        if (!dto.startDate) {
-          throw this.invalid('startDate', 'startDate is required to confirm-worker');
-        }
-        if (!isRealDate(dto.startDate)) {
-          throw this.invalid('startDate', 'startDate is not a real date');
-        }
-        if (dto.startDate < indiaToday()) {
-          throw this.invalid('startDate', 'startDate must be today or later');
         }
       }
       // A worker re-confirming an already-answered booking is a harmless no-op.
@@ -847,6 +838,15 @@ export class BookingService {
           booking.status === 'INTERVIEW_TRIAL_SCHEDULED' &&
           booking.workerRespondedAt
         ) {
+          const events = await this.repository.listEvents?.(booking.id, tx);
+          const lastEvent = events && events.length ? events[events.length - 1] : null;
+          if (lastEvent && !lastEvent.note?.endsWith('scheduled')) {
+            throw new DomainException(
+              BookingErrorCode.INVALID_TRANSITION,
+              `A booking that is ${booking.status} cannot ${action}`,
+              HttpStatus.CONFLICT,
+            );
+          }
           return booking.id;
         }
         throw new DomainException(
@@ -854,6 +854,18 @@ export class BookingService {
           `A booking that is ${booking.status} cannot ${action}`,
           HttpStatus.CONFLICT,
         );
+      }
+      // confirm-worker needs its start date validated (prepare() above ran with 'accept').
+      if (effectiveAction === 'confirm-worker') {
+        if (!dto.startDate) {
+          throw this.invalid('startDate', 'startDate is required to confirm-worker');
+        }
+        if (!isRealDate(dto.startDate)) {
+          throw this.invalid('startDate', 'startDate is not a real date');
+        }
+        if (dto.startDate < indiaToday()) {
+          throw this.invalid('startDate', 'startDate must be today or later');
+        }
       }
       await this.apply(booking, effectiveAction, rule, dto, prepared, actor, tx);
       return booking.id;

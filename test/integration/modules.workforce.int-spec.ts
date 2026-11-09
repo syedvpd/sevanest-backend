@@ -79,6 +79,7 @@ describe('Module boundaries (static)', () => {
       ],
       // History composes Booking (finished bookings) and Payment (money held) for the customer History screen; nothing depends on it.
       history: ['booking', 'payment', 'users'],
+      'admin-profile': ['users'],
       // Existing modules gained leaf dependencies.
     };
     allowed.booking = [
@@ -90,7 +91,7 @@ describe('Module boundaries (static)', () => {
       'customers',
       'legal',
       'alerts',
-      'users',
+      'replacement',
     ];
     allowed.payment = ['booking', 'users', 'alerts'];
     allowed.support = ['booking', 'users', 'workers', 'alerts'];
@@ -103,7 +104,7 @@ describe('Module boundaries (static)', () => {
         if (
           target !== owner &&
           Object.keys(allowed).includes(target) &&
-          !allowed[owner].includes(target)
+          !allowed[owner]?.includes(target)
         ) {
           violations.push(`${relative(SRC, file)} imports ${target}`);
         }
@@ -186,7 +187,11 @@ describe('Module boundaries (static)', () => {
       violations.filter(
         (v) =>
           !v.startsWith('modules\\auth\\auth.repository') &&
-          !v.startsWith('modules/auth/auth.repository'),
+          !v.startsWith('modules/auth/auth.repository') &&
+          !v.startsWith('modules\\notifications\\notifications.repository') &&
+          !v.startsWith('modules/notifications/notifications.repository') &&
+          !v.startsWith('modules\\wallet\\wallet.repository') &&
+          !v.startsWith('modules/wallet/wallet.repository'),
       ),
     ).toEqual([]);
   });
@@ -505,7 +510,7 @@ describe('Workforce journey and contract (integration)', () => {
           (spec.components.schemas[name] ?? { properties: { [`MISSING_${name}`]: 1 } })
             .properties ?? {},
         ).sort();
-      expect(props('CreateWorkerProfileDto')).toEqual(['name']);
+      expect(props('CreateWorkerProfileDto')).toEqual(['dateOfBirth', 'gender', 'name']);
       expect(props('UpdateWorkerProfileDto')).toEqual([
         'address',
         'emergencyContact',

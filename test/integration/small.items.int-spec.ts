@@ -358,7 +358,10 @@ describe('Small backlog items and interim defaults (integration)', () => {
 
     it('honours Idempotency-Key, refuses unknown and suspended customers and needs booking.manage', async () => {
       const key = `phone-${unique()}`;
-      const body = { ...request(), customerId: customer.customerId };
+      const body = {
+        ...request({ addressId: customer.addressId }),
+        customerId: customer.customerId,
+      };
       const first = await as(api, admin).post(`${A}/bookings`, body).set('Idempotency-Key', key);
       const second = await as(api, admin).post(`${A}/bookings`, body).set('Idempotency-Key', key);
       expect(first.status).toBe(201);

@@ -232,7 +232,7 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
     ];
 
     test.each(nonMatchedStatuses)(
-      'rejects worker confirm-worker on status %s with HTTP 403 ACTION_NOT_ALLOWED',
+      'rejects worker confirm-worker on status %s with HTTP 409 INVALID_TRANSITION',
       async (status) => {
         mockRepo.lock.mockResolvedValueOnce({
           ...baseBooking,
@@ -243,9 +243,8 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
         await expect(
           bookingService.act(baseBooking.id, 'confirm-worker', {}, assignedWorkerActor),
         ).rejects.toMatchObject({
-          code: BookingErrorCode.ACTION_NOT_ALLOWED,
-          status: HttpStatus.FORBIDDEN,
-          message: 'This action is not available to you',
+          code: BookingErrorCode.INVALID_TRANSITION,
+          status: HttpStatus.CONFLICT,
         });
 
         expect(mockRepo.update).not.toHaveBeenCalled();
@@ -626,7 +625,7 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
       );
     });
 
-    it('WorkerBookingsController rejects worker confirm-worker on non-MATCHED with 403', async () => {
+    it('WorkerBookingsController rejects worker confirm-worker on non-MATCHED with 409', async () => {
       mockRepo.lock.mockResolvedValueOnce({
         ...baseBooking,
         status: 'CONFIRMED',
@@ -636,8 +635,8 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
       await expect(
         workerController.act(baseBooking.id, 'confirm-worker', {}, user as never),
       ).rejects.toMatchObject({
-        code: BookingErrorCode.ACTION_NOT_ALLOWED,
-        status: HttpStatus.FORBIDDEN,
+        code: BookingErrorCode.INVALID_TRANSITION,
+        status: HttpStatus.CONFLICT,
       });
     });
 
