@@ -85,7 +85,11 @@ export async function onboardWorker(
       .patch('/api/v1/workers/me/availability', {
         engagementPreference: options.engagement ?? 'PART_TIME',
         areaIds: options.areaIds,
-        timeWindows: options.windows ?? [{ start: '08:00', end: '14:00' }],
+        ...(options.windows === undefined
+          ? { timeWindows: [{ start: '08:00', end: '14:00' }] }
+          : options.windows.length > 0
+            ? { timeWindows: options.windows }
+            : {}),
       })
       .expect(200);
   }

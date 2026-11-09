@@ -117,6 +117,6 @@ The Workers module coordinates with catalog, availability, and verification serv
 └─────────────────────────┘
 ```
 
-* **Availability Dependency:** For a profile to be submitted, the worker must define both their profile skills and their service availability windows.
+* **Availability Dependency:** For a profile to be submitted, the worker must define their profile skills, service areas, and engagement preference. `timeWindows` is mandatory for `PART_TIME` and `HOURLY`; it is optional for `FULL_TIME` and `LIVE_IN`. The backend evaluates the saved engagement preference, not a value supplied to the submit request. No time windows are fabricated for full-time or live-in workers.
 * **Verification Hand-Off:** Upon successful submission, the profile is locked into the Verification pipeline for document upload and administrative KYC audit.
 

@@ -139,7 +139,7 @@ export class WorkersController {
   @ApiOperation({
     summary: 'Submit my profile for verification',
     description:
-      '422 PROFILE_INCOMPLETE lists what is missing. Repeating the call on a submitted profile changes nothing. Photo and KYC documents are handled outside this module.',
+      '422 PROFILE_INCOMPLETE lists what is missing. timeWindows is required for PART_TIME and HOURLY, and optional for FULL_TIME and LIVE_IN. Repeating the call on a submitted profile changes nothing. Photo and KYC documents are handled outside this module.',
   })
   submit(@CurrentUser() user: AuthenticatedUser): Promise<WorkerProfileResponse> {
     return this.workers.submitMyProfile(user.userId);

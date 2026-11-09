@@ -1,5 +1,23 @@
 import { DomainException } from '../../../common/errors/domain.exception';
-import { TIME_OF_DAY, normaliseTimeWindows, toMinutes, toText } from './time-windows';
+import {
+  TIME_OF_DAY,
+  normaliseTimeWindows,
+  requiresTimeWindowsForSubmission,
+  toMinutes,
+  toText,
+} from './time-windows';
+
+describe('conditional submission window requirement', () => {
+  it.each([
+    ['FULL_TIME', false],
+    ['LIVE_IN', false],
+    ['PART_TIME', true],
+    ['HOURLY', true],
+    [null, true],
+  ] as const)('work type %s requires windows: %s', (workType, required) => {
+    expect(requiresTimeWindowsForSubmission(workType)).toBe(required);
+  });
+});
 
 describe('TIME_OF_DAY', () => {
   it.each(['00:00', '09:30', '23:59', '24:00'])('accepts %s', (value) => {

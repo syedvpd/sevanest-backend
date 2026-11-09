@@ -453,7 +453,8 @@ export class WorkerProfileResponse {
   @ApiProperty({ type: [WorkerCategoryRef] }) categories!: WorkerCategoryRef[];
   @ApiProperty({
     type: [String],
-    description: 'What is still missing before the profile can be submitted (stable names).',
+    description:
+      'What is still missing before the profile can be submitted (stable names). timeWindows is required for PART_TIME and HOURLY, and optional for FULL_TIME and LIVE_IN.',
   })
   missingForSubmission!: string[];
   @ApiProperty() createdAt!: Date;

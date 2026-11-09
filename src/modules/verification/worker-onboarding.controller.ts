@@ -95,7 +95,7 @@ export class WorkerOnboardingController {
     summary:
       'My onboarding progress: steps, what is missing in each, the next step and verification state',
     description:
-      'Steps in order: PROFILE (address, emergency contact) -> WORK (roles, languages, experience) -> AVAILABILITY (engagement preference, areas, time windows) -> PHOTO (optional) -> SUBMIT (the profile) -> DOCUMENTS (the required checks; the server accepts uploads only after the profile is submitted) -> VERIFICATION (staff approval). 404 until the profile is created (POST /workers/me).',
+      'Steps in order: PROFILE (address, emergency contact) -> WORK (roles, languages, experience) -> AVAILABILITY (engagement preference and areas; time windows are required for PART_TIME and HOURLY, optional for FULL_TIME and LIVE_IN) -> PHOTO (optional) -> SUBMIT (the profile) -> DOCUMENTS (the required checks; the server accepts uploads only after the profile is submitted) -> VERIFICATION (staff approval). 404 until the profile is created (POST /workers/me).',
   })
   async get(@CurrentUser() user: AuthenticatedUser): Promise<WorkerOnboardingView> {
     const [profile, checks] = await Promise.all([

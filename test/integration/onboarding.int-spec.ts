@@ -56,6 +56,38 @@ describe('Onboarding, step by step (integration)', () => {
     await api.close();
   });
 
+  describe('conditional availability windows at submission', () => {
+    it.each([
+      ['FULL_TIME', [], 200],
+      ['LIVE_IN', [], 200],
+      ['PART_TIME', [], 422],
+      ['HOURLY', [], 422],
+      ['PART_TIME', [{ start: '08:00', end: '14:00' }], 200],
+      ['HOURLY', [{ start: '08:00', end: '14:00' }], 200],
+      ['FULL_TIME', [{ start: '08:00', end: '14:00' }], 200],
+      ['LIVE_IN', [{ start: '08:00', end: '14:00' }], 200],
+    ] as const)(
+      '%s with %s window(s) submits with status %i',
+      async (engagement, windows, expectedStatus) => {
+        const who = await onboardWorker(api, {
+          areaIds: [area.id],
+          engagement,
+          windows: [...windows],
+          submit: false,
+        });
+        const result = await as(api, who).post(`${W}/submit`);
+        expect(result.status).toBe(expectedStatus);
+        if (expectedStatus === 422) {
+          expect(result.body.code).toBe('PROFILE_INCOMPLETE');
+          expect(result.body.details[0].messages).toContain('timeWindows');
+          expect((await as(api, who).get(W)).body.onboardingStatus).toBe('DRAFT');
+        } else {
+          expect(result.body.onboardingStatus).toBe('SUBMITTED');
+        }
+      },
+    );
+  });
+
   // ------------------------------------------------------------------------------------------------------------
   describe('customer app: sign in, details, address, verification', () => {
     const progress = async (who: { accessToken: string }): Promise<CustomerProgress> =>

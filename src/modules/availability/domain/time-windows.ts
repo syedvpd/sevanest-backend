@@ -2,6 +2,11 @@ import { HttpStatus } from '@nestjs/common';
 import { DomainException } from '../../../common/errors/domain.exception';
 import { ErrorCode } from '../../../common/errors/error-codes';
 
+/** Submission requires windows unless the saved work type is full-time or live-in. */
+export function requiresTimeWindowsForSubmission(workType: string | null): boolean {
+  return workType !== 'FULL_TIME' && workType !== 'LIVE_IN';
+}
+
 /** "HH:mm" on a 24-hour clock; "24:00" is allowed only as an END (the window runs to midnight). */
 export const TIME_OF_DAY = /^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/;
 

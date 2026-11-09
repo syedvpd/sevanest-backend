@@ -8,7 +8,11 @@ import { WorkerSubmissionRegistry } from '../workers/worker-submission.registry'
 import { WorkersService } from '../workers/workers.service';
 import { AvailabilityRepository, WorkerAvailabilityRecord } from './availability.repository';
 import { UpdateAvailabilityDto, WorkerAvailabilityResponse } from './dto/availability.dto';
-import { normaliseTimeWindows, toText } from './domain/time-windows';
+import {
+  normaliseTimeWindows,
+  requiresTimeWindowsForSubmission,
+  toText,
+} from './domain/time-windows';
 import { ServiceAreasService } from './service-areas.service';
 
 export type AvailabilityActor =
@@ -54,8 +58,11 @@ export class AvailabilityService implements OnModuleInit {
         const summary = await this.repository.summary(workerId);
         const missing: string[] = [];
         if (summary.areaCount === 0) missing.push('areas');
-        if (summary.windowCount === 0) missing.push('timeWindows');
-        if (!summary.hasPreference) missing.push('engagementPreference');
+        const workType = summary.engagementPreference;
+        if (!workType) missing.push('engagementPreference');
+        if (summary.windowCount === 0 && requiresTimeWindowsForSubmission(workType)) {
+          missing.push('timeWindows');
+        }
         return missing;
       },
     });

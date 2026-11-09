@@ -190,15 +190,24 @@ export class AvailabilityRepository {
   }
 
   /** What is configured, without loading it (submission check). */
-  async summary(
-    workerId: string,
-  ): Promise<{ hasPreference: boolean; areaCount: number; windowCount: number }> {
+  async summary(workerId: string): Promise<{
+    engagementPreference: EngagementPreference | null;
+    areaCount: number;
+    windowCount: number;
+  }> {
     const [preference, areaCount, windowCount] = await Promise.all([
-      this.prisma.workerWorkPreference.count({ where: { workerId } }),
+      this.prisma.workerWorkPreference.findUnique({
+        where: { workerId },
+        select: { engagementPreference: true },
+      }),
       this.prisma.workerPreferredArea.count({ where: { workerId } }),
       this.prisma.workerTimeWindow.count({ where: { workerId } }),
     ]);
-    return { hasPreference: preference > 0, areaCount, windowCount };
+    return {
+      engagementPreference: preference?.engagementPreference ?? null,
+      areaCount,
+      windowCount,
+    };
   }
 
   async setPreference(
