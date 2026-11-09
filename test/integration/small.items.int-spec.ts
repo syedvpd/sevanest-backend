@@ -19,7 +19,13 @@ import {
   loginWithOtp,
   unique,
 } from '../support/api-app';
-import { ensureFee, inDays, makeBooking, payForBooking } from '../support/bookings';
+import {
+  ensureFee,
+  inDays,
+  makeBooking,
+  payForBooking,
+  withCustomerBookingAddress,
+} from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -204,14 +210,17 @@ describe('Small backlog items and interim defaults (integration)', () => {
       const worker = await onboardWorker(api, { areaIds: [area.id] });
       await approveCheck(api, admin, worker, 'IDENTITY');
       const made = await as(api, customer)
-        .post('/api/v1/bookings', {
-          category: 'HOUSE_MAID',
-          areaId: area.id,
-          engagement: 'PART_TIME',
-          availableFrom: '09:00',
-          availableTo: '12:00',
-          workerId: worker.workerId,
-        })
+        .post(
+          '/api/v1/bookings',
+          await withCustomerBookingAddress(api, customer, {
+            category: 'HOUSE_MAID',
+            areaId: area.id,
+            engagement: 'PART_TIME',
+            availableFrom: '09:00',
+            availableTo: '12:00',
+            workerId: worker.workerId,
+          }),
+        )
         .expect(201);
       const id = (made.body as { id: string }).id;
       const today = indiaToday();
@@ -568,14 +577,17 @@ describe('Small backlog items and interim defaults (integration)', () => {
       await approveCheck(api, admin, worker, 'IDENTITY');
       const c = as(api, customer);
       const created = await c
-        .post('/api/v1/bookings', {
-          category: 'HOUSE_MAID',
-          areaId: area.id,
-          engagement: 'PART_TIME',
-          availableFrom: '09:00',
-          availableTo: '12:00',
-          workerId: worker.workerId,
-        })
+        .post(
+          '/api/v1/bookings',
+          await withCustomerBookingAddress(api, customer, {
+            category: 'HOUSE_MAID',
+            areaId: area.id,
+            engagement: 'PART_TIME',
+            availableFrom: '09:00',
+            availableTo: '12:00',
+            workerId: worker.workerId,
+          }),
+        )
         .expect(201);
       const id = (created.body as { id: string }).id;
       await c

@@ -31,7 +31,7 @@ export type Stage =
  * Creates the customer profile once, then reuses one address per (city, area) so suites that book
  * many times for the same customer stay well under the 20-active-address cap.
  */
-async function ensureCustomerAddress(
+export async function ensureCustomerAddress(
   api: ApiApp,
   customer: Caller & { userId: string },
   areaId: string,
@@ -74,6 +74,29 @@ async function ensureCustomerAddress(
     throw new Error(`address: ${createdAddress.status} ${JSON.stringify(createdAddress.body)}`);
   }
   return (createdAddress.body as { id: string }).id;
+}
+
+/** Add a customer-owned address to a valid-area booking fixture when one was not specified. */
+export async function withCustomerBookingAddress(
+  api: ApiApp,
+  caller: { accessToken: string; userId?: string; type?: string },
+  body: object,
+): Promise<Record<string, unknown>> {
+  const payload = body as Record<string, unknown>;
+  if (caller.type !== 'CUSTOMER' || !caller.userId || 'addressId' in payload) return payload;
+  const areaId = payload.areaId;
+  if (typeof areaId !== 'string') return payload;
+  const area = await api.prisma.serviceArea.findUnique({
+    where: { id: areaId },
+    select: { id: true },
+  });
+  if (!area) return payload;
+  const addressId = await ensureCustomerAddress(
+    api,
+    caller as { accessToken: string; userId: string },
+    area.id,
+  );
+  return { ...payload, addressId };
 }
 
 /** Takes a fresh booking with a fresh verified worker through the real HTTP lifecycle up to `stage`. */

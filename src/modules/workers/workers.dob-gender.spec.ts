@@ -55,12 +55,7 @@ describe('Worker DOB and Gender Registration & Profile Fields', () => {
     mobile: '9876543210',
     status: 'ACTIVE',
     type: 'WORKER',
-    failedAttempts: 0,
-    lockedUntil: null,
-    lastLoginAt: null,
-    suspendedReason: null,
-    isDeleted: false,
-    deletedAt: null,
+    email: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -68,7 +63,6 @@ describe('Worker DOB and Gender Registration & Profile Fields', () => {
   const mockAdminActor: Actor & { userId: string } = {
     userId: 'admin-1',
     roles: ['admin'],
-    permissions: [],
   };
 
   beforeEach(() => {
@@ -169,10 +163,10 @@ describe('Worker DOB and Gender Registration & Profile Fields', () => {
           dateOfBirth: '2026-02-30',
         });
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(ErrorCode.VALIDATION_FAILED);
-        expect(error.status).toBe(HttpStatus.BAD_REQUEST);
-        expect(error.details?.[0].field).toBe('dateOfBirth');
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(ErrorCode.VALIDATION_FAILED);
+        expect(err.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+        expect(err.details?.[0].field).toBe('dateOfBirth');
       }
     });
 
@@ -190,10 +184,10 @@ describe('Worker DOB and Gender Registration & Profile Fields', () => {
           dateOfBirth: '2099-01-01',
         });
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(ErrorCode.VALIDATION_FAILED);
-        expect(error.status).toBe(HttpStatus.BAD_REQUEST);
-        expect(error.details?.[0].field).toBe('dateOfBirth');
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(ErrorCode.VALIDATION_FAILED);
+        expect(err.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+        expect(err.details?.[0].field).toBe('dateOfBirth');
       }
     });
 

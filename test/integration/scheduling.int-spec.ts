@@ -2,6 +2,7 @@ import '../support/env-api-integration';
 import { indiaToday } from '../../src/common/time/india';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp, unique } from '../support/api-app';
 import { ensureFee, inDays } from '../support/bookings';
+import { withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -57,7 +58,8 @@ describe('Worker scheduling and category engagements (integration)', () => {
     ...extra,
   });
   /** Creates the booking for a worker and takes it to the confirmation (the worker's time is then held). */
-  const create = (who: Session, body: object) => as(api, who).post(B, body);
+  const create = async (who: Session, body: object) =>
+    as(api, who).post(B, await withCustomerBookingAddress(api, who, body));
   const confirm = async (who: Session, bookingId: string, startDate: string) => {
     const c = as(api, who);
     await c

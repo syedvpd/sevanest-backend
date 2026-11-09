@@ -24,7 +24,12 @@ import {
   loginWithOtp,
   unique,
 } from '../support/api-app';
-import { ensureFee, fakeGateway, makeBooking } from '../support/bookings';
+import {
+  ensureFee,
+  fakeGateway,
+  makeBooking,
+  withCustomerBookingAddress,
+} from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -64,8 +69,10 @@ describe('Gap closing (integration)', () => {
     await approveCheck(api, admin, worker, 'IDENTITY');
     return worker;
   };
-  const create = (body: object, caller: { accessToken: string } = customer) =>
-    as(api, caller).post(B, body);
+  const create = async (
+    body: object,
+    caller: { accessToken: string; userId?: string; type?: string } = customer,
+  ) => as(api, caller).post(B, await withCustomerBookingAddress(api, caller, body));
   const status = async (id: string): Promise<string> =>
     (await as(api, customer).get(`${B}/${id}`)).body.status as string;
   const events = async (key: 'bookingId' | 'ticketId', id: string): Promise<string[]> => {

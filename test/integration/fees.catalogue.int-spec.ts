@@ -207,24 +207,35 @@ describe('Fee catalogue and fee payments (integration)', () => {
       });
       const none = await as(api, customer).get('/api/v1/fees/payable').expect(200);
       expect(none.body).toEqual([]);
-      const feeCode = code('REPLACEMENT_PLAN');
+      const replacementPlanCode = code('REPLACEMENT_PLAN');
       await createFee({
-        code: feeCode,
+        code: replacementPlanCode,
         kind: 'REPLACEMENT_PLAN',
         amountMinor: 120000,
-        isActive: false,
+        isActive: true,
       }).expect(201);
-      const off = await startFee(booking.id, feeCode);
-      expect(off.status).toBe(422);
-      expect(off.body.code).toBe('FEE_NOT_CONFIGURED');
+      const replacementPlanNotListed = await as(api, customer).get('/api/v1/fees/payable');
+      expect(replacementPlanNotListed.body).toEqual([]);
+      const replacementPlanNotPayable = await startFee(booking.id, replacementPlanCode);
+      expect(replacementPlanNotPayable.status).toBe(422);
+      expect(replacementPlanNotPayable.body.code).toBe('FEE_NOT_PAYABLE');
+      expect(
+        await api.prisma.payment.count({
+          where: { bookingId: booking.id, feeCode: replacementPlanCode },
+        }),
+      ).toBe(0);
       const unknown = await startFee(booking.id, code('NO_SUCH'));
       expect(unknown.status).toBe(422);
-      await as(api, manager).patch(`${A}/fees/${feeCode}`, { isActive: true }).expect(200);
+      const feeCode = code('PLACEMENT');
+      await createFee({ code: feeCode, kind: 'PLACEMENT', amountMinor: 4000 }).expect(201);
       const listed = await as(api, customer).get('/api/v1/fees/payable').expect(200);
       expect(listed.body).toEqual([
-        { code: feeCode, kind: 'REPLACEMENT_PLAN', amountMinor: 120000, currency: 'INR' },
+        { code: feeCode, kind: 'PLACEMENT', amountMinor: 4000, currency: 'INR' },
       ]);
-      await api.prisma.feeConfig.update({ where: { code: feeCode }, data: { isActive: false } });
+      await api.prisma.feeConfig.updateMany({
+        where: { code: { in: [feeCode, replacementPlanCode] } },
+        data: { isActive: false },
+      });
     });
 
     it('takes the amount from the configuration only, refuses fees that are not payable kinds, and other customers', async () => {

@@ -71,7 +71,7 @@ const SPEC: Record<Action, { actors: Actor[]; moves: Array<[State, State]> }> = 
     actors: ['CUSTOMER', 'ADMIN'],
     moves: [
       ['INTERVIEW_TRIAL_SCHEDULED', 'MATCHED'],
-      ['INTERVIEW_TRIAL_COMPLETED', 'MATCHED'],
+      ['INTERVIEW_TRIAL_COMPLETED', 'REPLACED'],
     ],
   },
   'interview-complete': {
@@ -277,13 +277,16 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
       call('ADMIN', id, 'reopen-matching'),
     ]);
     const final = await statusOf(id);
-    expect(['PENDING_PAYMENT', 'CANCELLED', 'MATCHED']).toContain(final);
+    expect(['PENDING_PAYMENT', 'CANCELLED', 'REPLACED']).toContain(final);
     const out = await api.prisma.bookingEvent.findMany({
       where: { bookingId: id, fromStatus: 'INTERVIEW_TRIAL_COMPLETED' },
     });
     expect(out).toHaveLength(1);
     expect(results.filter((r) => r.status === 200).length).toBeGreaterThanOrEqual(1);
     expect(results.every((r) => [200, 409].includes(r.status))).toBe(true);
+    expect(await api.prisma.booking.count({ where: { replacesBookingId: id } })).toBe(
+      final === 'REPLACED' ? 1 : 0,
+    );
     // The final row satisfies every CHECK constraint by construction (the database accepted every write).
     await retire(id);
   });

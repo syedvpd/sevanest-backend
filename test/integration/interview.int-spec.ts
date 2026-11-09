@@ -7,7 +7,7 @@ import {
   loginWithOtp,
   unique,
 } from '../support/api-app';
-import { ensureFee, inDays } from '../support/bookings';
+import { ensureFee, inDays, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -65,15 +65,18 @@ describe('Interview and trial workflow (integration)', () => {
     const c = await customer();
     const w = await worker();
     const created = await as(api, c)
-      .post(B, {
-        category: 'HOUSE_MAID',
-        areaId: area.id,
-        engagement: 'HOURLY',
-        availableFrom: '09:00',
-        availableTo: '10:00',
-        startDate: inDays(3),
-        workerId: w.workerId,
-      })
+      .post(
+        B,
+        await withCustomerBookingAddress(api, c, {
+          category: 'HOUSE_MAID',
+          areaId: area.id,
+          engagement: 'HOURLY',
+          availableFrom: '09:00',
+          availableTo: '10:00',
+          startDate: inDays(3),
+          workerId: w.workerId,
+        }),
+      )
       .expect(201);
     return { c, w, bookingId: created.body.id as string };
   };
@@ -378,13 +381,16 @@ describe('Interview and trial workflow (integration)', () => {
     it('needs a matched worker and a booking in the right state', async () => {
       const c = await customer();
       const fresh = await as(api, c)
-        .post(B, {
-          category: 'HOUSE_MAID',
-          areaId: area.id,
-          engagement: 'HOURLY',
-          availableFrom: '09:00',
-          availableTo: '10:00',
-        })
+        .post(
+          B,
+          await withCustomerBookingAddress(api, c, {
+            category: 'HOUSE_MAID',
+            areaId: area.id,
+            engagement: 'HOURLY',
+            availableFrom: '09:00',
+            availableTo: '10:00',
+          }),
+        )
         .expect(201);
       expect(fresh.body.status).toBe('NEW_REQUEST');
       const noWorker = await request(c, fresh.body.id as string);

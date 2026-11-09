@@ -26,4 +26,3 @@ export function maskAccountNumber(accountNumber: string): string {
   const maskedPrefix = '•'.repeat(Math.max(accountNumber.length - 4, 8));
   return `${maskedPrefix}${last4}`;
 }
-

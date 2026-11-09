@@ -6,7 +6,7 @@ process.env.PENDING_PAYMENT_AUTO_CANCEL_HOURS = '3';
 
 import { BookingSweepService } from '../../src/modules/booking/booking-sweep.service';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp, unique } from '../support/api-app';
-import { ensureFee, fakeGateway, inDays } from '../support/bookings';
+import { ensureFee, fakeGateway, inDays, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -54,8 +54,20 @@ describe('Worker availability edge cases (integration)', () => {
     startDate: inDays(2),
     ...extra,
   });
-  const ask = (who: Session, w: OnboardedWorker, from: string, to: string, extra: object = {}) =>
-    as(api, who).post(B, { ...request(from, to, extra), workerId: w.workerId });
+  const ask = async (
+    who: Session,
+    w: OnboardedWorker,
+    from: string,
+    to: string,
+    extra: object = {},
+  ) =>
+    as(api, who).post(
+      B,
+      await withCustomerBookingAddress(api, who, {
+        ...request(from, to, extra),
+        workerId: w.workerId,
+      }),
+    );
   const confirm = async (who: Session, id: string, startDate = inDays(2)) => {
     const c = as(api, who);
     await c
@@ -68,7 +80,8 @@ describe('Worker availability edge cases (integration)', () => {
     return c.post(`${B}/${id}/confirm-worker`, { startDate });
   };
   const hold = async (who: Session, w: OnboardedWorker, from = '09:00', to = '10:00') => {
-    const created = await ask(who, w, from, to).expect(201);
+    const created = await ask(who, w, from, to);
+    expect(created.status).toBe(201);
     const id = created.body.id as string;
     expect((await confirm(who, id)).status).toBe(200);
     return id;
@@ -178,7 +191,8 @@ describe('Worker availability edge cases (integration)', () => {
     ];
     const ids: string[] = [];
     for (let i = 0; i < people.length; i++) {
-      const created = await ask(people[i], w, slots[i][0], slots[i][1]).expect(201);
+      const created = await ask(people[i], w, slots[i][0], slots[i][1]);
+      expect(created.status).toBe(201);
       const id = created.body.id as string;
       const c = as(api, people[i]);
       await c

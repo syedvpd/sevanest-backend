@@ -107,11 +107,13 @@ describe('Admin self-service profile (integration)', () => {
     it('rejects an e-mail or phone already used by another account', async () => {
       const owner = await newAdmin();
       const other = await newAdmin();
+      const ownerEmail = owner.email;
+      if (!ownerEmail) throw new Error('Admin test fixture did not provide an e-mail address');
       const phone = `+919${String(randomInt(0, 1e9)).padStart(9, '0')}`;
       await as(api, owner).patch(PROFILE, { phoneNumber: phone }).expect(200);
 
       const email = await as(api, other)
-        .patch(PROFILE, { email: owner.email.toUpperCase() })
+        .patch(PROFILE, { email: ownerEmail.toUpperCase() })
         .expect(409);
       expect(email.body.code).toBe('ADMIN_EMAIL_TAKEN');
 

@@ -229,9 +229,9 @@ describe('Worker Bank Accounts Management (Track B)', () => {
           accountNumber: '123456789999',
         });
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(WalletErrorCode.ACTIVE_WITHDRAWAL_EXISTS);
-        expect(error.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(WalletErrorCode.ACTIVE_WITHDRAWAL_EXISTS);
+        expect(err.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
       }
     });
 
@@ -255,9 +255,9 @@ describe('Worker Bank Accounts Management (Track B)', () => {
       try {
         await service.deleteBankAccount('user-1', mockAccount2.id);
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(WalletErrorCode.BANK_ACCOUNT_IN_USE);
-        expect(error.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(WalletErrorCode.BANK_ACCOUNT_IN_USE);
+        expect(err.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
       }
     });
 
@@ -271,9 +271,9 @@ describe('Worker Bank Accounts Management (Track B)', () => {
       try {
         await service.deleteBankAccount('user-1', mockAccount1.id);
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(WalletErrorCode.CANNOT_DELETE_PRIMARY_ACCOUNT);
-        expect(error.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(WalletErrorCode.CANNOT_DELETE_PRIMARY_ACCOUNT);
+        expect(err.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
       }
     });
 

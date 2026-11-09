@@ -1,6 +1,6 @@
 import '../support/env-api-integration';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp, unique } from '../support/api-app';
-import { ensureFee, inDays, makeBooking } from '../support/bookings';
+import { ensureFee, inDays, makeBooking, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -298,15 +298,18 @@ describe('Customer app gaps, round two (integration)', () => {
       const w = await onboardWorker(api, { areaIds: [area.id] });
       await approveCheck(api, admin, w, 'IDENTITY');
       const booking = await as(api, c)
-        .post('/api/v1/bookings', {
-          category: 'HOUSE_MAID',
-          areaId: area.id,
-          engagement: 'PART_TIME',
-          availableFrom: '09:00',
-          availableTo: '10:00',
-          startDate: inDays(5),
-          workerId: w.workerId,
-        })
+        .post(
+          '/api/v1/bookings',
+          await withCustomerBookingAddress(api, c, {
+            category: 'HOUSE_MAID',
+            areaId: area.id,
+            engagement: 'PART_TIME',
+            availableFrom: '09:00',
+            availableTo: '10:00',
+            startDate: inDays(5),
+            workerId: w.workerId,
+          }),
+        )
         .expect(201);
       const at = new Date(`${tomorrow}T10:00:00.000+05:30`).toISOString();
       const iv = await as(api, c)

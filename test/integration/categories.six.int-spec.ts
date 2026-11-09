@@ -5,6 +5,7 @@ import {
   RECOMMENDED_ENGAGEMENTS,
 } from '../../src/modules/service-categories/category-seed.service';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp, unique } from '../support/api-app';
+import { withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -287,25 +288,31 @@ describe('Six service categories (integration)', () => {
     });
     expect(maid.status).toBe(maidOffers === 0 ? 200 : 422);
 
-    const booking = await as(api, customer).post('/api/v1/bookings', {
-      category: code,
-      areaId: area.id,
-      engagement: 'MONTHLY',
-      availableFrom: '09:00',
-      availableTo: '12:00',
-      workerId: worker.workerId,
-    });
+    const booking = await as(api, customer).post(
+      '/api/v1/bookings',
+      await withCustomerBookingAddress(api, customer, {
+        category: code,
+        areaId: area.id,
+        engagement: 'MONTHLY',
+        availableFrom: '09:00',
+        availableTo: '12:00',
+        workerId: worker.workerId,
+      }),
+    );
     expect(booking.status).toBe(201);
     expect((booking.body as { engagement: string }).engagement).toBe('MONTHLY');
     // the same worker cannot be double-booked for an overlapping time: MONTHLY occupies every day from its start
-    const second = await as(api, customer).post('/api/v1/bookings', {
-      category: code,
-      areaId: area.id,
-      engagement: 'MONTHLY',
-      availableFrom: '10:00',
-      availableTo: '11:00',
-      workerId: worker.workerId,
-    });
+    const second = await as(api, customer).post(
+      '/api/v1/bookings',
+      await withCustomerBookingAddress(api, customer, {
+        category: code,
+        areaId: area.id,
+        engagement: 'MONTHLY',
+        availableFrom: '10:00',
+        availableTo: '11:00',
+        workerId: worker.workerId,
+      }),
+    );
     expect([201, 409, 422]).toContain(second.status);
   });
 

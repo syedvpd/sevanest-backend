@@ -6,7 +6,7 @@ import {
   loginAdminWithPermissions,
   loginWithOtp,
 } from '../support/api-app';
-import { ensureFee, fakeGateway, inDays } from '../support/bookings';
+import { ensureFee, fakeGateway, inDays, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -167,7 +167,10 @@ describe('QA - end-to-end journeys (integration)', () => {
     const matched = await as(api, admin).post('/api/v1/admin/matching/candidates', matchBody);
     expect(matched.body.data.map((x: { workerId: string }) => x.workerId)).toEqual([workerId]);
 
-    const created = await c.post('/api/v1/bookings', { ...matchBody, workerId });
+    const created = await c.post(
+      '/api/v1/bookings',
+      await withCustomerBookingAddress(api, customer, { ...matchBody, workerId }),
+    );
     expect(created.status).toBe(201);
     const bookingId = created.body.id as string;
     expect(created.body.status).toBe('MATCHED');
@@ -303,8 +306,15 @@ describe('QA - end-to-end journeys (integration)', () => {
     await approveCheck(api, admin, worker2, 'IDENTITY');
     const worker3 = await onboardWorker(api, { areaIds: [area.id] });
     await approveCheck(api, admin, worker3, 'IDENTITY');
-    const second = (await c.post('/api/v1/bookings', { ...matchBody, workerId: worker2.workerId }))
-      .body.id as string;
+    const second = (
+      await c.post(
+        '/api/v1/bookings',
+        await withCustomerBookingAddress(api, customer, {
+          ...matchBody,
+          workerId: worker2.workerId,
+        }),
+      )
+    ).body.id as string;
     await c
       .post(`/api/v1/bookings/${second}/schedule`, {
         scheduleType: 'TRIAL',

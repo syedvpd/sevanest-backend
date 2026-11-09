@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return -- measurement tooling: response bodies are read loosely on purpose */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument -- measurement tooling: response bodies are read loosely on purpose */
 import '../support/env-api-integration';
 // Tokens must outlive the run; throttles are lifted so a single-user sequential run is never limited.
 process.env.JWT_ACCESS_TTL_SECONDS = '28800';

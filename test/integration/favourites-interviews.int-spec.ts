@@ -1,6 +1,6 @@
 import '../support/env-api-integration';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp, unique } from '../support/api-app';
-import { ensureFee, inDays } from '../support/bookings';
+import { ensureFee, inDays, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -69,15 +69,18 @@ describe('Favourites and Interviews contract (integration)', () => {
   };
   const matched = async (c: Session, w: OnboardedWorker, category = 'HOUSE_MAID') => {
     const created = await as(api, c)
-      .post(B, {
-        category,
-        areaId: area.id,
-        engagement: 'HOURLY',
-        availableFrom: '09:00',
-        availableTo: '10:00',
-        startDate: inDays(3),
-        workerId: w.workerId,
-      })
+      .post(
+        B,
+        await withCustomerBookingAddress(api, c, {
+          category,
+          areaId: area.id,
+          engagement: 'HOURLY',
+          availableFrom: '09:00',
+          availableTo: '10:00',
+          startDate: inDays(3),
+          workerId: w.workerId,
+        }),
+      )
       .expect(201);
     return created.body.id as string;
   };

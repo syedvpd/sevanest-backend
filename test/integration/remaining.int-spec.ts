@@ -8,7 +8,7 @@ import {
   loginWithOtp,
   unique,
 } from '../support/api-app';
-import { ensureFee, inDays } from '../support/bookings';
+import { ensureFee, inDays, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -63,7 +63,7 @@ describe('Remaining audit items (integration)', () => {
   /** A booking matched to a worker whose interview/trial is scheduled. */
   const scheduled = async (who: Session, w: OnboardedWorker) => {
     const created = await as(api, who)
-      .post(B, { ...request(), workerId: w.workerId })
+      .post(B, await withCustomerBookingAddress(api, who, { ...request(), workerId: w.workerId }))
       .expect(201);
     const id = created.body.id as string;
     const at = new Date(Date.now() + 2 * 86_400_000);
@@ -259,7 +259,10 @@ describe('Remaining audit items (integration)', () => {
       const stranger = await customer();
       const early0 = await customer();
       const created = await as(api, early0)
-        .post(B, { ...request(), workerId: w.workerId })
+        .post(
+          B,
+          await withCustomerBookingAddress(api, early0, { ...request(), workerId: w.workerId }),
+        )
         .expect(201);
       const early = created.body.id as string;
       const future = new Date(Date.now() + 5 * 86_400_000).toISOString();

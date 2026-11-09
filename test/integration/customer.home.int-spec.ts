@@ -1,6 +1,6 @@
 import '../support/env-api-integration';
 import { ApiApp, createApiApp, loginAdmin, loginWithOtp } from '../support/api-app';
-import { inDays, makeBooking } from '../support/bookings';
+import { inDays, makeBooking, withCustomerBookingAddress } from '../support/bookings';
 import { SAMPLE_JPEG } from '../support/images';
 import { ShortlistService } from '../../src/modules/shortlist/shortlist.service';
 import {
@@ -160,15 +160,18 @@ describe('Customer home and shortlist (integration)', () => {
       const c = await newCustomer();
       const w = await verifiedWorker('Meena Pillai');
       const booking = await as(api, c)
-        .post('/api/v1/bookings', {
-          category: 'HOUSE_MAID',
-          areaId: area.id,
-          engagement: 'PART_TIME',
-          availableFrom: '09:00',
-          availableTo: '10:00',
-          startDate: inDays(3),
-          workerId: w.workerId,
-        })
+        .post(
+          '/api/v1/bookings',
+          await withCustomerBookingAddress(api, c, {
+            category: 'HOUSE_MAID',
+            areaId: area.id,
+            engagement: 'PART_TIME',
+            availableFrom: '09:00',
+            availableTo: '10:00',
+            startDate: inDays(3),
+            workerId: w.workerId,
+          }),
+        )
         .expect(201);
       const preferredAt = new Date(Date.now() + 2 * 86_400_000);
       preferredAt.setUTCHours(10, 0, 0, 0);

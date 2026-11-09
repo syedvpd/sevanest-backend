@@ -7,7 +7,7 @@ import {
   loginAdminWithPermissions,
   loginWithOtp,
 } from '../support/api-app';
-import { ensureFee, makeBooking } from '../support/bookings';
+import { ensureFee, makeBooking, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -81,14 +81,17 @@ describe('Worker blacklist and emergency contact reveal (integration)', () => {
       expect(
         (await as(api, customer).get(`/api/v1/search/workers/${worker.workerId}`)).status,
       ).toBe(404);
-      const booking = await as(api, customer).post('/api/v1/bookings', {
-        category: 'HOUSE_MAID',
-        areaId: area.id,
-        engagement: 'PART_TIME',
-        availableFrom: '09:00',
-        availableTo: '12:00',
-        workerId: worker.workerId,
-      });
+      const booking = await as(api, customer).post(
+        '/api/v1/bookings',
+        await withCustomerBookingAddress(api, customer, {
+          category: 'HOUSE_MAID',
+          areaId: area.id,
+          engagement: 'PART_TIME',
+          availableFrom: '09:00',
+          availableTo: '12:00',
+          workerId: worker.workerId,
+        }),
+      );
       expect(booking.status).toBe(422);
       expect(booking.body.code).toBe('WORKER_NOT_ELIGIBLE');
       const candidates = await as(api, admin).post('/api/v1/admin/matching/candidates', {

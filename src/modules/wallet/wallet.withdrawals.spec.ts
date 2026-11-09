@@ -151,9 +151,9 @@ describe('Worker Withdrawals & Payouts Lifecycle (Track D & D2)', () => {
           bankAccountId: mockBankAccount.id,
         });
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(WalletErrorCode.MINIMUM_WITHDRAWAL_REQUIRED);
-        expect(error.status).toBe(HttpStatus.BAD_REQUEST);
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(WalletErrorCode.MINIMUM_WITHDRAWAL_REQUIRED);
+        expect(err.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       }
     });
 
@@ -185,9 +185,9 @@ describe('Worker Withdrawals & Payouts Lifecycle (Track D & D2)', () => {
           bankAccountId: mockBankAccount.id,
         });
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(WalletErrorCode.BANK_ACCOUNT_NOT_VERIFIED);
-        expect(error.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(WalletErrorCode.BANK_ACCOUNT_NOT_VERIFIED);
+        expect(err.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
       }
     });
 
@@ -211,9 +211,9 @@ describe('Worker Withdrawals & Payouts Lifecycle (Track D & D2)', () => {
           bankAccountId: mockBankAccount.id,
         });
       } catch (err: unknown) {
-        const error = err as DomainException;
-        expect(error.code).toBe(WalletErrorCode.INSUFFICIENT_BALANCE);
-        expect(error.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+        if (!(err instanceof DomainException)) throw err;
+        expect(err.code).toBe(WalletErrorCode.INSUFFICIENT_BALANCE);
+        expect(err.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
       }
     });
 

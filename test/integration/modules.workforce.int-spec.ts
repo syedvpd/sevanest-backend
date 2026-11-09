@@ -30,7 +30,8 @@ describe('Module boundaries (static)', () => {
     const allowed: Record<string, string[]> = {
       users: [],
       auth: ['users'],
-      customers: ['users'],
+      // Address serviceability uses Availability and customer photo DTO/contracts reuse Worker Photo types.
+      customers: ['users', 'availability', 'worker-photo'],
       'service-categories': ['users'],
       // Workers imports only Verification's pure SQL definition of "verified" (verification-eligibility), never its services.
       workers: ['users', 'service-categories', 'verification'],

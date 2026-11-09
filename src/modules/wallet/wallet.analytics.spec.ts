@@ -140,9 +140,9 @@ describe('Worker Earnings Analytics & Shift Breakdown (Track C)', () => {
         to: '2026-11-10',
       });
     } catch (err: unknown) {
-      const error = err as DomainException;
-      expect(error.code).toBe(ErrorCode.VALIDATION_FAILED);
-      expect(error.status).toBe(HttpStatus.BAD_REQUEST);
+      if (!(err instanceof DomainException)) throw err;
+      expect(err.code).toBe(ErrorCode.VALIDATION_FAILED);
+      expect(err.getStatus()).toBe(HttpStatus.BAD_REQUEST);
     }
   });
 

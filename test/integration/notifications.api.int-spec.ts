@@ -8,7 +8,7 @@ import {
   loginAdminWithPermissions,
   loginWithOtp,
 } from '../support/api-app';
-import { makeBooking } from '../support/bookings';
+import { makeBooking, withCustomerBookingAddress } from '../support/bookings';
 import {
   approveCheck,
   as,
@@ -63,14 +63,17 @@ describe('Notifications (integration)', () => {
   /** Gives a worker a MATCHED booking, which queues JOB_OPPORTUNITY for them. */
   const offerTo = async (worker: { workerId: string }) => {
     const customer = await loginWithOtp(api, { appType: 'CUSTOMER' });
-    const res = await as(api, customer).post('/api/v1/bookings', {
-      category: 'HOUSE_MAID',
-      areaId: area.id,
-      engagement: 'PART_TIME',
-      availableFrom: '09:00',
-      availableTo: '12:00',
-      workerId: worker.workerId,
-    });
+    const res = await as(api, customer).post(
+      '/api/v1/bookings',
+      await withCustomerBookingAddress(api, customer, {
+        category: 'HOUSE_MAID',
+        areaId: area.id,
+        engagement: 'PART_TIME',
+        availableFrom: '09:00',
+        availableTo: '12:00',
+        workerId: worker.workerId,
+      }),
+    );
     expect(res.status).toBe(201);
     return res.body.id as string;
   };
