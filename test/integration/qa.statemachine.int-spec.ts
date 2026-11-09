@@ -235,7 +235,8 @@ describe('QA - booking state machine, exhaustively (integration)', () => {
             actor === 'WORKER' &&
             action === 'confirm-worker' &&
             state !== 'MATCHED' &&
-            state !== 'INTERVIEW_TRIAL_COMPLETED'
+            state !== 'INTERVIEW_TRIAL_COMPLETED' &&
+            state !== 'NEW_REQUEST'
           ) {
             expectedStatus = 403;
             expectedState = state;
