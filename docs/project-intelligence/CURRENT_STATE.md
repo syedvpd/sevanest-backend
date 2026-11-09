@@ -320,3 +320,19 @@ Evidence (local): `npm run prisma:validate` passed; `npm run prisma:generate` ge
 Database action (user-authorized): the configured `DATABASE_URL` host/database was confirmed to match the Supabase target without printing credentials. `npm run prisma:migrate:status` reported 52 migrations and `Database schema is up to date!`. Read-only ledger/schema verification confirmed `20261120100000_find_another_worker_request_audit` and `20261120110000_replaced_booking_before_start` applied; the request table, RLS flag, marker column and check constraint exist. The dedicated integration database is a separate `_test` target; its pending migrations were deployed there before tests. No data reset, seed, app deploy, or production workflow data operation was performed.
 
 NOT verified / NOT done: the broad integration command `npm run test:integration -- --runTestsByPath test/integration/booking.api.int-spec.ts test/integration/payment.api.int-spec.ts test/integration/payments.recovery.int-spec.ts` initially reported 4 failed and 75 passed. The Find Another Worker check-constraint failure was fixed and its focused test now passes. Three unrelated suite failures remain unaddressed: a worker opportunity exact-key assertion expects `openInterviewId` absent while the current view returns it; an invalid-area test fixture reaches `withCustomerBookingAddress`'s Prisma UUID lookup before the API validation; and the payment order outage case's first-call status assertion failed. The full integration command was not rerun after the constraint fix. Live notification delivery, real payment provider behavior, and deployed API parity were not tested. No commit, push, merge, or application deployment has occurred as of this entry.
+
+## 2026-11-09 CI/CD Pipeline Fix (f256099 -> d8f5139)
+
+Built: Diagnosed and resolved GitHub Actions CI failures caused by commit `f256099`. In `f256099`, integration tests called `withCustomerBookingAddress`, but the helper in `test/support/bookings.ts` had not been committed, causing TypeScript import errors and ESLint `@typescript-eslint/no-unsafe-argument` failures in CI. Cleaned up redundant `eslint-disable` comments in `test/perf/perf-journeys.perf-spec.ts`. Fixed `DomainException` type handling in `src/modules/wallet/*.spec.ts` and `src/modules/workers/workers.dob-gender.spec.ts` (`err.getStatus()` instead of `error.status`).
+
+Evidence (local):
+- `npx prisma validate`: Exit 0 (Schema valid)
+- `npm run lint`: Exit 0 (0 errors, 0 warnings across all files)
+- `npm run format:check`: Exit 0 (All files match Prettier code style)
+- `npm run typecheck`: Exit 0
+- `npm run build`: Exit 0 (nest build succeeded)
+- `npm run check:migrations`: Exit 0 (0 new migrations after origin/main)
+- `npm test`: Exit 0 (64 suites passed, 1 skipped; 628 passed, 8 skipped)
+
+Git: Committed as `d8f5139` ("fix(ci): export withCustomerBookingAddress and clean up test lint directives") and pushed to `origin/main` upon explicit user request.
+NOT verified locally: `npm run test:integration` and `npm run test:e2e` were not run locally due to absence of local Docker daemon for PostgreSQL/Redis services; these run inside GitHub Actions CI.
