@@ -144,3 +144,15 @@ describe('AppConfigService.firebaseProjectId', () => {
     expect(make({}).firebaseProjectId).toBe('sevanest-47cef');
   });
 });
+
+describe('AppConfigService.adminAuthThrottle', () => {
+  it('defaults to 20 attempts per 60 seconds and honors overrides', () => {
+    expect(make({}).adminAuthThrottle).toEqual({ ttlMs: 60_000, limit: 20 });
+    expect(
+      make({
+        ADMIN_AUTH_THROTTLE_TTL_SECONDS: 120,
+        ADMIN_AUTH_THROTTLE_LIMIT: 40,
+      }).adminAuthThrottle,
+    ).toEqual({ ttlMs: 120_000, limit: 40 });
+  });
+});

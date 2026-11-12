@@ -94,6 +94,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function parseRetryAfterSeconds(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(1, Math.ceil(value));
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) {
+      return Math.max(1, Math.ceil(parsed));
+    }
+  }
+  return undefined;
+}
+
+function resolveRetryAfterSeconds(body: ApiErrorBody, response: Response): number {
+  const detail = body.details?.find((entry) => entry.field === 'retryAfterSeconds');
+  const fromDetail = parseRetryAfterSeconds(detail?.messages[0]);
+  if (fromDetail !== undefined) {
+    return fromDetail;
+  }
+
+  if (typeof response.getHeader === 'function') {
+    const existing = parseRetryAfterSeconds(response.getHeader('Retry-After'));
+    if (existing !== undefined) {
+      return existing;
+    }
+    if (typeof response.getHeaderNames === 'function') {
+      for (const headerName of response.getHeaderNames()) {
+        if (/^retry-after-.+/i.test(headerName)) {
+          const suffixed = parseRetryAfterSeconds(response.getHeader(headerName));
+          response.removeHeader(headerName);
+          if (suffixed !== undefined) {
+            return suffixed;
+          }
+        }
+      }
+    }
+  }
+
+  return 1;
+}
+
 /**
  * Converts every thrown error into the single API error envelope. Unknown errors are logged with their stack
  * server-side and returned as a generic 500: internals, SQL and stack traces never reach clients.
@@ -136,6 +177,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.removeHeader('Content-Disposition');
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
+    if (status === 429) {
+      response.setHeader('Retry-After', String(resolveRetryAfterSeconds(body, response)));
+    }
     response.status(status).json(body);
   }
 

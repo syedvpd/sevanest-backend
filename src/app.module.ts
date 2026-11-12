@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './common/audit/audit.module';
+import {
+  ADMIN_AUTH_THROTTLER_NAME,
+  AppThrottlerGuard,
+  isAdminAuthThrottleRoute,
+} from './common/guards/app-throttler.guard';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
 import { SecurityEventsWorkerModule } from './common/audit/security-events.worker';
@@ -87,7 +92,22 @@ const embeddedWorkers =
     ThrottlerModule.forRootAsync({
       inject: [AppConfigService, RedisService],
       useFactory: (config: AppConfigService, redis: RedisService) => ({
-        throttlers: [{ ttl: config.throttle.ttlMs, limit: config.throttle.limit }],
+        throttlers: [
+          {
+            name: 'default',
+            ttl: config.throttle.ttlMs,
+            limit: config.throttle.limit,
+            blockDuration: config.throttle.ttlMs,
+            skipIf: (context) => isAdminAuthThrottleRoute(context),
+          },
+          {
+            name: ADMIN_AUTH_THROTTLER_NAME,
+            ttl: config.adminAuthThrottle.ttlMs,
+            limit: config.adminAuthThrottle.limit,
+            blockDuration: config.adminAuthThrottle.ttlMs,
+            skipIf: (context) => !isAdminAuthThrottleRoute(context),
+          },
+        ],
         ...(config.throttle.storage === 'redis'
           ? { storage: new RedisThrottlerStorage(redis) }
           : {}),
@@ -139,7 +159,7 @@ const embeddedWorkers =
   providers: [
     { provide: APP_FILTER, useFactory: () => new AllExceptionsFilter() },
     // Guard order matters: cheap abuse rejection first, then authentication, then role, then permission.
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },

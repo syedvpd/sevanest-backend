@@ -17,6 +17,7 @@ import type { Request } from 'express';
 import { CurrentUser, Public } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
+import { AdminAuthThrottle } from '../../common/guards/app-throttler.guard';
 import { AuthService, LoginResult } from './auth.service';
 import {
   AdminLoginDto,
@@ -83,13 +84,14 @@ export class AuthController {
   }
 
   @Public()
+  @AdminAuthThrottle()
   @Post('admin/login')
   @ApiModelResponse(TokenResponse)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Admin login with email and password',
     description:
-      'Repeated failures lock the account and the client IP for a configured time (429, ADMIN_LOGIN_LOCKED).',
+      'Repeated failures lock the target account for a configured time (429, ADMIN_LOGIN_LOCKED) without blocking unrelated admin accounts on the same IP; protected by a dedicated per-IP admin-auth rate-limit bucket (429, RATE_LIMITED) with Retry-After.',
   })
   async adminLogin(@Body() dto: AdminLoginDto, @Req() request: Request): Promise<TokenResponse> {
     const result = await this.auth.adminLogin(dto, clientIp(request), {

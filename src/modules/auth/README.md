@@ -15,7 +15,7 @@ Engineered around **Defense-in-Depth** and **Zero-Trust Session Integrity**:
 
 * **Mobile OTP Authentication:** Fast, one-click login for Indian mobile numbers with automatic account provisioning for first-time users.
 * **Granular Abuse & Toll-Fraud Protection:** Multi-tiered rate limiting (per mobile number, per IP address, resend cooldowns, and progressive lockout delays) to prevent spam and SMS toll fraud.
-* **Enterprise Admin Security:** Administrative credential login secured with salted `scrypt` password hashing and a fixed attempt budget per account and per IP (an attempt slot is reserved atomically before the password hash runs, so concurrent bursts cannot exceed it), followed by a fixed lockout.
+* **Enterprise Admin Security:** Administrative credential login secured with salted `scrypt` password hashing and a fixed attempt budget per account (an attempt slot is reserved atomically before the password hash runs, so concurrent bursts cannot exceed it) paired with an isolated per-IP rate-limit bucket (`adminAuth`) and standard `Retry-After` headers on HTTP 429 responses.
 * **Single-Use Rotating Token Pairs:** Short-lived access JWTs (15 minutes) paired with opaque, cryptographically hashed refresh tokens.
 * **Device Session Management:** Tracks active sessions per device (`deviceId`, device model, login timestamps) with single-device re-login deduplication.
 * **Push Notification Binding:** Seamlessly registers and unregisters Firebase Cloud Messaging (FCM) device tokens bound directly to active device sessions.
@@ -89,7 +89,7 @@ Verifies the SMS code, completes login, and auto-provisions new user accounts.
 ### 3. `POST /api/v1/auth/admin/login`
 Authenticates operations, verification executives, and support staff.
 * **Payload:** `{ email: "admin@sevanest.com", password: "...", deviceId?: "..." }`
-* **Protection:** Fixed attempt budget per account and per IP within a window. Every attempt takes a slot atomically BEFORE the password hash runs and keeps it unless authentication succeeds (a success clears the account counter and gives the IP slot back); when the budget is used up the account or IP is locked for `ADMIN_LOGIN_LOCKOUT_SECONDS` and starts a fresh window afterwards.
+* **Protection:** Fixed attempt budget per account (`ADMIN_LOGIN_MAX_FAILURES` within `ADMIN_LOGIN_FAILURE_WINDOW_SECONDS`), paired with a separate per-IP `adminAuth` rate-limit bucket (`ADMIN_AUTH_THROTTLE_LIMIT` / `ADMIN_AUTH_THROTTLE_TTL_SECONDS`) so shared office/NAT IPs are never locked across unrelated admin accounts. Every attempt reserves a slot atomically BEFORE the password hash runs and keeps it unless authentication succeeds; when the account budget is exhausted the targeted account is locked for `ADMIN_LOGIN_LOCKOUT_SECONDS` (429 `ADMIN_LOGIN_LOCKED` with `Retry-After`).
 
 ---
 

@@ -46,6 +46,26 @@ describe('validateEnvironment', () => {
     expect(env.SWAGGER_ENABLED).toBe(false);
     expect(env.DATABASE_POOL_MAX).toBe(10);
     expect(env.TRUST_PROXY_HOPS).toBe(0);
+    expect(env.ADMIN_AUTH_THROTTLE_TTL_SECONDS).toBe(60);
+    expect(env.ADMIN_AUTH_THROTTLE_LIMIT).toBe(20);
+  });
+
+  it('rejects non-positive ADMIN_AUTH_THROTTLE values', () => {
+    expect(() => validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_LIMIT: '0' })).toThrow(
+      'ADMIN_AUTH_THROTTLE_LIMIT',
+    );
+    expect(() => validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_TTL_SECONDS: '0' })).toThrow(
+      'ADMIN_AUTH_THROTTLE_TTL_SECONDS',
+    );
+  });
+
+  it('rejects non-positive ADMIN_AUTH_THROTTLE values', () => {
+    expect(() =>
+      validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_LIMIT: '0' }),
+    ).toThrow('ADMIN_AUTH_THROTTLE_LIMIT');
+    expect(() =>
+      validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_TTL_SECONDS: '0' }),
+    ).toThrow('ADMIN_AUTH_THROTTLE_TTL_SECONDS');
   });
 
   it('turns the profile photo on by default (DEC-10)', () => {

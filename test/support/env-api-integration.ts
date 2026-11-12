@@ -26,4 +26,5 @@ applyTestEnvironment({
   // Tests present distinct client IPs through X-Forwarded-For so per-IP limits do not leak between tests.
   TRUST_PROXY_HOPS: '1',
   THROTTLE_LIMIT: '100000',
+  ADMIN_AUTH_THROTTLE_LIMIT: '100000',
 });

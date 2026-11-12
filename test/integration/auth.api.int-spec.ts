@@ -331,10 +331,12 @@ describe('Auth API (integration)', () => {
       const third = await post(bad);
       expect(third.status).toBe(429);
       expect(third.body.code).toBe('OTP_ATTEMPTS_EXCEEDED');
+      expect(Number(third.headers['retry-after'])).toBeGreaterThan(0);
 
       const correctButLocked = await post(otp);
       expect(correctButLocked.status).toBe(429);
       expect(correctButLocked.body.code).toBe('OTP_LOCKED');
+      expect(Number(correctButLocked.headers['retry-after'])).toBeGreaterThan(0);
 
       await clearCooldown(mobile);
       const newRequest = await requestOtp(api, mobile);
@@ -897,26 +899,26 @@ describe('Auth API (integration)', () => {
       expect(locked.status).toBe(429);
       expect(locked.body.code).toBe('ADMIN_LOGIN_LOCKED');
       expect(Number(locked.body.details[0].messages[0])).toBeGreaterThan(0);
+      expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0);
 
       // The lock follows the account, not just the IP.
       const otherIp = await adminLogin(api, target, randomIp());
       expect(otherIp.status).toBe(429);
+      expect(Number(otherIp.headers['retry-after'])).toBeGreaterThan(0);
 
       await clearAdminLockout(api, target.email, ip);
       expect((await adminLogin(api, target, randomIp())).status).toBe(200);
     });
 
-    it('locks an IP that keeps failing across different accounts', async () => {
+    it('does not lock unrelated admin accounts sharing the same client IP', async () => {
+      const target = await createAdmin(api);
       const ip = randomIp();
-      for (let i = 0; i < 3; i++) {
-        await adminLogin(
-          api,
-          { email: `ghost.${i}.${Date.now()}@example.test`, password: 'nope-nope-nope' },
-          ip,
-        );
+      for (let i = 0; i < 4; i++) {
+        await adminLogin(api, { email: target.email, password: `wrong-password-${i}` }, ip);
       }
-      const res = await adminLogin(api, admin, ip);
-      expect(res.status).toBe(429);
+      expect((await adminLogin(api, target, ip)).status).toBe(429);
+      expect((await adminLogin(api, admin, ip)).status).toBe(200);
+      await clearAdminLockout(api, target.email, ip);
       await clearAdminLockout(api, admin.email, ip);
     });
 

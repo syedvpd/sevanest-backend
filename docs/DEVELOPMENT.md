@@ -147,9 +147,9 @@ or set `EMBEDDED_WORKERS=true` on the API to run the same loops inside it. Redis
 recovery state lives in PostgreSQL.
 
 ## Proxy and client IP (`TRUST_PROXY_HOPS`)
-Per-IP limits (global throttle, OTP requests, admin-login lockout) key on the client IP. `TRUST_PROXY_HOPS` tells Express how many reverse proxies in front
+Per-IP limits (global throttle, admin-auth rate limit bucket, OTP requests) key on the client IP. `TRUST_PROXY_HOPS` tells Express how many reverse proxies in front
 of the API to trust when reading `X-Forwarded-For`; it is **required in production** (the API refuses to start without it) because no default is safe:
-0 behind a load balancer puts all users in one bucket (a platform-wide OTP cap and one attacker can lock out all admins), and too high lets a client forge
+0 behind a load balancer puts all users in one bucket (a platform-wide OTP cap or shared admin-auth rate limit), and too high lets a client forge
 the header. Count the hops between the internet and the API: Render web service = 1; Cloudflare in front of Render = 2; direct exposure = 0. Check it
 after deploying: (1) too low - exhaust the OTP per-IP limit from one network, then request an OTP from a second network (a phone on mobile data): if that
 one is refused too, every client shares one IP, so raise the value; (2) too high - repeat the requests while changing `X-Forwarded-For` on each call: if the limit

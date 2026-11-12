@@ -12,6 +12,8 @@ export function applyTestEnvironment(overrides: Record<string, string> = {}): vo
     REFRESH_TOKEN_TTL_SECONDS: '86400',
     THROTTLE_TTL_SECONDS: '60',
     THROTTLE_LIMIT: '1000',
+    ADMIN_AUTH_THROTTLE_TTL_SECONDS: '60',
+    ADMIN_AUTH_THROTTLE_LIMIT: '1000',
     // Test-only values. They are NOT approved business values (OTP/lockout limits are open decisions, Q-12).
     OTP_HMAC_SECRET: 'test-only-otp-hmac-key-0123456789-abcdefghij',
     SMS_PROVIDER: 'memory',

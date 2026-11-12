@@ -198,6 +198,20 @@ export class EnvironmentVariables {
   THROTTLE_LIMIT!: number;
 
   /**
+   * Dedicated per-IP rate-limit window and cap for Admin Portal authentication routes
+   * (/auth/admin/login, /admin/account/password), isolated from the general THROTTLE_LIMIT bucket.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  ADMIN_AUTH_THROTTLE_TTL_SECONDS: number = 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  ADMIN_AUTH_THROTTLE_LIMIT: number = 20;
+
+  /**
    * Where the global per-IP request counters live. `redis` is shared by all API replicas; `memory` is per process, so the
    * real limit is multiplied by the replica count. Use `redis` whenever more than one API instance runs.
    */

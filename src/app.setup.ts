@@ -34,7 +34,16 @@ export function configureApp(app: NestExpressApplication, config: AppConfigServi
   }
 
   if (config.corsOrigins.length > 0) {
-    app.enableCors({ origin: config.corsOrigins, exposedHeaders: [REQUEST_ID_HEADER] });
+    app.enableCors({
+      origin: config.corsOrigins,
+      exposedHeaders: [
+        REQUEST_ID_HEADER,
+        'Retry-After',
+        'X-RateLimit-Limit',
+        'X-RateLimit-Remaining',
+        'X-RateLimit-Reset',
+      ],
+    });
   }
 
   app.setGlobalPrefix('api', { exclude: ['health/live', 'health/ready'] });

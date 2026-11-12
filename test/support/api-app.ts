@@ -249,10 +249,10 @@ export async function loginAdminWithPermissions(
   };
 }
 
-/** Clears Redis protection state for an admin email/IP so lockout tests do not leak into each other. */
+/** Clears Redis protection state for an admin email (and any legacy IP keys) so lockout tests do not leak. */
 export async function clearAdminLockout(api: ApiApp, email: string, ip?: string): Promise<void> {
   await api.redis.ensureConnected();
-  const id = createHash('sha256').update(email).digest('hex').slice(0, 32);
+  const id = createHash('sha256').update(email.trim().toLowerCase()).digest('hex').slice(0, 32);
   const keys = [
     `auth:admin:fail:acct:${id}`,
     `auth:admin:lock:acct:${id}`,

@@ -74,3 +74,20 @@ Record the result in `docs/qa/phase-verification-results.md`. Until you do, paym
 
 ## Backups and restore drill
 Scripts: `scripts/db/backup.sh`, `scripts/db/restore.sh` (guide `docs/DATABASE_MIGRATION.md`). Restore drill done **locally** on 2026-10-13 (backup of a local database restored into an empty one; all rows and 21 migrations back; `prisma migrate status` up to date). **Still to do by the owner:** confirm Supabase automatic backups are enabled for the project, run `backup.sh` against Supabase on a schedule and keep copies outside Supabase, and do one restore drill from a Supabase backup into a scratch database.
+
+## Clearing Admin Login Lockouts in Redis (never use `FLUSHDB` / `FLUSHALL`)
+Redis stores OTP verification state, BullMQ queues, rate-limit counters, and admin login lockout keys together; never flush the whole database.
+1. Inspect active IP/account lockout keys and throttler blocks first from an authorized shell with `REDIS_URL` access:
+   ```bash
+   redis-cli -u "$REDIS_URL" --scan --pattern "auth:admin:lock:*"
+   redis-cli -u "$REDIS_URL" --scan --pattern "auth:admin:fail:*"
+   redis-cli -u "$REDIS_URL" --scan --pattern "throttle:adminAuth:*:block"
+   ```
+2. Clear legacy shared-IP lockout keys or active `adminAuth` throttler blocks safely via cursor `SCAN` (`--scan`):
+   ```bash
+   redis-cli -u "$REDIS_URL" --scan --pattern "auth:admin:lock:ip:*" | xargs -r redis-cli -u "$REDIS_URL" UNLINK
+   redis-cli -u "$REDIS_URL" --scan --pattern "auth:admin:fail:ip:*" | xargs -r redis-cli -u "$REDIS_URL" UNLINK
+   redis-cli -u "$REDIS_URL" --scan --pattern "throttle:adminAuth:*" | xargs -r redis-cli -u "$REDIS_URL" UNLINK
+   ```
+3. To unlock a single legitimate admin email manually after verifying ownership: compute `id = sha256(email.trim().toLowerCase()).slice(0, 32)` and delete `auth:admin:lock:acct:<id>` and `auth:admin:fail:acct:<id>`.
+4. Confirm `TRUST_PROXY_HOPS` matches the deployment proxy chain (`1` for Render LB only, `2` if Cloudflare/CDN sits in front of Render) and `THROTTLE_STORAGE=redis` in production.

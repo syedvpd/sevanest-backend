@@ -15,6 +15,62 @@ const suite = url ? describe : describe.skip;
 
 const MAX = 3;
 
+describe('AdminLoginThrottle (unit)', () => {
+  const makeUnit = (evalImpl: jest.Mock) =>
+    new AdminLoginThrottle(
+      {
+        client: { eval: evalImpl },
+        ensureConnected: () => Promise.resolve(),
+      } as unknown as RedisService,
+      {
+        adminLogin: { maxFailures: 5, failureWindowSeconds: 900, lockoutSeconds: 900 },
+      } as unknown as AppConfigService,
+    );
+
+  it('normalizes email case and whitespace when computing accountKey', () => {
+    expect(AdminLoginThrottle.accountKey('  Ops.Lead@Example.TEST ')).toBe(
+      AdminLoginThrottle.accountKey('ops.lead@example.test'),
+    );
+  });
+
+  it('scopes reserve and release solely to account keys (never IP keys) and clamps retryAfterSeconds >= 1', async () => {
+    const evalMock = jest
+      .fn()
+      .mockResolvedValueOnce([1, 0, 0])
+      .mockResolvedValueOnce([0, 0, 0])
+      .mockResolvedValueOnce(1);
+    const throttle = makeUnit(evalMock);
+    const acctKey = AdminLoginThrottle.accountKey('admin@example.test');
+
+    await expect(throttle.reserve(acctKey, '203.0.113.10')).resolves.toEqual({
+      lastAllowed: false,
+    });
+    expect(evalMock).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      2,
+      `auth:admin:lock:acct:${acctKey}`,
+      `auth:admin:fail:acct:${acctKey}`,
+      '900',
+      '5',
+      '900',
+    );
+
+    await expect(throttle.reserve(acctKey, '203.0.113.10')).rejects.toMatchObject({
+      code: AuthErrorCode.ADMIN_LOGIN_LOCKED,
+      details: [{ field: 'retryAfterSeconds', messages: ['1'] }],
+    });
+
+    await throttle.release(acctKey, '203.0.113.10');
+    expect(evalMock).toHaveBeenNthCalledWith(
+      3,
+      expect.any(String),
+      1,
+      `auth:admin:fail:acct:${acctKey}`,
+    );
+  });
+});
+
 suite('AdminLoginThrottle (real Redis)', () => {
   let client: Redis;
   let throttle: AdminLoginThrottle;
@@ -69,11 +125,16 @@ suite('AdminLoginThrottle (real Redis)', () => {
     expect(count(results, 'fulfilled')).toBe(MAX);
   });
 
-  it('caps one IP at the maximum even when every request targets a different account', async () => {
-    const results = await settle(
-      Array.from({ length: 60 }, (_, i) => throttle.reserve(acct(`spread${i}`), ip(3))),
+  it('does not lock unrelated accounts sharing the same client IP', async () => {
+    const targeted = await settle(
+      Array.from({ length: 10 }, () => throttle.reserve(acct('a'), ip(3))),
     );
-    expect(count(results, 'fulfilled')).toBe(MAX);
+    expect(count(targeted, 'fulfilled')).toBe(MAX);
+
+    const unrelated = await settle(
+      Array.from({ length: 5 }, (_, i) => throttle.reserve(acct(`other${i}`), ip(3))),
+    );
+    expect(count(unrelated, 'fulfilled')).toBe(5);
   });
 
   it('reports the last allowed attempt exactly once', async () => {
@@ -100,19 +161,20 @@ suite('AdminLoginThrottle (real Redis)', () => {
     expect(count(results, 'fulfilled')).toBe(MAX);
   });
 
-  it('release (successful login) clears the account counter and gives the IP slot back', async () => {
+  it('release (successful login) clears the account counter without touching IP keys', async () => {
     await throttle.reserve(acct(8), ip(8));
     await throttle.reserve(acct(8), ip(8));
     await throttle.release(acct(8), ip(8));
     expect(await client.get(`auth:admin:fail:acct:${acct(8)}`)).toBeNull();
-    expect(await client.get(`auth:admin:fail:ip:${ip(8)}`)).toBe('1');
+    expect(await client.get(`auth:admin:fail:ip:${ip(8)}`)).toBeNull();
+    expect(await client.get(`auth:admin:lock:ip:${ip(8)}`)).toBeNull();
     const results = await settle(
       Array.from({ length: 20 }, () => throttle.reserve(acct(8), ip(9))),
     );
     expect(count(results, 'fulfilled')).toBe(MAX);
   });
 
-  it('release without a reservation never drives the IP counter negative', async () => {
+  it('release without a reservation never breaks the account counter', async () => {
     await throttle.release(acct(10), ip(10));
     const results = await settle(
       Array.from({ length: 20 }, () => throttle.reserve(acct(10), ip(10))),

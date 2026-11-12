@@ -120,6 +120,12 @@ export class AppConfigService {
       storage: this.get('THROTTLE_STORAGE'),
     };
   }
+  get adminAuthThrottle(): { ttlMs: number; limit: number } {
+    return {
+      ttlMs: (this.get('ADMIN_AUTH_THROTTLE_TTL_SECONDS') ?? 60) * 1000,
+      limit: this.get('ADMIN_AUTH_THROTTLE_LIMIT') ?? 20,
+    };
+  }
   get otpHmacSecret(): string {
     return this.get('OTP_HMAC_SECRET');
   }

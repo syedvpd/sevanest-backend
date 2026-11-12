@@ -6,40 +6,30 @@ import { RedisService } from '../../infrastructure/cache/redis.service';
 import { AuthErrorCode } from './auth.errors';
 
 /**
- * Atomically checks the locks and takes one attempt slot for the account AND the IP. KEYS: lock:acct, lock:ip, fail:acct,
- * fail:ip. ARGV: window seconds, max attempts, lockout seconds. Returns {allowed, retryAfterSeconds, lastAllowed}.
+ * Atomically checks the account lock and takes one attempt slot for the account. KEYS: lock:acct, fail:acct.
+ * ARGV: window seconds, max attempts, lockout seconds. Returns {allowed, retryAfterSeconds, lastAllowed}.
  * A slot is taken BEFORE the slow password hash runs, so concurrent requests cannot all pass a stale "not locked" check.
- * The attempt that would exceed the maximum is refused, hands its slot back, locks the scope and starts it a fresh window.
+ * Lockout is intentionally scoped per account (not shared client IP) so failed attempts against one account never block
+ * unrelated admin accounts sharing a corporate/NAT/proxy IP; short-window IP flooding is handled by the adminAuth rate limit.
  */
 const RESERVE_ATTEMPT = `
-local ttl = math.max(redis.call('TTL', KEYS[1]), redis.call('TTL', KEYS[2]))
+local ttl = redis.call('TTL', KEYS[1])
 if ttl > 0 then return {0, ttl, 0} end
 local max = tonumber(ARGV[2])
-local counts = {}
-for i = 3, 4 do
-  counts[i] = redis.call('INCR', KEYS[i])
-  if counts[i] == 1 then redis.call('EXPIRE', KEYS[i], ARGV[1]) end
-end
-if counts[3] > max or counts[4] > max then
-  for i = 3, 4 do
-    if counts[i] > max then
-      redis.call('SET', KEYS[i - 2], '1', 'EX', ARGV[3])
-      redis.call('DEL', KEYS[i])
-    else
-      redis.call('DECR', KEYS[i])
-    end
-  end
+local count = redis.call('INCR', KEYS[2])
+if count == 1 then redis.call('EXPIRE', KEYS[2], ARGV[1]) end
+if count > max then
+  redis.call('SET', KEYS[1], '1', 'EX', ARGV[3])
+  redis.call('DEL', KEYS[2])
   return {0, tonumber(ARGV[3]), 0}
 end
 local last = 0
-if counts[3] == max or counts[4] == max then last = 1 end
+if count == max then last = 1 end
 return {1, 0, last}`;
 
-/** Success: clears the account counter and hands the IP slot back (never below zero). KEYS: fail:acct, fail:ip. */
+/** Success: clears the account failure counter. KEYS: fail:acct. */
 const RELEASE_ATTEMPT = `
 redis.call('DEL', KEYS[1])
-local v = tonumber(redis.call('GET', KEYS[2]))
-if v and v > 0 then redis.call('DECR', KEYS[2]) end
 return 1`;
 
 export interface AttemptReservation {
@@ -49,9 +39,9 @@ export interface AttemptReservation {
 
 /**
  * Brute-force protection for admin credential login (NFR-SEC-008, BEA p5). Every attempt reserves a slot per account (email)
- * and per client IP inside a window; once the configured maximum is used, that key is locked for the configured duration.
- * Counters live in Redis (non-authoritative): losing them only resets the protection window, never a business record.
- * Redis errors propagate, so the login fails closed.
+ * inside a window; once the configured maximum is used, that account is locked for the configured duration without locking the
+ * shared client IP. Counters live in Redis (non-authoritative): losing them only resets the protection window, never a business
+ * record. Redis errors propagate, so the login fails closed.
  */
 @Injectable()
 export class AdminLoginThrottle {
@@ -65,22 +55,20 @@ export class AdminLoginThrottle {
   }
 
   static accountKey(email: string): string {
-    return createHash('sha256').update(email).digest('hex').slice(0, 32);
+    return createHash('sha256').update(email.trim().toLowerCase()).digest('hex').slice(0, 32);
   }
 
   /**
-   * Takes an attempt slot or throws 429 while the account or the IP is locked / out of attempts. Does not reveal which one.
+   * Takes an attempt slot or throws 429 while the account is locked / out of attempts.
    * Call it before verifying the password; call {@link release} only after a successful authentication.
    */
-  async reserve(accountKey: string, clientIp: string): Promise<AttemptReservation> {
+  async reserve(accountKey: string, _clientIp?: string): Promise<AttemptReservation> {
     await this.redis.ensureConnected();
     const [allowed, retryAfter, last] = (await this.redis.client.eval(
       RESERVE_ATTEMPT,
-      4,
-      this.lockKey('acct', accountKey),
-      this.lockKey('ip', clientIp),
-      this.failKey('acct', accountKey),
-      this.failKey('ip', clientIp),
+      2,
+      this.lockKey(accountKey),
+      this.failKey(accountKey),
       String(this.settings.failureWindowSeconds),
       String(this.settings.maxFailures),
       String(this.settings.lockoutSeconds),
@@ -90,28 +78,23 @@ export class AdminLoginThrottle {
         AuthErrorCode.ADMIN_LOGIN_LOCKED,
         'Too many failed login attempts. Please try again later.',
         HttpStatus.TOO_MANY_REQUESTS,
-        [{ field: 'retryAfterSeconds', messages: [String(retryAfter)] }],
+        [{ field: 'retryAfterSeconds', messages: [String(Math.max(Number(retryAfter) || 1, 1))] }],
       );
     }
     return { lastAllowed: last === 1 };
   }
 
-  /** A successful login clears the account's counter and gives its IP slot back (the IP keeps counting other attempts). */
-  async release(accountKey: string, clientIp: string): Promise<void> {
+  /** A successful login clears the account's failure counter. */
+  async release(accountKey: string, _clientIp?: string): Promise<void> {
     await this.redis.ensureConnected();
-    await this.redis.client.eval(
-      RELEASE_ATTEMPT,
-      2,
-      this.failKey('acct', accountKey),
-      this.failKey('ip', clientIp),
-    );
+    await this.redis.client.eval(RELEASE_ATTEMPT, 1, this.failKey(accountKey));
   }
 
-  private failKey(scope: 'acct' | 'ip', id: string): string {
-    return `auth:admin:fail:${scope}:${id}`;
+  private failKey(id: string): string {
+    return `auth:admin:fail:acct:${id}`;
   }
 
-  private lockKey(scope: 'acct' | 'ip', id: string): string {
-    return `auth:admin:lock:${scope}:${id}`;
+  private lockKey(id: string): string {
+    return `auth:admin:lock:acct:${id}`;
   }
 }

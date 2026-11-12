@@ -1,5 +1,6 @@
 import { BadRequestException, HttpStatus, NotFoundException } from '@nestjs/common';
 import type { ArgumentsHost, LoggerService } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { DomainException } from './domain.exception';
 import { ErrorCode } from './error-codes';
@@ -174,5 +175,58 @@ describe('AllExceptionsFilter', () => {
   it('never includes a stack trace', () => {
     const { body } = run(new Error('boom'));
     expect(JSON.stringify(body)).not.toContain('at ');
+  });
+
+  describe('429 Retry-After headers', () => {
+    it('emits Retry-After from DomainException retryAfterSeconds details (clamped to >= 1)', () => {
+      const locked = run(
+        new DomainException('ADMIN_LOGIN_LOCKED', 'Locked', HttpStatus.TOO_MANY_REQUESTS, [
+          { field: 'retryAfterSeconds', messages: ['840'] },
+        ]),
+      );
+      expect(locked.status).toHaveBeenCalledWith(429);
+      expect(locked.headers.setHeader).toHaveBeenCalledWith('Retry-After', '840');
+
+      const clamped = run(
+        new DomainException('OTP_COOLDOWN', 'Wait', HttpStatus.TOO_MANY_REQUESTS, [
+          { field: 'retryAfterSeconds', messages: ['0'] },
+        ]),
+      );
+      expect(clamped.headers.setHeader).toHaveBeenCalledWith('Retry-After', '1');
+    });
+
+    it('preserves Retry-After header from ThrottlerGuard, normalizes suffixed headers, and falls back to 1', () => {
+      const headerMap = new Map<string, string>([['retry-after-adminauth', '45']]);
+      const setHeader = jest.fn((name: string, val: string) =>
+        headerMap.set(name.toLowerCase(), val),
+      );
+      const removeHeader = jest.fn((name: string) => headerMap.delete(name.toLowerCase()));
+      const json = jest.fn();
+      const host = {
+        switchToHttp: () => ({
+          getRequest: () => ({ id: 'req-id-0002' }),
+          getResponse: () => ({
+            headersSent: false,
+            status: jest.fn().mockReturnValue({ json }),
+            setHeader,
+            removeHeader,
+            getHeader: (name: string) => headerMap.get(name.toLowerCase()),
+            getHeaderNames: () => [...headerMap.keys()],
+          }),
+        }),
+      } as unknown as ArgumentsHost;
+
+      new AllExceptionsFilter({ error: jest.fn(), warn: jest.fn(), log: jest.fn() }).catch(
+        new ThrottlerException(),
+        host,
+      );
+      expect(removeHeader).toHaveBeenCalledWith('retry-after-adminauth');
+      expect(setHeader).toHaveBeenCalledWith('Retry-After', '45');
+      expect(json.mock.calls[0]?.[0]).toMatchObject({ code: ErrorCode.RATE_LIMITED });
+
+      const fallback = run(new ThrottlerException());
+      expect(fallback.status).toHaveBeenCalledWith(429);
+      expect(fallback.headers.setHeader).toHaveBeenCalledWith('Retry-After', '1');
+    });
   });
 });

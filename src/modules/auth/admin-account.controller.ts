@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
+import { AdminAuthThrottle } from '../../common/guards/app-throttler.guard';
 import { AuthService } from './auth.service';
 import { ChangeAdminPasswordDto } from './dto/auth.dto';
 import { ApiSchemaResponse } from '../../common/swagger/api-schema-responses';
@@ -16,6 +17,7 @@ export class AdminAccountController {
 
   @ApiBearerAuth()
   @RequireUserType('ADMIN')
+  @AdminAuthThrottle()
   @Post('password')
   @HttpCode(HttpStatus.OK)
   @ApiSchemaResponse(
