@@ -1,5 +1,21 @@
 # CURRENT_STATE (keep compact; history lives in git/ADRs)
 
+## 2026-11-23 Payment refund logging & gateway config sanitization (Razorpay HTTP 400 & 503 visibility)
+
+- Root cause: Admin Portal refund and reconciliation actions on payment `01a1e7ab-6e19-71ac-b565-4d320ba468f5` (Razorpay `pay_U16TxpAreitv7V`) returned `503 PAYMENT_PROVIDER_UNAVAILABLE`. Investigation proved:
+  1. Underlying Razorpay refund API (`POST /v1/payments/pay_U16TxpAreitv7V/refund`) returned `HTTP 400 BAD_REQUEST_ERROR: invalid request sent` because test account balance was ₹0.00 following settlement `setl_U0lbJoaE2i8AWX` without test Refund Credits enabled.
+  2. `PaymentService.refund()` and `checkFailed()` in `src/modules/payment/payment.service.ts` swallowed `ProviderError.message` when `opts.actor` was present, converting all gateway errors to generic `503 PAYMENT_PROVIDER_UNAVAILABLE` without logging the real rejection cause.
+  3. `AppConfigService.razorpay` did not strip leading/trailing quotes or whitespace if credentials were copy-pasted into the Render dashboard with quotes.
+  4. `src/modules/booking/worker.opportunity-adversarial.spec.ts` had 4 failing tests due to mock `startDate: '2026-11-10'` in the past relative to execution date.
+- Fix:
+  1. `src/config/app-config.service.ts`: Sanitized `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` by applying `.trim().replace(/^["']|["']$/g, '')`.
+  2. `src/modules/payment/payment.service.ts`: Added explicit `logger.error` in `refund()` and `logger.warn` in `checkFailed()` outputting sanitized `error.message` (e.g. `razorpay rejected the request (HTTP 400)`) without leaking credentials, auth headers, customer PII, or payload secrets.
+  3. `src/config/app-config.service.spec.ts`: Added unit tests for whitespace trimming and quote stripping.
+  4. `src/modules/booking/worker.opportunity-adversarial.spec.ts`: Updated mock `startDate` to `'2026-12-01'` to satisfy `startDate >= indiaToday()`.
+  5. `src/common/guards/app-throttler.guard.spec.ts` & `src/config/env.validation.spec.ts`: Prettier formatting alignment.
+- Evidence (2026-11-23 local): `npm run typecheck` — 0 errors (exit 0); `npm run lint` — 0 errors, 0 warnings (exit 0); `npm run format:check` — clean (exit 0); `npm test` — 66 test suites passed, 66 total (644 passed, 8 skipped, 652 total, exit 0). Pushed commit `6d70cea` to `origin/main`.
+- NOT verified: Live Render deployment build status; real Razorpay refund execution (pending manual refund settlement in Razorpay Test Dashboard or enabling Refund Credits).
+
 ## 2026-11-12 Admin Portal HTTP 429 fix (per-account lockout isolation, separate adminAuth throttle bucket, Retry-After + CORS exposure)
 
 - Root cause: `AdminLoginThrottle.reserve()` in `src/modules/auth/admin-login-throttle.service.ts` locked shared client IP key `auth:admin:lock:ip:<ip>` for `ADMIN_LOGIN_LOCKOUT_SECONDS` (900s in `.env`/`.env.render`) once `auth:admin:fail:ip:<ip>` exceeded `ADMIN_LOGIN_MAX_FAILURES` (5), returning `429 ADMIN_LOGIN_LOCKED` to unrelated admins sharing an office/NAT/proxy IP even with valid credentials. Global `ThrottlerGuard` in `src/app.module.ts` had only one `default` bucket, `AllExceptionsFilter` did not emit HTTP `Retry-After` headers on `DomainException` 429s (`ADMIN_LOGIN_LOCKED`, `OTP_*`), `@nestjs/throttler` emitted suffixed `Retry-After-<name>` on non-`default` buckets, and `CORS` `exposedHeaders` in `src/app.setup.ts` omitted `Retry-After`.
