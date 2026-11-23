@@ -261,13 +261,13 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
       mockRepo.findById.mockResolvedValueOnce({
         ...completedTrialBooking,
         status: 'PENDING_PAYMENT',
-        startDate: '2026-11-10',
+        startDate: '2026-12-01',
       });
 
       const res = await bookingService.act(
         completedTrialBooking.id,
         'confirm-worker',
-        { startDate: '2026-11-10' },
+        { startDate: '2026-12-01' },
         assignedWorkerActor,
       );
 
@@ -276,7 +276,7 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
         completedTrialBooking.id,
         expect.objectContaining({
           status: 'PENDING_PAYMENT',
-          startDate: '2026-11-10',
+          startDate: '2026-12-01',
         }),
         expect.anything(),
       );
@@ -309,13 +309,13 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
       mockRepo.findById.mockResolvedValueOnce({
         ...completedTrialBooking,
         status: 'PENDING_PAYMENT',
-        startDate: '2026-11-10',
+        startDate: '2026-12-01',
       });
 
       const res = await bookingService.act(
         completedTrialBooking.id,
         'confirm-worker',
-        { startDate: '2026-11-10' },
+        { startDate: '2026-12-01' },
         customerActor,
       );
 
@@ -324,7 +324,7 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
         completedTrialBooking.id,
         expect.objectContaining({
           status: 'PENDING_PAYMENT',
-          startDate: '2026-11-10',
+          startDate: '2026-12-01',
         }),
         expect.anything(),
       );
@@ -347,7 +347,7 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
         bookingService.act(
           baseBooking.id,
           'confirm-worker',
-          { startDate: '2026-11-10' },
+          { startDate: '2026-12-01' },
           customerActor,
         ),
       ).rejects.toMatchObject({
@@ -377,7 +377,7 @@ describe('Adversarial Stress Suite — Worker Opportunity Acceptance & Booking S
         bookingService.act(
           baseBooking.id,
           'confirm-worker',
-          { startDate: '2026-11-10' },
+          { startDate: '2026-12-01' },
           otherCustomerActor,
         ),
       ).rejects.toMatchObject({

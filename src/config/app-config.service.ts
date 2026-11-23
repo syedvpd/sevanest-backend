@@ -343,9 +343,9 @@ export class AppConfigService {
   }
   get razorpay(): { keyId: string; keySecret: string; webhookSecret: string; timeoutMs: number } {
     return {
-      keyId: this.get('RAZORPAY_KEY_ID') ?? '',
-      keySecret: this.get('RAZORPAY_KEY_SECRET') ?? '',
-      webhookSecret: this.get('RAZORPAY_WEBHOOK_SECRET') ?? '',
+      keyId: (this.get('RAZORPAY_KEY_ID') ?? '').trim().replace(/^["']|["']$/g, ''),
+      keySecret: (this.get('RAZORPAY_KEY_SECRET') ?? '').trim().replace(/^["']|["']$/g, ''),
+      webhookSecret: (this.get('RAZORPAY_WEBHOOK_SECRET') ?? '').trim().replace(/^["']|["']$/g, ''),
       timeoutMs: this.providerHttpTimeoutMs,
     };
   }

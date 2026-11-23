@@ -60,12 +60,12 @@ describe('validateEnvironment', () => {
   });
 
   it('rejects non-positive ADMIN_AUTH_THROTTLE values', () => {
-    expect(() =>
-      validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_LIMIT: '0' }),
-    ).toThrow('ADMIN_AUTH_THROTTLE_LIMIT');
-    expect(() =>
-      validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_TTL_SECONDS: '0' }),
-    ).toThrow('ADMIN_AUTH_THROTTLE_TTL_SECONDS');
+    expect(() => validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_LIMIT: '0' })).toThrow(
+      'ADMIN_AUTH_THROTTLE_LIMIT',
+    );
+    expect(() => validateEnvironment({ ...valid, ADMIN_AUTH_THROTTLE_TTL_SECONDS: '0' })).toThrow(
+      'ADMIN_AUTH_THROTTLE_TTL_SECONDS',
+    );
   });
 
   it('turns the profile photo on by default (DEC-10)', () => {

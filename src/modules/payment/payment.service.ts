@@ -962,6 +962,8 @@ export class PaymentService {
     try {
       refund = await this.initiateRefund(payment);
     } catch (error) {
+      const errorMsg = error instanceof ProviderError ? error.message : (error as Error).message;
+      this.logger.error(`Refund call to gateway failed for payment ${payment.id}: ${errorMsg}`);
       await this.repository.transaction((tx) =>
         this.audit.record(
           {
@@ -1913,12 +1915,13 @@ export class PaymentService {
     opts: { actor?: PaymentActor },
     exhaustedKind: 'RECONCILIATION_EXHAUSTED' | 'REFUND_STUCK',
   ): Promise<string> {
+    const errorMsg = error instanceof ProviderError ? error.message : (error as Error).message;
+    this.logger.warn(
+      `Payment check failed (${error instanceof ProviderError && error.retryable ? 'temporary' : 'rejected'}): payment ${payment.id} - ${errorMsg}`,
+    );
     if (opts.actor)
       throw this.providerFailure(error, PaymentErrorCode.PAYMENT_PROVIDER_UNAVAILABLE);
     if (!(error instanceof ProviderError)) throw error;
-    this.logger.warn(
-      `Payment check failed (${error.retryable ? 'temporary' : 'rejected'}): payment ${payment.id}`,
-    );
     const note = error.retryable ? 'PROVIDER_UNAVAILABLE' : 'PROVIDER_REJECTED';
     await this.markChecked(payment.id, note, true, exhaustedKind);
     return note;

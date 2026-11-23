@@ -156,3 +156,34 @@ describe('AppConfigService.adminAuthThrottle', () => {
     ).toEqual({ ttlMs: 120_000, limit: 40 });
   });
 });
+
+describe('AppConfigService.razorpay', () => {
+  it('trims whitespace and strips surrounding quotes from gateway credentials', () => {
+    const config = make({
+      RAZORPAY_KEY_ID: '  "rzp_test_12345678"  ',
+      RAZORPAY_KEY_SECRET: " 'secret1234567890' ",
+      RAZORPAY_WEBHOOK_SECRET: '  "webhook_secret_1234" ',
+      PROVIDER_HTTP_TIMEOUT_MS: 5000,
+    });
+    expect(config.razorpay).toEqual({
+      keyId: 'rzp_test_12345678',
+      keySecret: 'secret1234567890',
+      webhookSecret: 'webhook_secret_1234',
+      timeoutMs: 5000,
+    });
+  });
+
+  it('preserves clean credentials without quotes and handles empty values', () => {
+    const clean = make({
+      RAZORPAY_KEY_ID: 'rzp_test_T9ifAMSn6vdzO8',
+      RAZORPAY_KEY_SECRET: '7ZbiM6iNzd3xwoCGVAvJJvuP',
+      PROVIDER_HTTP_TIMEOUT_MS: 10000,
+    });
+    expect(clean.razorpay).toEqual({
+      keyId: 'rzp_test_T9ifAMSn6vdzO8',
+      keySecret: '7ZbiM6iNzd3xwoCGVAvJJvuP',
+      webhookSecret: '',
+      timeoutMs: 10000,
+    });
+  });
+});
