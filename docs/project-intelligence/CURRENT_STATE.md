@@ -1,5 +1,17 @@
 # CURRENT_STATE (keep compact; history lives in git/ADRs)
 
+## 2026-11-24 Admin Portal auth session grace & Cloudflare proxy investigation
+
+- Root cause:
+  1. The Admin Portal (`https://sevanest-nine.vercel.app`) intermittently displayed "Blocked by Cloudflare security challenge at the backend gateway" (`a5f678b68cb8066f-BOM`). Investigation proved Vercel's relative `/api/v1` proxy rewrite forwards browser requests from Vercel datacenter IPs to Render. Render's edge is hosted on Cloudflare, which occasionally issues an HTTP 429 Managed Challenge against rapid bursts from datacenter IPs. Direct connectivity (`https://sevanest-backend.onrender.com/api/v1`) from browser residential IPs avoids this challenge and has valid CORS pre-configured.
+  2. Intermittent 401s after login occurred because `SessionService.withinReuseGrace()` in `src/modules/auth/session.service.ts` required `!!deviceId && replayed.deviceId === deviceId`. Browser web sessions do not pass a hardware `deviceId` (`replayed.deviceId = null`). Concurrent API requests on dashboard load triggering token refresh caused the second request to fail grace, triggering token theft detection that revoked the active session in PostgreSQL and broke all subsequent API calls.
+- Fix:
+  1. `src/modules/auth/session.service.ts`: Updated `withinReuseGrace()` so unbound web sessions (`replayed.deviceId === null` and `!deviceId`) are protected by the existing 10-second grace window, returning 409 `REFRESH_IN_PROGRESS` without revoking the session. Hardware `deviceId` matching remains strictly enforced when `deviceId` is present. Replays outside the grace window still trigger session revocation and audit logging.
+  2. `src/modules/auth/session.service.spec.ts`: Added unit tests covering normal rotation, web session concurrency within grace, mobile device matching within grace, replay outside grace, device mismatch, unknown tokens, and suspended user revocation.
+  3. Frontend recommendation: Provided exact single-flight refresh queue implementation for Axios interceptor and advised configuring `VITE_API_BASE_URL=https://sevanest-backend.onrender.com/api/v1` to route directly to Render.
+- Evidence (2026-11-24 local): `npm run typecheck` — 0 errors (exit 0); `npm run lint` — 0 errors, 0 warnings (exit 0); `npm run format:check` — clean (exit 0); `npx jest src/modules/auth/session.service.spec.ts` — 9 passed, 9 total (exit 0); `npm test` — 67 test suites passed, 67 total (653 passed, 8 skipped, 661 total, exit 0).
+- NOT verified: Direct Vercel frontend environment update (requires frontend repo deployment).
+
 ## 2026-11-23 Payment refund logging & gateway config sanitization (Razorpay HTTP 400 & 503 visibility)
 
 - Root cause: Admin Portal refund and reconciliation actions on payment `01a1e7ab-6e19-71ac-b565-4d320ba468f5` (Razorpay `pay_U16TxpAreitv7V`) returned `503 PAYMENT_PROVIDER_UNAVAILABLE`. Investigation proved:

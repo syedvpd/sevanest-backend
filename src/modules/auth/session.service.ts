@@ -95,13 +95,17 @@ export class SessionService implements OnModuleInit {
     deviceId: string | undefined,
   ): boolean {
     const graceMs = this.config.refreshReuseGraceSeconds * 1000;
-    return (
-      graceMs > 0 &&
-      !!deviceId &&
-      replayed.deviceId === deviceId &&
-      !!replayed.rotatedAt &&
-      Date.now() - replayed.rotatedAt.getTime() <= graceMs
-    );
+    if (graceMs <= 0 || !replayed.rotatedAt) {
+      return false;
+    }
+    const elapsed = Date.now() - replayed.rotatedAt.getTime();
+    if (elapsed > graceMs) {
+      return false;
+    }
+    if (replayed.deviceId) {
+      return !!deviceId && replayed.deviceId === deviceId;
+    }
+    return !deviceId;
   }
 
   /**
