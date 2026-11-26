@@ -194,6 +194,8 @@ export class SupportCategoryView {
   @ApiProperty() id!: string;
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
+  @ApiPropertyOptional({ description: 'True for safety-related categories (BUG-CUST-017)' })
+  isSafety?: boolean;
 }
 
 export class AdminSupportCategoryView extends SupportCategoryView {

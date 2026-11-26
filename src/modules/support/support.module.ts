@@ -5,6 +5,7 @@ import { WorkersModule } from '../workers/workers.module';
 import { AdminSupportController, SupportController } from './support.controller';
 import { SupportRepository } from './support.repository';
 import { SupportService } from './support.service';
+import { SupportSeedService } from './support-seed.service';
 
 /**
  * Support: tickets and complaints raised by customers and workers and worked by staff (FRD FM-12). Owns the ticket,
@@ -13,7 +14,7 @@ import { SupportService } from './support.service';
 @Module({
   imports: [BookingModule, UsersModule, WorkersModule],
   controllers: [SupportController, AdminSupportController],
-  providers: [SupportRepository, SupportService],
-  exports: [SupportService],
+  providers: [SupportRepository, SupportService, SupportSeedService],
+  exports: [SupportService, SupportSeedService],
 })
 export class SupportModule {}

@@ -253,11 +253,19 @@ export class SupportRepository {
     });
   }
 
+  findCategoryByCode(code: string, db: Db = this.prisma): Promise<CategoryRecord | null> {
+    return db.supportCategory.findUnique({
+      where: { code },
+      select: { id: true, code: true, name: true, isEnabled: true },
+    });
+  }
+
   createCategory(
     input: { code: string; name: string },
-    tx: Prisma.TransactionClient,
+    tx?: Prisma.TransactionClient,
   ): Promise<CategoryRecord> {
-    return tx.supportCategory.create({
+    const db = tx ?? this.prisma;
+    return db.supportCategory.create({
       data: input,
       select: { id: true, code: true, name: true, isEnabled: true },
     });

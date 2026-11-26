@@ -43,6 +43,11 @@ export const INITIAL_CATEGORIES: ReadonlyArray<{
     name: 'Cleaning Helper',
     description: 'Deep/basic cleaning assistance',
   },
+  {
+    code: 'OTHER',
+    name: 'Others',
+    description: 'Custom or unlisted domestic services',
+  },
 ];
 
 /**

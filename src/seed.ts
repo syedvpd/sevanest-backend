@@ -8,6 +8,8 @@ import { AppConfigService } from './config/app-config.service';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { CategorySeedService } from './modules/service-categories/category-seed.service';
 import { ServiceCategoriesModule } from './modules/service-categories/service-categories.module';
+import { SupportSeedService } from './modules/support/support-seed.service';
+import { SupportModule } from './modules/support/support.module';
 import { RbacSeedService } from './modules/users/rbac-seed.service';
 import { UsersModule } from './modules/users/users.module';
 
@@ -19,6 +21,7 @@ import { UsersModule } from './modules/users/users.module';
     RetentionRegistryModule,
     UsersModule,
     ServiceCategoriesModule,
+    SupportModule,
   ],
 })
 class SeedModule {}
@@ -45,6 +48,11 @@ async function seed(): Promise<void> {
     const createdCategories = await app.get(CategorySeedService).ensureInitialCategories();
     console.log(
       `Service categories ensured: ${createdCategories} created (existing rows untouched)`,
+    );
+
+    const createdSupportCategories = await app.get(SupportSeedService).ensureInitialCategories();
+    console.log(
+      `Support categories ensured: ${createdSupportCategories} created (existing rows untouched)`,
     );
 
     // Opt-in (Q-93): SEED_CATEGORY_ENGAGEMENTS=dry-run reports, =true applies the PRD engagement types to unconfigured categories.

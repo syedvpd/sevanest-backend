@@ -83,11 +83,15 @@ export class SupportService {
 
   async listCategories(): Promise<SupportCategoryView[]> {
     const categories = await this.repository.listCategories(true);
-    return categories.map(({ id, code, name }) => ({ id, code, name }));
+    return categories.map((c) => this.categoryView(c));
   }
 
   async adminListCategories(): Promise<AdminSupportCategoryView[]> {
-    return this.repository.listCategories(false);
+    const categories = await this.repository.listCategories(false);
+    return categories.map((c) => ({
+      ...this.categoryView(c),
+      isEnabled: c.isEnabled,
+    }));
   }
 
   async createCategory(
@@ -751,7 +755,8 @@ export class SupportService {
   }
 
   private categoryView(c: CategoryRecord | TicketRecord['category']): SupportCategoryView {
-    return { id: c.id, code: c.code, name: c.name };
+    const isSafety = c.code === 'SAFETY_ISSUE' || c.code === 'SAFETY';
+    return { id: c.id, code: c.code, name: c.name, isSafety };
   }
 
   private view(t: TicketRecord): TicketView {

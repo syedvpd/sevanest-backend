@@ -1,4 +1,8 @@
-import { CategorySeedService, RECOMMENDED_ENGAGEMENTS } from './category-seed.service';
+import {
+  CategorySeedService,
+  INITIAL_CATEGORIES,
+  RECOMMENDED_ENGAGEMENTS,
+} from './category-seed.service';
 import { ENGAGEMENTS } from '../../common/validation/engagements';
 
 /** In-memory stand-ins for the repository and audit, so the seed rules can be checked without a database. */
@@ -116,5 +120,44 @@ describe('CategorySeedService.ensureRecommendedEngagements', () => {
     expect(engagements.get('id-DRIVER')).toEqual(['SHIFT']);
     expect(report.skippedAlreadyConfigured).toContain('DRIVER');
     expect(report.applied.map((a) => a.code)).not.toContain('DRIVER');
+  });
+});
+
+describe('CategorySeedService.ensureInitialCategories (BUG-CUST-014)', () => {
+  it('includes the OTHER category with code OTHER and name Others', () => {
+    const other = INITIAL_CATEGORIES.find((c) => c.code === 'OTHER');
+    expect(other).toBeDefined();
+    expect(other).toEqual({
+      code: 'OTHER',
+      name: 'Others',
+      description: 'Custom or unlisted domestic services',
+    });
+    expect(INITIAL_CATEGORIES).toHaveLength(7);
+  });
+
+  it('creates all missing initial categories and is idempotent', async () => {
+    const existing = new Map<string, { id: string; code: string; name: string }>();
+    const createdList: Array<{ code: string; name: string; description: string }> = [];
+    const repository = {
+      findByCode: jest.fn((code: string) => Promise.resolve(existing.get(code) ?? null)),
+      create: jest.fn((dto: { code: string; name: string; description: string }) => {
+        const row = { id: `id-${dto.code}`, ...dto };
+        existing.set(dto.code, row);
+        createdList.push(dto);
+        return Promise.resolve(row);
+      }),
+    };
+    const audit = { record: jest.fn(() => Promise.resolve()) };
+    const service = new CategorySeedService(repository as never, audit as never);
+
+    const firstRunCount = await service.ensureInitialCategories();
+    expect(firstRunCount).toBe(7);
+    expect(createdList).toHaveLength(7);
+    expect(createdList.map((c) => c.code)).toContain('OTHER');
+
+    // Second run: idempotent, creates 0
+    const secondRunCount = await service.ensureInitialCategories();
+    expect(secondRunCount).toBe(0);
+    expect(createdList).toHaveLength(7);
   });
 });
