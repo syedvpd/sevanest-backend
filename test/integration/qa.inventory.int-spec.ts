@@ -96,6 +96,8 @@ describe('QA - API inventory and route invariants (integration)', () => {
       [
         'GET /health/live',
         'GET /health/ready',
+        'HEAD /health/live',
+        'HEAD /health/ready',
         'POST /api/v1/auth/admin/login',
         'POST /api/v1/auth/otp/request',
         'POST /api/v1/auth/otp/verify',

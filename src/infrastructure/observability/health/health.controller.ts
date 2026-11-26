@@ -4,6 +4,7 @@ import {
   Controller,
   ExceptionFilter,
   Get,
+  Head,
   HttpException,
   Injectable,
   UseFilters,
@@ -90,6 +91,7 @@ export class HealthController {
   ) {}
 
   @Get('live')
+  @Head('live')
   @ApiOperation({ summary: 'Liveness probe: the process is running' })
   @ApiOkResponse({
     description: 'Process is alive',
@@ -104,6 +106,7 @@ export class HealthController {
   }
 
   @Get('ready')
+  @Head('ready')
   @HealthCheck()
   @UseFilters(ReadinessFailureFilter)
   @ApiOperation({ summary: 'Readiness probe: PostgreSQL and Redis are reachable' })

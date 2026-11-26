@@ -23,6 +23,11 @@ describe('Foundation (e2e, infrastructure stubbed)', () => {
       expect(t.infra.prisma.ping).not.toHaveBeenCalled();
     });
 
+    it('HEAD /health/live and HEAD /health/ready respond with 200 without payload', async () => {
+      await http().head('/health/live').expect(200);
+      await http().head('/health/ready').expect(200);
+    });
+
     it('GET /health/ready reports database and redis up', async () => {
       const res = await http().get('/health/ready').expect(200);
       expect(res.body.status).toBe('ok');

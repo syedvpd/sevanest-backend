@@ -24,6 +24,8 @@ const PUBLIC_ROUTES = [
   'POST /api/v1/auth/token/refresh',
   'GET /api/v1/health/live',
   'GET /api/v1/health/ready',
+  'HEAD /api/v1/health/live',
+  'HEAD /api/v1/health/ready',
   'POST /api/v1/webhooks/payments',
   'GET /api/v1/app-config',
   'GET /api/v1/reference-data',
