@@ -472,6 +472,21 @@ export class WorkerBookingView {
     description: 'ID of an open interview or trial session, if any.',
   })
   openInterviewId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Customer contact phone number for confirmed/active bookings and interviews.',
+  })
+  customerPhone?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Customer contact name for confirmed/active bookings and interviews.',
+  })
+  customerName?: string | null;
+
   @ApiProperty() updatedAt!: Date;
 }
 
@@ -526,12 +541,28 @@ export class WorkerDisplayView {
       'Short-lived links to the current profile photo (small and large WebP); null when the worker has none or storage is unavailable. Cache by photo.cacheKey.',
   })
   photo!: PhotoLinkView | null;
+
   @ApiProperty({
     nullable: true,
     type: String,
     description: 'Same link as photo.url as one flat field; null without a photo.',
   })
   photoUrl!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Worker phone number (E.164) for confirmed bookings, interviews, and direct contact.',
+  })
+  phone?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Worker mobile phone number (alias for clients using mobile).',
+  })
+  mobile?: string | null;
 }
 
 export class BookingRatingView {

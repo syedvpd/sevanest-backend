@@ -226,6 +226,21 @@ export class InterviewView {
     description: 'Derived from the recorded times, oldest first.',
   })
   timeline!: InterviewTimelineEntry[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Customer contact phone number for the worker during confirmed/scheduled interviews.',
+  })
+  customerPhone?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Customer contact name for the worker during confirmed/scheduled interviews.',
+  })
+  customerName?: string | null;
 }
 
 export class InterviewWorkerView {
@@ -234,6 +249,12 @@ export class InterviewWorkerView {
   name!: string;
   @ApiProperty({ example: 'RK' }) initials!: string;
   @ApiProperty({ nullable: true, type: String }) photoUrl!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Worker contact phone number (E.164) for calling during interviews.',
+  })
+  phone?: string | null;
 }
 
 export class CustomerInterviewView extends InterviewView {

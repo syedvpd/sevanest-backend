@@ -108,6 +108,22 @@ export class CustomersRepository {
     return db.customerProfile.findUnique({ where: { userId }, select: PROFILE_SELECT });
   }
 
+  async contactsByUserIds(
+    userIds: string[],
+    db: Db = this.prisma,
+  ): Promise<Map<string, { name: string; phone: string | null }>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await db.customerProfile.findMany({
+      where: { userId: { in: userIds } },
+      select: {
+        userId: true,
+        name: true,
+        user: { select: { mobile: true } },
+      },
+    });
+    return new Map(rows.map((r) => [r.userId, { name: r.name, phone: r.user?.mobile ?? null }]));
+  }
+
   findProfileById(id: string, db: Db = this.prisma): Promise<ProfileRecord | null> {
     return db.customerProfile.findUnique({ where: { id }, select: PROFILE_SELECT });
   }

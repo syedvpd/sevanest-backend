@@ -197,6 +197,20 @@ export class WorkersRepository {
     return new Map(rows.map((r) => [r.id, r.name]));
   }
 
+  /** Names and phone numbers of several workers in one statement. */
+  async contactsByIds(ids: string[]): Promise<Map<string, { name: string; phone: string | null }>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.workerProfile.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        user: { select: { mobile: true } },
+      },
+    });
+    return new Map(rows.map((r) => [r.id, { name: r.name, phone: r.user?.mobile ?? null }]));
+  }
+
   async findById(id: string, db: Db = this.prisma): Promise<WorkerRecord | null> {
     const row = await db.workerProfile.findUnique({ where: { id }, select: PROFILE_SELECT });
     return row ? toRecord(row) : null;

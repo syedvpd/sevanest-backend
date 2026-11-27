@@ -156,6 +156,13 @@ export class CustomersService {
     return profile.userId;
   }
 
+  /** Contract for Booking: contact information (name, phone) for customer user IDs. */
+  contactsByUserIds(
+    userIds: string[],
+  ): Promise<Map<string, { name: string; phone: string | null }>> {
+    return this.repository.contactsByUserIds(userIds);
+  }
+
   /**
    * Where the customer is in onboarding, for the app to decide the next screen after a restart or a new sign-in. A customer with no
    * profile yet is a normal answer (not a 404): the first screen is the profile.
@@ -291,7 +298,7 @@ export class CustomersService {
     );
     return {
       data: items.map((profile) =>
-        this.toSummary(profile, users.get(profile.userId) ?? null, true),
+        this.toSummary(profile, users.get(profile.userId) ?? null, false),
       ),
       meta: { page: query.page, limit: query.limit, total },
     };

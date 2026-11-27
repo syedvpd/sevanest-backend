@@ -7,6 +7,7 @@ import { OutboxService } from '../../common/outbox/outbox.service';
 import { NotificationEvent } from '../../common/outbox/notification-events';
 import { Page, skipFor } from '../../common/pagination/pagination';
 import { WorkersService } from '../workers/workers.service';
+import { CustomersService } from '../customers/customers.service';
 import {
   AdminInterviewListQuery,
   CancelInterviewDto,
@@ -129,6 +130,7 @@ export class InterviewService {
     private readonly workers: WorkersService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly customers: CustomersService,
   ) {}
 
   // --- reading ---------------------------------------------------------------------------------------------
@@ -168,7 +170,13 @@ export class InterviewService {
           ...toInterviewView(i, 'CUSTOMER'),
           worker:
             id && d
-              ? { workerId: id, name: d.name, initials: d.initials, photoUrl: d.photoUrl }
+              ? {
+                  workerId: id,
+                  name: d.name,
+                  initials: d.initials,
+                  photoUrl: d.photoUrl,
+                  phone: d.phone ?? null,
+                }
               : null,
         };
       }),
@@ -194,8 +202,25 @@ export class InterviewService {
       skipFor(query),
       query.limit,
     );
+    const bookings = await this.bookingRepo.findManyByIds([
+      ...new Set(items.map((i) => i.bookingId)),
+    ]);
+    const customerUserIds = [...new Set(bookings.map((b) => b.customerUserId))];
+    const customerContacts = await this.customers.contactsByUserIds(customerUserIds);
+    const customerByBookingId = new Map(
+      bookings.map((b) => [b.id, customerContacts.get(b.customerUserId)]),
+    );
+
     return {
-      data: items.map((i) => toInterviewView(i, 'WORKER')),
+      data: items.map((i) => {
+        const contact = customerByBookingId.get(i.bookingId);
+        const base = toInterviewView(i, 'WORKER');
+        return {
+          ...base,
+          customerPhone: contact?.phone ?? null,
+          customerName: contact?.name ?? null,
+        };
+      }),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -217,7 +242,17 @@ export class InterviewService {
     if (!session) throw this.notFound();
     const booking = await this.bookingRepo.findById(session.bookingId);
     if (!booking || !this.owns(booking, actor)) throw this.notFound();
-    return toInterviewView(session, actor.kind);
+    const view = toInterviewView(session, actor.kind);
+    if (actor.kind === 'WORKER') {
+      const customerContacts = await this.customers.contactsByUserIds([booking.customerUserId]);
+      const contact = customerContacts.get(booking.customerUserId);
+      return {
+        ...view,
+        customerPhone: contact?.phone ?? null,
+        customerName: contact?.name ?? null,
+      };
+    }
+    return view;
   }
 
   // --- the customer asks -----------------------------------------------------------------------------------

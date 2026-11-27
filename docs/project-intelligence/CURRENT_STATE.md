@@ -1,5 +1,23 @@
 # CURRENT_STATE (keep compact; history lives in git/ADRs)
 
+## 2026-11-27 Complete PII masking removal & contact access enablement (Backend)
+
+- Root cause:
+  1. Phone numbers were masked with asterisks (e.g. `+91******3210`) across customer, worker, and admin listings by `maskMobile()` in `src/common/validation/indian-mobile.ts`.
+  2. For bookings and interviews, worker and customer direct contact numbers were omitted from API responses by contract (decision D-81), preventing workers from calling customers and customers from calling assigned workers during active/confirmed bookings or scheduled interviews.
+- Fix:
+  1. `src/common/validation/indian-mobile.ts`: Updated `maskMobile()` to return the canonical unmasked E.164 phone number directly, disabling asterisk masking across all consuming endpoints (`CustomersService.toSummary()`, `AdminAccessService.maskedAdminView()`, `UsersController.toAdminView()`, `WorkersService.adminList()`).
+  2. `src/modules/customers/customers.service.ts`: Updated `adminList()` to invoke `toSummary(profile, user, false)` ensuring full unmasked phone visibility in staff listings.
+  3. `src/modules/booking/dto/booking.dto.ts`: Added `phone?: string | null` and `mobile?: string | null` to `WorkerDisplayView`. Added `customerPhone?: string | null` and `customerName?: string | null` to `WorkerBookingView`.
+  4. `src/modules/booking/dto/interview.dto.ts`: Added `phone?: string | null` to `InterviewWorkerView`. Added `customerPhone?: string | null` and `customerName?: string | null` to `InterviewView`.
+  5. `src/modules/workers/workers.repository.ts` & `src/modules/workers/workers.service.ts`: Added `contactsByIds()` to batch-retrieve worker names and registered mobile numbers via their associated User record in one query.
+  6. `src/modules/customers/customers.repository.ts` & `src/modules/customers/customers.service.ts`: Added `contactsByUserIds()` to batch-retrieve customer profile names and phone numbers via their User record in one query.
+  7. `src/modules/booking/booking.service.ts`: Populated worker phone on `WorkerDisplayView` inside `workerDisplays()`, and populated customer name & phone on `WorkerBookingView` for visible booking statuses (`WORKER_VISIBLE_STATUSES`).
+  8. `src/modules/booking/interview.service.ts`: Injected `CustomersService`, populated `worker.phone` on `CustomerInterviewView` and populated `customerPhone` / `customerName` on `InterviewView` for worker queries and `get()`.
+  9. Tests: Added `src/modules/booking/booking-pii-removal.spec.ts` testing unmasked phone numbers across `maskMobile`, `WorkerDisplayView`, `WorkerBookingView`, and `InterviewView`. Updated `src/common/validation/indian-mobile.spec.ts`.
+- Evidence (2026-11-27 local): `npm run typecheck` — 0 errors (exit 0); `npm run lint` — 0 errors, 0 warnings (exit 0); `npm run format:check` — clean (exit 0); `npm test` — 72 test suites passed, 72 total (680 passed, 8 skipped, 688 total, exit 0).
+- NOT verified: Frontend and mobile Flutter applications (omitted per user's explicit instruction: "dont Update frontend/mobile apps in workspace continue"). Local integration tests against live DB (`localhost:5432` / Redis `localhost:6379` not running locally).
+
 ## 2026-11-24 Admin Portal auth session grace & Cloudflare proxy investigation
 
 - Root cause:

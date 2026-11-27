@@ -11,12 +11,12 @@ export function normalizeIndianMobile(raw: string): string | null {
   return match ? `+91${match[1]}` : null;
 }
 
-/** For routine admin screens (FR-SEC-006): keeps the country code and the last four digits. */
+/** Returns the full unmasked mobile number for authorized administrative and direct contact views. */
 export function maskMobile(e164: string | null | undefined): string | null {
   if (!e164) {
     return null;
   }
-  return `${e164.slice(0, 3)}${'*'.repeat(Math.max(e164.length - 7, 0))}${e164.slice(-4)}`;
+  return e164;
 }
 
 /**

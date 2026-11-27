@@ -17,9 +17,7 @@ describe('BUG-CUST-014: OTHER service category and requirementNote booking persi
       const errors = await validate(dto);
       expect(errors).toHaveLength(0);
       expect(dto.category).toBe('OTHER');
-      expect(dto.requirementNote).toBe(
-        'Need daily plant watering and general balcony maintenance',
-      );
+      expect(dto.requirementNote).toBe('Need daily plant watering and general balcony maintenance');
     });
 
     it('rejects lowercase "other" category code matching audit findings', async () => {

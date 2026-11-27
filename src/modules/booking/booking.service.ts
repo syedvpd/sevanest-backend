@@ -527,9 +527,22 @@ export class BookingService {
       query.limit,
     );
     const views = await this.views(items);
-    const openInterviews = await Promise.all(items.map((b) => this.interviews.findOpen(b.id)));
+    const [openInterviews, customerContacts] = await Promise.all([
+      Promise.all(items.map((b) => this.interviews.findOpen(b.id))),
+      typeof this.customers.contactsByUserIds === 'function'
+        ? this.customers.contactsByUserIds([...new Set(items.map((b) => b.customerUserId))])
+        : Promise.resolve(new Map<string, { name: string; phone: string | null }>()),
+    ]);
     return {
-      data: views.map((view, i) => this.workerView(view, openInterviews[i]?.id ?? null)),
+      data: views.map((view, i) =>
+        this.workerView(
+          view,
+          openInterviews[i]?.id ?? null,
+          WORKER_VISIBLE_STATUSES.includes(view.status)
+            ? customerContacts.get(items[i].customerUserId)
+            : null,
+        ),
+      ),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -705,9 +718,22 @@ export class BookingService {
       query.limit,
     );
     const views = await this.views(items);
-    const openInterviews = await Promise.all(items.map((b) => this.interviews.findOpen(b.id)));
+    const [openInterviews, customerContacts] = await Promise.all([
+      Promise.all(items.map((b) => this.interviews.findOpen(b.id))),
+      typeof this.customers.contactsByUserIds === 'function'
+        ? this.customers.contactsByUserIds([...new Set(items.map((b) => b.customerUserId))])
+        : Promise.resolve(new Map<string, { name: string; phone: string | null }>()),
+    ]);
     return {
-      data: views.map((view, i) => this.workerView(view, openInterviews[i]?.id ?? null)),
+      data: views.map((view, i) =>
+        this.workerView(
+          view,
+          openInterviews[i]?.id ?? null,
+          WORKER_VISIBLE_STATUSES.includes(view.status)
+            ? customerContacts.get(items[i].customerUserId)
+            : null,
+        ),
+      ),
       meta: { page: query.page, limit: query.limit, total },
     };
   }
@@ -717,8 +743,19 @@ export class BookingService {
     if (!booking || booking.workerId !== workerId) {
       throw this.notFound();
     }
-    const openInterview = await this.interviews.findOpen(booking.id);
-    return this.workerView((await this.views([booking]))[0], openInterview?.id ?? null);
+    const [openInterview, customerContacts] = await Promise.all([
+      this.interviews.findOpen(booking.id),
+      typeof this.customers.contactsByUserIds === 'function'
+        ? this.customers.contactsByUserIds([booking.customerUserId])
+        : Promise.resolve(new Map<string, { name: string; phone: string | null }>()),
+    ]);
+    return this.workerView(
+      (await this.views([booking]))[0],
+      openInterview?.id ?? null,
+      WORKER_VISIBLE_STATUSES.includes(booking.status)
+        ? customerContacts.get(booking.customerUserId)
+        : null,
+    );
   }
 
   // --- admin -------------------------------------------------------------------------------------------------
@@ -1972,8 +2009,11 @@ export class BookingService {
   /** Display name (first name and last initial) and photo links for several workers, in two statements in total. */
   async workerDisplays(workerIds: string[]): Promise<Map<string, WorkerDisplayView>> {
     if (workerIds.length === 0) return new Map();
-    const [names, photos, verified] = await Promise.all([
+    const [names, contacts, photos, verified] = await Promise.all([
       this.workers.namesByIds(workerIds),
+      typeof this.workers.contactsByIds === 'function'
+        ? this.workers.contactsByIds(workerIds)
+        : Promise.resolve(new Map<string, { name: string; phone: string | null }>()),
       this.search.photoLinks(workerIds),
       this.search.verifiedIds(workerIds),
     ]);
@@ -1981,6 +2021,7 @@ export class BookingService {
     for (const id of workerIds) {
       const name = names.get(id);
       if (name === undefined) continue;
+      const contact = contacts.get(id);
       const { displayName, initials } = workerDisplay(name);
       out.set(id, {
         displayName,
@@ -1989,6 +2030,8 @@ export class BookingService {
         initials,
         photo: photos.get(id) ?? null,
         photoUrl: photos.get(id)?.url ?? null,
+        phone: contact?.phone ?? null,
+        mobile: contact?.phone ?? null,
       });
     }
     return out;
@@ -2008,7 +2051,11 @@ export class BookingService {
     };
   }
 
-  private workerView(view: BookingView, openInterviewId?: string | null): WorkerBookingView {
+  private workerView(
+    view: BookingView,
+    openInterviewId?: string | null,
+    customerContact?: { name: string; phone: string | null } | null,
+  ): WorkerBookingView {
     return {
       id: view.id,
       status: view.status,
@@ -2030,6 +2077,8 @@ export class BookingService {
       proposedSlotAt: view.proposedSlotAt,
       proposedSlotNote: view.proposedSlotNote,
       openInterviewId: openInterviewId ?? null,
+      customerPhone: customerContact?.phone ?? null,
+      customerName: customerContact?.name ?? null,
       updatedAt: view.updatedAt,
     };
   }

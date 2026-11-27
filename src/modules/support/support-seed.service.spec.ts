@@ -1,7 +1,4 @@
-import {
-  INITIAL_SUPPORT_CATEGORIES,
-  SupportSeedService,
-} from './support-seed.service';
+import { INITIAL_SUPPORT_CATEGORIES, SupportSeedService } from './support-seed.service';
 import { SupportService } from './support.service';
 
 describe('BUG-CUST-017: Safety Support Category and Ticket Creation', () => {
@@ -26,7 +23,10 @@ describe('BUG-CUST-017: Safety Support Category and Ticket Creation', () => {
 
   describe('SupportSeedService.ensureInitialCategories', () => {
     it('creates missing support categories idempotently', async () => {
-      const stored = new Map<string, { id: string; code: string; name: string; isEnabled: boolean }>();
+      const stored = new Map<
+        string,
+        { id: string; code: string; name: string; isEnabled: boolean }
+      >();
       const created: Array<{ code: string; name: string }> = [];
 
       const repository = {
@@ -77,7 +77,12 @@ describe('BUG-CUST-017: Safety Support Category and Ticket Creation', () => {
       mockRepo = {
         listCategories: jest.fn(() =>
           Promise.resolve([
-            { id: 'cat-safety', code: 'SAFETY_ISSUE', name: 'Report a Safety Issue', isEnabled: true },
+            {
+              id: 'cat-safety',
+              code: 'SAFETY_ISSUE',
+              name: 'Report a Safety Issue',
+              isEnabled: true,
+            },
             { id: 'cat-booking', code: 'BOOKING_ISSUE', name: 'Booking issue', isEnabled: true },
           ]),
         ),
@@ -154,7 +159,10 @@ describe('BUG-CUST-017: Safety Support Category and Ticket Creation', () => {
 
       mockAudit = { record: jest.fn(() => Promise.resolve()) };
       mockOutbox = { notify: jest.fn(() => Promise.resolve()) };
-      mockAlerts = { raise: jest.fn(() => Promise.resolve()), autoResolve: jest.fn(() => Promise.resolve()) };
+      mockAlerts = {
+        raise: jest.fn(() => Promise.resolve()),
+        autoResolve: jest.fn(() => Promise.resolve()),
+      };
 
       const mockBookings = {};
       const mockWorkers = {};
