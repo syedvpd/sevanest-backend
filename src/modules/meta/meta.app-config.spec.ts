@@ -81,4 +81,21 @@ describe('BUG-CUST-002 & BUG-CUST-018: App Config Legal URLs and Support Contact
     expect(result.legal.privacy?.url).toBe('https://sevanest.com/legal/privacy');
     expect(result.policy.cancellationUrl).toBe('https://sevanest.com/policy/cancellation');
   });
+
+  it('resiliently serves environment config when database or platform settings throw (cold start / DB failover)', async () => {
+    mockLegal.current.mockReturnValue({
+      acceptanceRequired: false,
+      terms: null,
+      privacy: null,
+    });
+    mockPlatform.effective.mockRejectedValue(new Error('Connection terminated unexpectedly'));
+
+    // MetaController falls back to default empty/env settings instead of crashing or returning 503
+    const result = await controller.appConfig();
+    expect(result).toBeDefined();
+    expect(result.maintenance).toBe(false);
+    expect(result.customer.minVersion).toBeNull();
+    expect(result.support.phone).toBeNull();
+    expect(result.languages).toEqual(['en', 'hi']);
+  });
 });

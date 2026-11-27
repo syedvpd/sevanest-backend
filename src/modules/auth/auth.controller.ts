@@ -18,6 +18,7 @@ import { CurrentUser, Public } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { AdminAuthThrottle } from '../../common/guards/app-throttler.guard';
+import { resolveClientIp } from '../../common/guards/client-ip';
 import { AuthService, LoginResult } from './auth.service';
 import {
   AdminLoginDto,
@@ -32,7 +33,7 @@ import {
 import { SessionService } from './session.service';
 
 function clientIp(request: Request): string {
-  return request.ip ?? 'unknown';
+  return resolveClientIp(request);
 }
 
 function toTokenResponse(result: LoginResult): TokenResponse {

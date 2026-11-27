@@ -178,7 +178,25 @@ export class MetaController {
     languages: string[];
   }> {
     // Database settings (edited by staff) win over the deployment defaults, on every request.
-    const s = await this.platform.effective();
+    // If the database is temporarily unreachable during cold-start or failover, safely fall back to deployment defaults.
+    let s: Awaited<ReturnType<PlatformConfigService['effective']>>;
+    try {
+      s = await this.platform.effective();
+    } catch {
+      s = {
+        customerMinVersion: null,
+        customerStoreUrl: null,
+        workerMinVersion: null,
+        workerStoreUrl: null,
+        maintenance: false,
+        supportPhone: null,
+        supportEmail: null,
+        cancellationPolicyText: null,
+        cancellationPolicyUrl: null,
+        refundPolicyText: null,
+        refundPolicyUrl: null,
+      };
+    }
     return {
       customer: { minVersion: s.customerMinVersion, storeUrl: s.customerStoreUrl },
       worker: { minVersion: s.workerMinVersion, storeUrl: s.workerStoreUrl },

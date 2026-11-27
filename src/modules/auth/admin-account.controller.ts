@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/auth.decorators';
 import type { AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { RequireUserType } from '../../common/decorators/user-type.decorator';
 import { AdminAuthThrottle } from '../../common/guards/app-throttler.guard';
+import { resolveClientIp } from '../../common/guards/client-ip';
 import { AuthService } from './auth.service';
 import { ChangeAdminPasswordDto } from './dto/auth.dto';
 import { ApiSchemaResponse } from '../../common/swagger/api-schema-responses';
@@ -40,6 +41,11 @@ export class AdminAccountController {
     @CurrentUser() user: AuthenticatedUser,
     @Req() request: Request,
   ): Promise<{ revokedSessions: number }> {
-    return this.auth.changeAdminPassword(user.userId, user.sessionId, dto, request.ip ?? 'unknown');
+    return this.auth.changeAdminPassword(
+      user.userId,
+      user.sessionId,
+      dto,
+      resolveClientIp(request),
+    );
   }
 }

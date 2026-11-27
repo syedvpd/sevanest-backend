@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import Redis from 'ioredis';
 import type { AppConfigService } from '../../config/app-config.service';
 import type { RedisService } from '../../infrastructure/cache/redis.service';
+import { ErrorCode } from '../../common/errors/error-codes';
 import { AdminLoginThrottle } from './admin-login-throttle.service';
 import { AuthErrorCode } from './auth.errors';
 
@@ -24,6 +25,7 @@ describe('AdminLoginThrottle (unit)', () => {
       } as unknown as RedisService,
       {
         adminLogin: { maxFailures: 5, failureWindowSeconds: 900, lockoutSeconds: 900 },
+        adminAuthThrottle: { ttlMs: 60000, limit: 20 },
       } as unknown as AppConfigService,
     );
 
@@ -33,20 +35,35 @@ describe('AdminLoginThrottle (unit)', () => {
     );
   });
 
-  it('scopes reserve and release solely to account keys (never IP keys) and clamps retryAfterSeconds >= 1', async () => {
+  it('computes sha256 hash for ipKey', () => {
+    expect(AdminLoginThrottle.ipKey('  203.0.113.10  ')).toBe(
+      AdminLoginThrottle.ipKey('203.0.113.10'),
+    );
+  });
+
+  it('checks IP quota first and then account lock', async () => {
     const evalMock = jest
       .fn()
-      .mockResolvedValueOnce([1, 0, 0])
-      .mockResolvedValueOnce([0, 0, 0])
-      .mockResolvedValueOnce(1);
+      .mockResolvedValueOnce([1, 0, 1]) // IP check passes
+      .mockResolvedValueOnce([1, 0, 0]) // Account check passes
+      .mockResolvedValueOnce(1); // Release
     const throttle = makeUnit(evalMock);
     const acctKey = AdminLoginThrottle.accountKey('admin@example.test');
+    const ip = '203.0.113.10';
 
-    await expect(throttle.reserve(acctKey, '203.0.113.10')).resolves.toEqual({
+    await expect(throttle.reserve(acctKey, ip)).resolves.toEqual({
       lastAllowed: false,
     });
     expect(evalMock).toHaveBeenNthCalledWith(
       1,
+      expect.any(String),
+      1,
+      `auth:admin:req:ip:${AdminLoginThrottle.ipKey(ip)}`,
+      '60',
+      '20',
+    );
+    expect(evalMock).toHaveBeenNthCalledWith(
+      2,
       expect.any(String),
       2,
       `auth:admin:lock:acct:${acctKey}`,
@@ -56,18 +73,39 @@ describe('AdminLoginThrottle (unit)', () => {
       '900',
     );
 
-    await expect(throttle.reserve(acctKey, '203.0.113.10')).rejects.toMatchObject({
-      code: AuthErrorCode.ADMIN_LOGIN_LOCKED,
-      details: [{ field: 'retryAfterSeconds', messages: ['1'] }],
-    });
-
-    await throttle.release(acctKey, '203.0.113.10');
+    await throttle.release(acctKey, ip);
     expect(evalMock).toHaveBeenNthCalledWith(
       3,
       expect.any(String),
       1,
       `auth:admin:fail:acct:${acctKey}`,
     );
+  });
+
+  it('throws 429 RATE_LIMITED when client IP quota is exceeded', async () => {
+    const evalMock = jest.fn().mockResolvedValueOnce([0, 45, 21]); // IP blocked with 45s cooldown
+    const throttle = makeUnit(evalMock);
+    const acctKey = AdminLoginThrottle.accountKey('admin@example.test');
+
+    await expect(throttle.reserve(acctKey, '203.0.113.10')).rejects.toMatchObject({
+      code: ErrorCode.RATE_LIMITED,
+      details: [{ field: 'retryAfterSeconds', messages: ['45'] }],
+    });
+    expect(evalMock).toHaveBeenCalledTimes(1); // Account check skipped
+  });
+
+  it('throws 429 ADMIN_LOGIN_LOCKED when account lockout is active', async () => {
+    const evalMock = jest
+      .fn()
+      .mockResolvedValueOnce([1, 0, 1]) // IP check passes
+      .mockResolvedValueOnce([0, 120, 0]); // Account locked
+    const throttle = makeUnit(evalMock);
+    const acctKey = AdminLoginThrottle.accountKey('admin@example.test');
+
+    await expect(throttle.reserve(acctKey, '203.0.113.10')).rejects.toMatchObject({
+      code: AuthErrorCode.ADMIN_LOGIN_LOCKED,
+      details: [{ field: 'retryAfterSeconds', messages: ['120'] }],
+    });
   });
 });
 

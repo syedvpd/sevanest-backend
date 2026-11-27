@@ -81,10 +81,17 @@ export class PlatformConfigService {
     });
   }
 
-  /** The values the apps receive. */
+  /** The values the apps receive. Falls back to environment defaults if database is unreachable or table empty. */
   async effective(): Promise<EffectiveAppSettings> {
     const out: Record<string, string | boolean | null> = {};
-    for (const s of await this.listSettings()) out[s.key] = s.value;
+    try {
+      for (const s of await this.listSettings()) out[s.key] = s.value;
+    } catch {
+      for (const d of SETTING_DEFINITIONS) {
+        const env = d.fromEnv(this.config);
+        out[d.key] = env ?? null;
+      }
+    }
     return { ...(out as unknown as EffectiveAppSettings), maintenance: out.maintenance === true };
   }
 
