@@ -76,6 +76,7 @@ export class AdminLoginThrottle {
   private readonly settings: AdminLoginSettings;
   private readonly ipWindowSeconds: number;
   private readonly maxRequestsPerIp: number;
+  private readonly disabled: boolean;
 
   constructor(
     private readonly redis: RedisService,
@@ -84,6 +85,7 @@ export class AdminLoginThrottle {
     this.settings = config.adminLogin;
     this.ipWindowSeconds = config.adminAuthThrottle.ttlMs / 1000;
     this.maxRequestsPerIp = config.adminAuthThrottle.limit;
+    this.disabled = config.disableAuthRateLimit;
   }
 
   static accountKey(email: string): string {
@@ -102,6 +104,9 @@ export class AdminLoginThrottle {
    * Throws 429 if the IP quota is exhausted or the account is locked out.
    */
   async reserve(accountKey: string, clientIp: string = 'unknown'): Promise<AttemptReservation> {
+    if (this.disabled) {
+      return { lastAllowed: false };
+    }
     await this.redis.ensureConnected();
 
     // 1. IP-level rate-limit check (protects authentication service from flooding from a single IP)
@@ -162,6 +167,9 @@ export class AdminLoginThrottle {
 
   /** A successful login clears the account's failure counter. */
   async release(accountKey: string, _clientIp?: string): Promise<void> {
+    if (this.disabled) {
+      return;
+    }
     await this.redis.ensureConnected();
     await this.redis.client.eval(RELEASE_ATTEMPT, 1, this.failKey(accountKey));
   }

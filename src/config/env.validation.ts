@@ -198,6 +198,16 @@ export class EnvironmentVariables {
   THROTTLE_LIMIT!: number;
 
   /**
+   * Optional toggle to bypass rate-limiting and lockout on authentication/login routes.
+   * Useful in development, staging, or testing environments to prevent 429s during frequent testing.
+   * Refused in strict production tier when APP_ENV=production or NODE_ENV=production.
+   */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  DISABLE_AUTH_RATE_LIMIT: boolean = false;
+
+  /**
    * Dedicated per-IP rate-limit window and cap for Admin Portal authentication routes
    * (/auth/admin/login, /admin/account/password), isolated from the general THROTTLE_LIMIT bucket.
    */
@@ -937,6 +947,17 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
     (config.NODE_ENV === NodeEnv.Production ? AppEnv.Production : AppEnv.Development);
   const isProductionTier = config.NODE_ENV === NodeEnv.Production || appEnv === AppEnv.Production;
   const isStrictTier = isProductionTier || appEnv === AppEnv.Staging;
+  if (config.DISABLE_AUTH_RATE_LIMIT) {
+    if (isProductionTier) {
+      throw new Error(
+        'Invalid environment configuration: DISABLE_AUTH_RATE_LIMIT=true is not allowed in production (NODE_ENV=production or APP_ENV=production)',
+      );
+    }
+    process.emitWarning(
+      'DISABLE_AUTH_RATE_LIMIT=true: login rate-limiting and account lockout are bypassed. Development/staging only - turn it off for real users',
+      'ConfigWarning',
+    );
+  }
   if (config.DEMO_OTP_ACCEPT_ANY) {
     if (isProductionTier) {
       throw new Error(

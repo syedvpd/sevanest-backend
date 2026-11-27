@@ -1,4 +1,10 @@
-import { applyDecorators, type ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
+import {
+  applyDecorators,
+  type ExecutionContext,
+  Injectable,
+  Optional,
+  SetMetadata,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
   InjectThrottlerOptions,
@@ -8,6 +14,7 @@ import {
   type ThrottlerModuleOptions,
   type ThrottlerStorage,
 } from '@nestjs/throttler';
+import { AppConfigService } from '../../config/app-config.service';
 
 export const ADMIN_AUTH_THROTTLER_NAME = 'adminAuth';
 export const ADMIN_AUTH_THROTTLE_KEY = 'throttle:adminAuthRoute';
@@ -43,8 +50,16 @@ export class AppThrottlerGuard extends ThrottlerGuard {
     @InjectThrottlerOptions() options: ThrottlerModuleOptions,
     @InjectThrottlerStorage() storageService: ThrottlerStorage,
     reflector: Reflector,
+    @Optional() private readonly appConfig?: AppConfigService,
   ) {
     super(options, storageService, reflector);
+  }
+
+  override async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (this.appConfig?.disableAuthRateLimit && isAdminAuthThrottleRoute(context)) {
+      return true;
+    }
+    return super.canActivate(context);
   }
 
   protected override setResponseHeader(

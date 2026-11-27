@@ -68,13 +68,18 @@ export class OtpService {
 
     await this.assertNotLocked(keys.lock);
 
-    const [ipCount, ipLeft] = await this.increment(keys.ipWindow, this.settings.sendWindowSeconds);
-    if (ipCount > this.settings.maxRequestsPerIpPerWindow) {
-      throw this.tooManyRequests(
-        AuthErrorCode.OTP_RATE_LIMITED,
-        'Too many OTP requests from this network. Please try again later.',
-        ipLeft,
+    if (!this.config.disableAuthRateLimit) {
+      const [ipCount, ipLeft] = await this.increment(
+        keys.ipWindow,
+        this.settings.sendWindowSeconds,
       );
+      if (ipCount > this.settings.maxRequestsPerIpPerWindow) {
+        throw this.tooManyRequests(
+          AuthErrorCode.OTP_RATE_LIMITED,
+          'Too many OTP requests from this network. Please try again later.',
+          ipLeft,
+        );
+      }
     }
 
     const cooldownSet = await redis.set(
@@ -205,6 +210,9 @@ export class OtpService {
   }
 
   private async assertNotLocked(lockKey: string): Promise<void> {
+    if (this.config.disableAuthRateLimit) {
+      return;
+    }
     const left = await this.redis.client.ttl(lockKey);
     if (left > 0) {
       throw this.tooManyRequests(

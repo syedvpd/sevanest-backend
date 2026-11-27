@@ -126,6 +126,10 @@ export class AppConfigService {
       limit: this.get('ADMIN_AUTH_THROTTLE_LIMIT') ?? 20,
     };
   }
+  /** True when rate-limiting and account lockout on auth/login endpoints should be skipped (e.g. in development/testing). */
+  get disableAuthRateLimit(): boolean {
+    return !this.isProduction && (this.get('DISABLE_AUTH_RATE_LIMIT') ?? false);
+  }
   get otpHmacSecret(): string {
     return this.get('OTP_HMAC_SECRET');
   }

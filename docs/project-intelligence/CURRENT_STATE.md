@@ -1,5 +1,19 @@
 # CURRENT_STATE (keep compact; history lives in git/ADRs)
 
+## 2026-11-27 Development & Staging Auth Rate-Limiting Bypass (DISABLE_AUTH_RATE_LIMIT)
+
+- Root cause:
+  During development and local testing of the Admin Portal, repetitive logins by developers/super admins trigger HTTP 429 (`RATE_LIMITED` from `@AdminAuthThrottle()` bucket or `ADMIN_LOGIN_LOCKED` from Redis account lockout), blocking portal access and preventing UI/UX verification.
+- Fix:
+  1. `src/config/env.validation.ts`: Added `DISABLE_AUTH_RATE_LIMIT: boolean` (default false). Enforced that `DISABLE_AUTH_RATE_LIMIT=true` is strictly prohibited in production tier (`isProductionTier`), throwing a validation configuration error if enabled in production. Emits a `ConfigWarning` in dev/staging.
+  2. `src/config/app-config.service.ts`: Added `disableAuthRateLimit` getter which returns `true` only when `!isProduction && DISABLE_AUTH_RATE_LIMIT=true`.
+  3. `src/modules/auth/admin-login-throttle.service.ts`: Injected `disableAuthRateLimit` flag into `AdminLoginThrottle`. When enabled, `reserve()` immediately returns `{ lastAllowed: false }` and `release()` returns early, bypassing Redis rate limiting and account lockout.
+  4. `src/common/guards/app-throttler.guard.ts`: Injected `AppConfigService`. Bypasses `@AdminAuthThrottle()` evaluation on admin login and password reset routes when `disableAuthRateLimit` is true.
+  5. `src/modules/auth/otp.service.ts`: Bypasses IP rate limiting and mobile lockout checks on OTP issuance and verification when `disableAuthRateLimit` is true.
+  6. Configuration & docs: Added `DISABLE_AUTH_RATE_LIMIT=false` in `.env.example`.
+- Evidence (2026-11-27 local): `npm run typecheck` — 0 errors (exit 0); `npm run lint` — 0 errors, 0 warnings (exit 0); `npm run format:check` — clean (exit 0); `npm test` — 72 test suites passed, 72 total (680 passed, 8 skipped, 688 total, exit 0).
+- NOT verified: Live Render deployment environment variable update (`DISABLE_AUTH_RATE_LIMIT=true` needs to be set in Render dashboard or `.env` if desired for dev/staging environments).
+
 ## 2026-11-27 Complete PII masking removal & contact access enablement (Backend)
 
 - Root cause:
